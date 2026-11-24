@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio 自测 · selftest</title>
+<style>
+  :root{--bg:#f3efe7;--panel:#fffdf9;--line:#e3dccf;--ink:#2b2824;--muted:#8a8174;--ok:#2f7a4f;--bad:#b3372a}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{display:flex;align-items:baseline;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+  header b{font-size:15px}
+  header span{color:var(--muted)}
+  #result{margin:0;padding:12px 16px;white-space:pre-wrap;word-break:break-all;
+    font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
+  #result.done-pass{color:var(--ok)}
+  #result.done-fail{color:var(--bad)}
+  iframe{display:block;width:1120px;max-width:100%;height:620px;margin:0 16px 16px;
+    border:1px solid var(--line);border-radius:8px;background:#fff}
+</style>
+</head>
+<body>
+<header><b>Studio 自测</b><span>在 iframe 中加载 ../index.html，等待 window.Studio 后逐条断言</span></header>
+<pre id="result"></pre>
+<iframe id="app" src="../index.html" title="studio under test"></iframe>
+
+<script>
+/* ============================================================
+ * 零依赖自测页：把 iframe 里的 window.Studio 当成被测对象。
+ * 结果以 JSON 写进 <pre id="result">，供 tests/run.mjs 用 --dump-dom 抓取。
+ * ============================================================ */
+const RESULT = document.getElementById('result');
+const frame = document.getElementById('app');
+const CHECKS = [];
+const ctx = {};                       // 跨断言共享被测对象
+let finished = false;
+
+function flush(){
+  const passed = CHECKS.filter(c => c.ok).length;
+  RESULT.textContent = JSON.stringify({
+    passed, failed: CHECKS.length - passed, done: finished, checks: CHECKS,
+  });
+  if (finished){
+    RESULT.className = passed === CHECKS.length ? 'done-pass' : 'done-fail';
+    RESULT.textContent = JSON.stringify({
+      passed, failed: CHECKS.length - passed, done: true, checks: CHECKS,
+    }, null, 2);
+  }
+}
+
+function record(name, ok, detail){
+  CHECKS.push({name, ok: !!ok, detail: String(detail == null ? '' : detail)});
+  flush();
+}
+
+// 单条断言：抛错记为 failed，继续下一条
+async function check(name, fn){
+  try {
+    const detail = await fn();
+    record(name, true, detail == null ? 'ok' : detail);
+  } catch(e){
+    record(name, false, (e && e.message) || String(e));
+  }
+}
+
+function assert(cond, msg){ if (!cond) throw new Error(msg); }
+const typeName = v => Array.isArray(v) ? 'array' : (v === null ? 'null' : typeof v);
+
+// 轮询等待：返回 true 表示条件在超时前成立
+function waitFor(fn, timeoutMs, intervalMs){
+  return new Promise(resolve => {
+    const t0 = Date.now();
+    (function tick(){
+      let ok = false;
+      try { ok = !!fn(); } catch(e){}
+      if (ok) return resolve(true);
+      if (Date.now() - t0 >= timeoutMs) return resolve(false);
+      setTimeout(tick, intervalMs || 50);
+    })();
+  });
+}
+
+const win = () => frame.contentWindow;
+const studio = () => {
+  const S = win() && win().Studio;
+  assert(S && typeof S === 'object', 'window.Studio 不存在');
+  return S;
+};
+
+const API_METHODS = ['getPlan','getState','applyPlan','applyOps','getSelection','select',
+                     'flyToRoom','renderAll','sync','toast','is3D','shot'];
+
+async function main(){
+  // Studio 由页面内联脚本同步挂载；等 iframe 文档就绪即可，最长 15 秒
+  const ready = await waitFor(() => win() && win().Studio && win().document.readyState !== 'loading', 15000, 25);
+  if (ready){
+    // 默认方案是异步 fetch 的，等它落地再开始，避免断言读到半初始化状态
+    await waitFor(() => {
+      const S = win().Studio;
+      const p = S && S.getPlan();
+      return p && Array.isArray(p.rooms) && p.rooms.length > 0;
+    }, 5000, 50);
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  await check('studio.api', () => {
+    const S = studio();
+    const missing = API_METHODS.filter(k => typeof S[k] !== 'function');
+    assert(!missing.length, '缺少方法：' + missing.join(', '));
+    return '全部 ' + API_METHODS.length + ' 个方法均为函数';
+  });
+
+  await check('plan.shape', () => {
+    const S = studio();
+    const p = S.getPlan();
+    assert(p && typeof p === 'object' && !Array.isArray(p), 'getPlan() 未返回对象（' + typeName(p) + '）');
+    assert(Array.isArray(p.rooms) && p.rooms.length > 0, 'rooms 不是非空数组（' + typeName(p.rooms) + '）');
+    assert(Array.isArray(p.walls), 'walls 不是数组（' + typeName(p.walls) + '）');
+    const r0 = p.rooms[0];
+    ctx.roomId = r0 && r0.id;
+    return 'rooms=' + p.rooms.length + '，walls=' + p.walls.length + '，首个房间=' + ctx.roomId;
+  });
+
+  await check('applyOps.setRoom', () => {
+    const S = studio();
+    const id = ctx.roomId;
+    assert(id, '没有可用的房间 id');
+    const st0 = S.getState();
+    assert(st0 && typeof st0 === 'object' && st0.rooms && typeof st0.rooms === 'object',
+      'getState() 未返回带 rooms 的对象');
+    assert(st0.rooms[id], 'state.rooms 缺少房间 ' + id);
+    ctx.origMat = st0.rooms[id].mat;
+
+    const res = S.applyOps([{op:'setRoom', room:id, mat:'wood'}]);
+    assert(res && typeof res === 'object', 'applyOps 未返回对象');
+    assert(res.applied >= 1, 'applied=' + res.applied + '，期望 >= 1；errors=' + JSON.stringify(res.errors || []));
+    const st1 = S.getState();
+    assert(st1.rooms[id], '撤销前的 state.rooms 丢失房间 ' + id);
+    assert(st1.rooms[id].mat === 'wood', 'getState().rooms.' + id + '.mat=' + st1.rooms[id].mat + '，期望 wood');
+    return 'applied=' + res.applied + '，skipped=' + res.skipped + '，' + id + '.mat: ' + ctx.origMat + ' → wood';
+  });
+
+  await check('applyOps.undo', () => {
+    const S = studio();
+    const id = ctx.roomId;
+    assert(id, '没有可用的房间 id');
+    if (typeof S.undo === 'function'){
+      S.undo();
+    } else {
+      // 没有便捷入口时退回键盘快捷键（Ctrl+Z）。
+      // 必须派发到 body 并冒泡：页面的监听器会读 e.target.matches(...)，target 为 document 时会抛错。
+      const w = win();
+      const target = w.document.body || w.document.documentElement;
+      target.dispatchEvent(new w.KeyboardEvent('keydown',
+        {key:'z', code:'KeyZ', keyCode:90, ctrlKey:true, bubbles:true, cancelable:true}));
+    }
+    const st = S.getState();
+    assert(st.rooms[id], '撤销后 state.rooms 丢失房间 ' + id);
+    assert(st.rooms[id].mat === ctx.origMat,
+      '撤销后 ' + id + '.mat=' + st.rooms[id].mat + '，期望回到 ' + ctx.origMat);
+    return 'mat 已回到 ' + ctx.origMat + '（撤销入口：' + (typeof S.undo === 'function' ? 'Studio.undo' : 'Ctrl+Z') + '）';
+  });
+
+  await check('applyOps.unknownId', () => {
+    const S = studio();
+    const before = JSON.stringify(S.getState());
+    let res;
+    try {
+      res = S.applyOps([{op:'setRoom', room:'__no_such_room__', mat:'wood'}]);
+    } catch(e){
+      throw new Error('未知 id 的 op 抛出异常：' + ((e && e.message) || e));
+    }
+    assert(res && typeof res === 'object', 'applyOps 未返回对象');
+    assert(res.skipped >= 1, 'skipped=' + res.skipped + '，期望 >= 1');
+    assert(res.applied === 0, 'applied=' + res.applied + '，期望 0');
+    assert(JSON.stringify(S.getState()) === before, '未知 id 的 op 不应改动 state');
+    return 'skipped=' + res.skipped + '，applied=' + res.applied + '，未抛错且 state 未变';
+  });
+
+  await check('shot.png', () => {
+    const S = studio();
+    return Promise.resolve(S.shot({scale:1, clean:true})).then(url => {
+      assert(typeof url === 'string', 'shot() 返回 ' + typeName(url) + '，期望 string');
+      assert(url.startsWith('data:image/png'), '前缀不是 data:image/png：' + url.slice(0, 32));
+      assert(url.length > 1000, 'dataURL 长度 ' + url.length + '，期望 > 1000');
+      return 'data:image/png，长度 ' + url.length;
+    });
+  });
+
+  await check('is3D.bool', () => {
+    const S = studio();
+    const v = S.is3D();
+    assert(typeof v === 'boolean', 'is3D() 返回 ' + typeName(v) + '，期望 boolean');
+    return 'is3D() = ' + v;
+  });
+
+  finished = true;
+  flush();
+}
+
+main().catch(e => {
+  // 兜底：main 自身异常也要留下可解析的结果
+  if (!CHECKS.length) record('runner', false, '运行器异常：' + ((e && e.message) || e));
+  finished = true;
+  flush();
+});
+</script>
+</body>
+</html>
