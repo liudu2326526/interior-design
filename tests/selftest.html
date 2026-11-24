@@ -178,6 +178,95 @@ async function main(){
     return 'skipped=' + res.skipped + '，applied=' + res.applied + '，未抛错且 state 未变';
   });
 
+  await check('applyPlan.importFurniture', () => {
+    const S = studio();
+    const previousPlan = S.getPlan();
+    const previousFurniture = S.getState().furniture;
+    const [x, y] = previousPlan.rooms[0].poly[0];
+    const furniture = {type:'chair', name:'图纸餐椅', cx:x+500, cy:y+600, w:470, d:510, rot:32.5};
+    const plan = {...previousPlan, name:'导入家具自测'};
+    const result = S.applyPlan(plan, {furniture:[furniture], clearFurniture:true, freshState:true});
+    assert(result.ok, '导入方案失败');
+    try {
+      const [imported, ...others] = S.getState().furniture;
+      assert(imported && imported.id && others.length === 0, '应生成一个带 ID 的家具实例');
+      for (const [key, value] of Object.entries(furniture)){
+        assert(imported[key] === value, key + ' 未保留原值 ' + value);
+      }
+      const stored = JSON.parse(win().localStorage.getItem('interior-state-v1'));
+      assert(stored.furniture[0].id === imported.id, '家具未保存到项目状态');
+    } finally {
+      S.undo();
+    }
+    assert(S.getPlan().name === previousPlan.name, '一次撤销应还原户型');
+    assert(JSON.stringify(S.getState().furniture) === JSON.stringify(previousFurniture), '一次撤销应还原家具');
+    return '坐标、尺寸和 32.5° 朝向已保留并保存，户型和家具可一起撤销';
+  });
+
+  await check('applyPlan.importComponents', () => {
+    const S = studio();
+    const plan = S.getPlan();
+    const count = S.getState().furniture.length;
+    const [x, y] = plan.rooms[0].poly[0];
+    const component = {type:'component', name:'折返楼梯', cx:x+1000, cy:y+1200, w:1600, d:2200, rot:90, parts:[
+      {shape:'stairs', x:-.25, z:0, w:.5, d:.7, y:0, h:900, steps:5},
+      {shape:'winder', x:0, z:.4, w:1, d:.2, y:900, h:720, steps:4, pivot:[0,-.5],
+        edges:[[-.5,-.5],[-.5,.5],[0,.5],[.5,.5],[.5,-.5]]},
+      {shape:'stairs', x:.25, z:0, w:.5, d:.7, y:1620, h:900, rot:180, steps:5},
+    ]};
+    assert(S.applyPlan(plan, {furniture:[component]}).ok, '合并构件失败');
+    try {
+      const imported = S.getState().furniture.find(item => item.name === component.name);
+      assert(imported?.parts.length === 3, '梯段和扇形转角被丢弃');
+      for (const [i, part] of component.parts.entries()){
+        for (const [key, value] of Object.entries(part)){
+          assert(JSON.stringify(imported.parts[i][key]) === JSON.stringify(value), '部件 ' + i + ' 的 ' + key + ' 未保留');
+        }
+      }
+      const stored = JSON.parse(win().localStorage.getItem('interior-state-v1'));
+      assert(stored.furniture.some(item => item.id === imported.id && item.parts.length === 3), '构件未保存');
+      const footprint = win().document.querySelector('#gFurn [data-fid="' + imported.id + '"]');
+      assert(footprint && footprint.querySelectorAll('line').length >= 8, '平面图里没有绘出踏步线');
+      assert(footprint.querySelectorAll('[data-part-shape="winder"] polygon').length === 4, '平面图里没有绘出四级扇形踏步');
+    } finally {
+      S.undo();
+    }
+    assert(S.getState().furniture.length === count, '撤销未还原原布置');
+    return '直梯和四级扇形踏步已绘制、保存并支持撤销';
+  });
+
+  await check('applyOps.editScene', () => {
+    const S = studio();
+    const before = S.projectJSON();
+    const room = before.plan.rooms[0].id;
+    const [x, y] = before.plan.rooms[0].poly[0];
+    const wall = [x+400,y+600,x+1400,y+720,'n',2450];
+    const component = {type:'component',name:'通道端景',cx:x+800,cy:y+900,w:500,d:290,rot:0,
+      parts:[{shape:'box',x:0,z:0,w:1,d:1,y:0,h:900}]};
+    const res = S.applyOps([{op:'editScene',changes:[
+      {action:'add',path:['plan','walls','-'],value:wall},
+      {action:'replace',path:['state','rooms',room,'name'],value:'联动修改'},
+      {action:'add',path:['state','furniture','-'],value:component},
+    ]}]);
+    assert(res.applied === 1 && res.skipped === 0, '多对象修改失败：' + res.errors.join('；'));
+    try {
+      assert(JSON.stringify(S.getPlan().walls.at(-1)) === JSON.stringify(wall), '墙高没有保存');
+      assert(S.getState().rooms[room].name === '联动修改', '房间没有更新');
+      assert(S.getState().furniture.some(item => item.name === component.name && item.id && item.parts.length === 1), '自定义构件没有生成');
+      const at = JSON.stringify(S.projectJSON());
+      const invalid = S.applyOps([{op:'editScene',changes:[
+        {action:'replace',path:['plan','name'],value:'应撤回'},
+        {action:'remove',path:['plan','walls',9999]},
+      ]}]);
+      assert(invalid.applied === 0 && invalid.skipped === 1, '无效补丁应被整条拒绝');
+      assert(JSON.stringify(S.projectJSON()) === at, '无效补丁的部分内容已写入');
+    } finally {
+      S.undo();
+    }
+    assert(JSON.stringify(S.projectJSON()) === JSON.stringify(before), '一次撤销应恢复原户型及布置');
+    return '保留墙高，联动修改房间与构件，无效补丁不落盘，统一撤销';
+  });
+
   await check('shot.png', () => {
     const S = studio();
     return Promise.resolve(S.shot({scale:1, clean:true})).then(url => {

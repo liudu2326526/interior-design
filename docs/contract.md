@@ -34,7 +34,7 @@ type Plan = {
   version: 1,
   name: string,
   bounds: { x, y, w, h },                 // mm，2D 世界范围
-  walls: [x0, y0, x1, y1, kind][],        // 轴对齐矩形（已含厚度），kind: 'e'外墙 | 'b'承重 | 'n'非承重 | 'low'矮墙
+  walls: [x0, y0, x1, y1, kind, height?][], // 轴对齐矩形（已含厚度），kind: 'e'外墙 | 'b'承重 | 'n'非承重 | 'low'矮墙
   wins:  [x0, y0, x1, y1][],
   doors: { name, rect:[x0,y0,x1,y1], h:[x,y], c:[dx,dy], o:[dx,dy], len, entry? }[],
   slides:{ rect:[x0,y0,x1,y1], v:boolean }[],
@@ -44,6 +44,7 @@ type Plan = {
 ```
 
 - 单位 mm，2D 的 y 轴向下；3D 用现有 `wx()/wz()` 转换。
+- 墙体可单独指定 `height`（mm）。省略时，矮墙默认 1000 mm，其他墙默认 2800 mm。剖切视图按显示高度裁切。
 - `at` 是房间标签位置；`counted:false` 表示不计面积（飘窗）。
 - 现有 `index.html` 里的 `WALLS/WINS/DOORS/SLIDES/ROOMS/MATS` 是这套结构的来源，运行时统一由 `PLAN` 驱动。
 - 125-C 户型作为“示例方案”保留为 `data/125c-plan.json`（由任务 1 生成），默认加载 `data/empty-plan.json`。
@@ -110,6 +111,16 @@ codex 的最终回答必须是**一个 JSON 对象**（允许包在 ```json 围�
 }
 ```
 
+局部和联动编辑用一条 `editScene`。例如把一段现有矮墙升为全高：
+
+```json
+{"reply":"已改为全高实墙。","ops":[{"op":"editScene","changes":[{"action":"replace","path":["plan","walls",12,4],"value":"n"}]}]}
+```
+
+- `action` 是 `add`、`replace` 或 `remove`。新增和替换带 `value`，路径里的数字代表从零起算的数组索引，末尾的 `"-"` 表示追加。
+- `plan` 支持名称、范围、墙体、门窗、推拉门、房间和材质。 `state` 支持家具和构件（含 `parts`）、房间覆盖、拆墙记录和测量线。
+- 同一条 `editScene` 的变更按顺序对临时副本执行，整体校验后写入并可一次撤销。对话等待期间若方案又被编辑，此前生成的索引补丁会被拦截。
+
 规则：
 - `ops` 为空数组表示纯问答，不做改动。
 - 位置参数是绝对 mm；`rot` 为绝对角度（0/90/180/270 为主）。
@@ -137,7 +148,7 @@ codex 的最终回答必须是**一个 JSON 对象**（允许包在 ```json 围�
 { "sessionId": "optional-stable-id",
   "message": "把客厅沙发移到窗边",
   "context": { "mode": "2d"|"3d", "selection": {...}|null,
-               "plan": { ... 精简 Plan ... }, "state": { ... 相关家具/房间 ... },
+               "plan": { ... 当前完整 Plan ... }, "state": { ... 完整场景状态，不含效果图 ... },
                "view": { "camera": {...}|null, "room": "living"|null } },
   "images": [ { "mime": "image/png", "data": "<base64，不含 data: 前缀>" } ] }
 ```
@@ -175,11 +186,51 @@ SSE 事件（`data: <json>\n\n`）：
   "note": "可选" }
 ```
 
-服务端写入 `workdir/import-<uuid>/`，让 codex 在只读/工作区模式下自行识别任意格式（图纸图片、PDF、CAD 导出、JSON 等），产出 Plan JSON，服务端校验后返回：
+服务端将资料写入 `workdir/import-<uuid>/`，由 codex 识别图纸图片、PDF、CAD 导出或 JSON。纯 PNG、JPEG 或 WebP 请求将原图直接附给模型，并从模型回复读取 JSON。需要从工作目录读取资料时，模型将 JSON 写入 `plan.json`。两种输出都将 `furniture` 与结构字段并列，服务端校验后返回户型和家具。
 
-```json
-{ "plan": { ...Plan... }, "explanation": "识别到 3 室 2 厅..." }
+```ts
+type ImportedFurniture = {
+  type: string                 // 家具库类型或 component
+  name: string
+  cx: number
+  cy: number
+  w: number
+  d: number
+  rot: number
+  color?: string
+  parts?: ComponentPart[]     // type === "component" 时至少有一个部件
+}
+
+type ComponentPart = {
+  shape: "box" | "cylinder" | "stairs" | "winder"
+  x: number                    // 相对构件中心的横向比例
+  z: number                    // 相对构件中心的纵向比例
+  w: number                    // 相对构件宽度的比例
+  d: number                    // 相对构件深度的比例
+  y: number                    // 部件底面高度，mm
+  h: number                    // 部件高度，mm
+  rot?: number                 // 部件局部顺时针角度
+  color?: string
+  steps?: number               // stairs 或 winder 必填
+  pivot?: [number,number]      // winder 内角，使用部件局部归一化坐标
+  edges?: [number,number][]    // winder 外边界的顺序采样点，沿上行方向
+}
+
+type PlanImportResponse = {
+  plan: Plan
+  furniture: ImportedFurniture[]
+  explanation: string
+  id: string
+}
 ```
+
+`cx`、`cy` 为家具中心，与 Plan 使用同一个毫米坐标系。 `w`、`d` 为家具沿自身轴向的尺度。 `rot` 为平面顺时针角度，`0 <= rot < 360`，支持小数。没有识别到家具时，`furniture` 为空数组。
+
+家具库未覆盖的物体可以作为 `component` 导入。部件的 `x,z` 范围为 `[-0.5,0.5]`，`w,d` 范围为 `(0,1]`，`y >= 0`，`h > 0` 且 `y + h <= 10000` mm。每件最多 48 个部件。构件和部件分别旋转，调整构件宽深时内部的水平比例随之缩放。
+
+直梯段 `stairs` 沿局部 `-z` 到 `+z` 上升，`steps` 为 1–32。扇形梯段 `winder` 的 `steps` 为 2–32，`pivot` 和 `edges` 都使用部件各轴 `[-0.5,0.5]` 的坐标，端点数为 `steps + 1`。内角与相邻两端点构成一块踏步，三角形方向需一致且面积大于零。
+
+页面预览家具及构件数量。应用后，识别结果进入 `state.furniture`，并和户型一起保存为一次撤销操作。「保留现有家具」会一并带入画布原有布置。
 
 失败返回 `{ "error": "..." }`（HTTP 4xx/5xx）。
 

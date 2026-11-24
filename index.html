@@ -388,8 +388,9 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-st .elapsed{font-variant-numeric:tabular-nums}
 .imp-plan{font-size:14px;font-weight:600;display:flex;align-items:baseline;gap:8px;min-width:0}
 .imp-plan small{font-weight:400;font-size:11px;color:var(--muted);white-space:nowrap}
-.imp-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.imp-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
 .imp-stats div{background:#faf6ef;border-radius:8px;padding:6px 8px;min-width:0}
+.imp-stats .wide{grid-column:1/-1}
 .imp-stats small{display:block;color:var(--muted);font-size:10.5px;white-space:nowrap}
 .imp-stats b{font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .imp-rooms{list-style:none;margin:0;padding:0;max-height:172px;overflow:auto;border:1px solid var(--line);border-radius:8px}
@@ -443,6 +444,7 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
   #tour .card{left:8px !important;right:8px;top:auto !important;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;max-width:none}
   #tour h4{font-size:14px}
 }
+html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile,#rbRender,#ptabs [data-pane="chat"],#ptabs [data-pane="render"]){display:none}
 </style>
 <script type="importmap">
 {"imports":{
@@ -585,7 +587,10 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
     <div id="render" hidden>
       <div class="chat-off" id="renderOff"></div>
       <section class="rsec">
-        <h4 data-en="Camera">机位</h4>
+        <div class="rbar">
+          <h4 class="spacer" data-en="Camera">机位</h4>
+          <button type="button" class="btn" id="rCapture" data-en="Capture current view" disabled>截取当前视角</button>
+        </div>
         <select class="rsel" id="rCam"></select>
         <div class="chips" id="rCorners" hidden></div>
       </section>
@@ -700,7 +705,7 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
       <div class="imp-stats" id="impStats"></div>
       <ul class="imp-rooms" id="impRooms"></ul>
       <div class="imp-exp" id="impExp"></div>
-      <label class="imp-keep"><input type="checkbox" id="impKeep"><span id="impKeepText">保留现有家具（默认清空）</span></label>
+      <label class="imp-keep"><input type="checkbox" id="impKeep"><span id="impKeepText">同时保留现有家具</span></label>
       <div class="imp-foot"><span class="spacer"></span>
         <button class="btn" id="impCancelApply" type="button">取消</button>
         <button class="btn primary" id="impApply" type="button">应用方案</button>
@@ -721,6 +726,7 @@ const S2T_PHRASES = [['布置','佈置'],['布局','佈局'],['台面','檯面']
 const S2T = new Map(('与與两兩个個为為书書于於仅僅从從价價会會传傳体體余餘侧側倾傾储儲儿兒关關内內写寫净淨准準击擊则則刚剛删刪制製办辦动動势勢区區单單占佔卧臥卫衛厅廳历歷压壓厨廚双雙发發变變叶葉后後吗嗎听聽启啟哑啞围圍图圖圆圓场場坐座块塊垫墊墙牆处處备備复復头頭妆妝婴嬰实實宽寬对對导導层層屉屜属屬岛島带帶干乾并並库庫应應开開当當径徑态態总總悬懸懒懶户戶护護拟擬择擇挂掛挡擋挤擠损損换換据據摆擺摇搖撑撐数數无無时時显顯暂暫机機杂雜杆桿条條来來松鬆构構柜櫃标標栈棧栏欄样樣梁樑棱稜椭橢横橫橱櫥气氣没沒注註浅淺测測浏瀏游遊滚滾满滿灯燈灵靈点點热熱状狀独獨环環现現电電画畫监監盖蓋盘盤砖磚确確离離积積称稱竖豎筑築签籤类類约約级級线線结結绕繞绘繪给給统統继繼绿綠缀綴编編缝縫缩縮网網联聯脚腳获獲虚虛装裝见見视視览覽触觸计計认認让讓议議记記设設识識译譯该該语語请請读讀调調负負败敗质質贴貼赶趕转轉轮輪软軟轴軸轻輕载載较較辅輔辑輯边邊过過这這进進远遠适適选選邻鄰里裡针針钢鋼钮鈕铰鉸铺鋪销銷锁鎖键鍵镜鏡长長门門闭閉闲閒间間阅閱阳陽阴陰阶階随隨隐隱静靜页頁顶頂项項顺順颜顏飘飄飞飛马馬鸟鳥齐齊龙龍').match(/../gu).map(p => [...p]));
 const s2t = s => S2T_PHRASES.reduce((a, [f, t]) => a.replaceAll(f, t), s).replace(/[\u3400-\u9fff]/g, c => S2T.get(c) || c);
 const tr = (zh, en) => LANG === 'en' ? en : LANG === 'zht' ? s2t(zh) : zh;
+const PUBLIC_ACCESS = document.querySelector('meta[name="studio-public-access"]')?.content;
 // 内置的房间 / 材料 / 家具名称存的是中文；英文界面下显示译名，用户自己改过的名称原样显示
 const NAMES_EN = {
   '主卧室':'Master Bedroom', '主卫浴':'Master Bath', '小孩房':"Kids' Room", '客卫浴':'Guest Bath', '洗衣阳台':'Laundry Balcony',
@@ -837,6 +843,8 @@ function planExtentOf(plan){
 
 /* ---------- Plan 校验 / 安装（与 lib/codex/plan.mjs 的 validatePlan 口径一致） ---------- */
 const WALL_KINDS = ['e', 'b', 'n', 'low'];
+const DEFAULT_WALL_HEIGHT = 2800, DEFAULT_LOW_WALL_HEIGHT = 1000;
+const wallHeight = wall => wall[5] ?? (wall[4] === 'low' ? DEFAULT_LOW_WALL_HEIGHT : DEFAULT_WALL_HEIGHT);
 
 /**
  * 校验并规整 Plan（契约 §1）。宽容：能修的字段就地修，没有房间视为无效。
@@ -868,7 +876,10 @@ function sanitizePlan(input){
     const r = Array.isArray(w) ? normRect(w) : w && typeof w === 'object' ? normRect(w.rect) : null;
     if (!r){ errors.push(tr(`墙体 ${i} 数据无效`, `Wall ${i} is invalid`)); return; }
     const kind = Array.isArray(w) ? w[4] : w.kind;
-    walls.push([...r, WALL_KINDS.includes(kind) ? kind : 'n']);
+    const height = Array.isArray(w) ? w[5] : w.height;
+    const wall = [...r, WALL_KINDS.includes(kind) ? kind : 'n'];
+    if (Number.isFinite(height) && height > 0) wall.push(height);
+    walls.push(wall);
   });
 
   const wins = [];
@@ -1005,6 +1016,8 @@ const LIB = [
     ['desk','长书桌',1600,700,'#d8c2a2'],['officechair','办公椅',620,620,'#4a4f55'],['bookshelf','大书架',1600,350,'#e2cfb4'],
     ['piano','立式钢琴',1500,600,'#1f1d1b'],['treadmill','跑步机',800,1800,'#3a3a3c'],['armchair','阅读椅',750,800,'#c9a98a']]},
 ];
+const drawingItemTypes = new Set(['component', ...LIB.flatMap(c => c.items.map(i => i[0]))]);
+const componentCount = items => items.filter(f => f.type === 'component').length;
 const typeColor = t => { for (const c of LIB) for (const i of c.items) if (i[0]===t) return i[4]; return '#eee'; };
 
 let _n = 1;
@@ -1014,15 +1027,64 @@ const F = (type,name,cx,cy,w,d,rot=0,color) => ({id:uid(),type,name,cx,cy,w,d,ro
 function defaultState(){
   return {furniture:[], rooms:reconcileRooms({}), demolished:[], measures:[]};
 }
+function wrapRotation(angle){
+  const rot = Number.isFinite(angle) ? angle % 360 : 0;
+  return rot < 0 ? rot + 360 : rot;
+}
+function winderPoints(pivot, edges, steps){
+  const inFootprint = point => Array.isArray(point) && point.length === 2 &&
+    Number.isFinite(point[0]) && Number.isFinite(point[1]) && Math.abs(point[0]) <= .5 && Math.abs(point[1]) <= .5;
+  if (!inFootprint(pivot) || !Array.isArray(edges) || edges.length !== steps + 1 ||
+      !Array.from(edges).every(inFootprint)) return null;
+  const [px, pz] = pivot;
+  let direction = 0, sweep = 0;
+  for (let i = 0; i < steps; i++){
+    const ax = edges[i][0] - px, az = edges[i][1] - pz;
+    const bx = edges[i + 1][0] - px, bz = edges[i + 1][1] - pz;
+    const cross = ax * bz - az * bx;
+    if (Math.abs(cross) <= 1e-9 || (direction && Math.sign(cross) !== direction)) return null;
+    direction = Math.sign(cross);
+    sweep += Math.abs(Math.atan2(cross, ax * bx + az * bz));
+  }
+  if (sweep >= 2 * Math.PI - 1e-8) return null;
+  return {pivot: [...pivot], edges: edges.map(point => [...point])};
+}
+function normalizeComponentParts(input){
+  const parts = [];
+  if (!Array.isArray(input)) return parts;
+  for (const p of input.slice(0, 48)){
+    if (!p || !['box', 'cylinder', 'stairs', 'winder'].includes(p.shape)) continue;
+    const {shape, x, z, w, d, y, h, steps} = p;
+    if (![x, z, w, d, y, h].every(Number.isFinite) || Math.abs(x) > .5 || Math.abs(z) > .5 ||
+        w <= 0 || w > 1 || d <= 0 || d > 1 || y < 0 || h <= 0 || y + h > 10000) continue;
+    const part = {shape, x, z, w, d, y, h};
+    if (shape === 'stairs' || shape === 'winder'){
+      if (!Number.isInteger(steps) || steps < (shape === 'winder' ? 2 : 1) || steps > 32) continue;
+      part.steps = steps;
+    }
+    if (shape === 'winder'){
+      const points = winderPoints(p.pivot, p.edges, steps);
+      if (!points) continue;
+      Object.assign(part, points);
+    }
+    if (Number.isFinite(p.rot)) part.rot = wrapRotation(p.rot);
+    if (typeof p.color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(p.color)) part.color = p.color;
+    parts.push(part);
+  }
+  return parts;
+}
 function normalizeFurn(f){
   if (!f || typeof f !== 'object') return null;
   const cx = +f.cx, cy = +f.cy, w = +f.w, d = +f.d;
   if (![cx, cy, w, d].every(Number.isFinite) || w <= 0 || d <= 0) return null;
   const type = String(f.type || 'box');
+  const parts = type === 'component' ? normalizeComponentParts(f.parts) : null;
+  if (parts && !parts.length) return null;
   return {
     id: String(f.id || uid()), type, name: String(f.name || type), cx, cy, w, d,
-    rot: Number.isFinite(+f.rot) ? ((Math.round(+f.rot) % 360) + 360) % 360 : 0,
+    rot: wrapRotation(+f.rot),
     color: /^#[0-9a-f]{3,8}$/i.test(f.color || '') ? f.color : typeColor(type),
+    ...(parts ? {parts} : {}),
   };
 }
 function readRenders(){
@@ -1148,6 +1210,44 @@ const ln = (x1,y1,x2,y2,ex='') => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${
 const pa = (d,f='none',ex='') => `<path d="${d}" fill="${f}" ${ST} ${ex}/>`;
 const DASH = 'stroke-dasharray="4 3"';
 
+function winderSVG(part, w, d, color){
+  const pivot = [part.pivot[0] * w, part.pivot[1] * d];
+  const edges = part.edges.map(([x, z]) => [x * w, z * d]);
+  const centers = [];
+  const treads = edges.slice(1).map((end, i) => {
+    const start = edges[i];
+    centers.push(pivot.map((axis, j) => axis + ((start[j] + end[j]) / 2 - axis) * .62));
+    return `<polygon points="${[pivot, start, end].map(point => point.join(',')).join(' ')}" fill="${color}" ${ST}/>`;
+  }).join('');
+  const [x, z] = centers.at(-1), [prevX, prevZ] = centers.at(-2);
+  const angle = Math.atan2(z - prevZ, x - prevX);
+  const tip = Math.min(Math.min(w, d) * .085, Math.hypot(x - prevX, z - prevZ) / 2);
+  const head = [-.65, .65].map(offset => [x - tip * Math.cos(angle + offset), z - tip * Math.sin(angle + offset)].join(' '));
+  return treads + pa(`M${centers.map(point => point.join(' ')).join('L')}M${head[0]}L${x} ${z}L${head[1]}`,
+    'none', 'pointer-events="none"');
+}
+
+function componentSVG(f){
+  // 顶面较高的部件盖在较低的部件之上；局部 +Z 对应平面向下。
+  const parts = [...f.parts].sort((a, b) => (a.y + a.h) - (b.y + b.h));
+  return parts.map(p => {
+    const w = p.w * f.w, d = p.d * f.d, color = p.color || f.color;
+    let shape;
+    if (p.shape === 'winder') shape = winderSVG(p, w, d, color);
+    else if (p.shape === 'cylinder') shape = ec(0, 0, w/2, d/2, color);
+    else shape = rc(-w/2, -d/2, w, d, color);
+    if (p.shape === 'stairs'){
+      for (let i = 1; i < p.steps; i++){
+        const z = -d/2 + i * d/p.steps;
+        shape += ln(-w/2, z, w/2, z, 'opacity=".65" pointer-events="none"');
+      }
+      const x = w * .24, z = d * .36, head = Math.min(w, d) * .11;
+      shape += pa(`M${x} ${-z}V${z}M${x-head} ${z-head}L${x} ${z}L${x+head} ${z-head}`, 'none', 'opacity=".95" pointer-events="none"');
+    }
+    return `<g data-part-shape="${p.shape}" transform="translate(${p.x*f.w} ${p.z*f.d}) rotate(${p.rot || 0})">${shape}</g>`;
+  }).join('');
+}
+
 function furnSVG(t,w,d,c){
   const x = -w/2, y = -d/2, m = Math.min(w,d);
   switch (t){
@@ -1263,10 +1363,13 @@ function renderFurn(){
   const g = $('#gFurn');
   g.setAttribute('display', ui.layers.furn ? 'inline' : 'none');
   g.innerHTML = state.furniture.map(f => {
+    const component = f.type === 'component';
     const fs = Math.max(80, Math.min(170, Math.min(f.w,f.d)*.2));
     const label = Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type)
       ? `<text transform="rotate(${-f.rot})" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#4a443c" opacity=".8" pointer-events="none">${esc(nm(f.name))}</text>` : '';
-    return `<g class="furn" data-fid="${f.id}" transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${furnSVG(f.type,f.w,f.d,f.color)}${label}</g>`;
+    const title = component ? `<title>${esc(nm(f.name))}</title>` : '';
+    const shape = component ? componentSVG(f) : furnSVG(f.type,f.w,f.d,f.color);
+    return `<g class="furn" data-fid="${esc(f.id)}" transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${title}${shape}${label}</g>`;
   }).join('');
 }
 
@@ -1418,6 +1521,11 @@ function updateHeader(){
   const tot = ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + area(r.poly), 0);
   if (!renaming) $('#brandName').textContent = `${PLAN.name} · ${tr('装修设计', 'Interior Design')}`;
   $('#subtitle').textContent = tr(`套内使用面积约 ${fmt(tot)} m² · 尺寸单位 mm · 原图比例 1:60`, `Net floor area ≈ ${fmt(tot)} m² · Units: mm · Original scale 1:60`);
+  const components = componentCount(state.furniture) > 0;
+  const layoutLabel = components ? tr('家具 / 构件', 'Furniture / Components') : tr('家具', 'Furniture');
+  document.querySelectorAll('[data-layer="furn"], [data-t="furn"]').forEach(b => { b.textContent = layoutLabel; });
+  $('#clearAll').title = components ? tr('清空所有家具、家电和构件（可撤销）', 'Remove all furniture, appliances and components (undoable)')
+    : tr('清空所有家具家电（可撤销）', 'Remove all furniture and appliances (undoable)');
   $('#undo').disabled = !undoStack.length; $('#redo').disabled = !redoStack.length;
   $('#undo').style.opacity = undoStack.length ? 1 : .4; $('#redo').style.opacity = redoStack.length ? 1 : .4;
 }
@@ -1470,7 +1578,7 @@ function wallPanel(id){
     <div class="stats">
       <div><small>${tr('类型','Kind')}</small><span class="big" style="font-size:15px">${esc(KINDS[w[4]] || w[4])}</span></div>
       <div><small>${tr('长度','Length')}</small><span class="big">${fmt(Math.max(w[2]-w[0], w[3]-w[1])/1000, 1)}</span> m</div></div>
-    <div class="muted" style="font-size:12px;margin-top:6px">${tr('厚度','Thickness')} ${Math.round(Math.min(w[2]-w[0], w[3]-w[1]))} mm</div>
+    <div class="muted" style="font-size:12px;margin-top:6px">${tr('厚度','Thickness')} ${Math.round(Math.min(w[2]-w[0], w[3]-w[1]))} mm · ${tr('高度','Height')} ${wallHeight(w)} mm</div>
     <div class="actions">
       ${canDem ? `<button class="btn ${dem ? '' : 'danger'}" id="wToggle">${dem ? tr('恢复墙体','Restore wall') : tr('标记拆除','Mark for removal')}</button>`
                : `<span class="muted">${tr('承重墙与外墙不可拆除','Bearing and exterior walls cannot be removed')}</span>`}
@@ -1492,9 +1600,10 @@ function overviewPanel(){
   ROOMS.forEach(r => { const m = roomState(r.id).mat; byMat[m] = (byMat[m]||0) + area(r.poly); });
   let cost = 0;
   const matRows = Object.entries(byMat).map(([m,a]) => { const info = matInfo(m), c = a*info.price*1.05; cost += c;
-    return `<tr><td><span class="sw" style="background:${info.sw}"></span>${nm(info.name)}</td><td class="r">${fmt(a,1)} m²</td><td class="r">¥${Math.round(c).toLocaleString()}</td></tr>`; }).join('');
+    return `<tr><td><span class="sw" style="background:${info.sw}"></span>${esc(nm(info.name))}</td><td class="r">${fmt(a,1)} m²</td><td class="r">¥${Math.round(c).toLocaleString()}</td></tr>`; }).join('');
   const dem = state.demolished.map(wallOf).filter(Boolean);
   const demLen = dem.reduce((a,w) => a + Math.max(w[2]-w[0], w[3]-w[1]), 0) / 1000;
+  const components = componentCount(state.furniture);
   return `
   <section><h3>${tr('房间面积','Room Areas')} <small>${tr('点击查看 / 更换地面','Click to view / change flooring')}</small></h3>
     <table>${rows}</table>
@@ -1504,7 +1613,8 @@ function overviewPanel(){
     <table>${matRows}</table>
     <div class="total"><span>${tr('地面材料合计','Flooring total')}</span><b>¥${Math.round(cost).toLocaleString()}</b></div></section>
   <section><h3>${tr('方案统计','Plan Stats')}</h3>
-    <div class="stats"><div><small>${tr('家具数量','Furniture')}</small><span class="big">${state.furniture.length}</span></div>
+    <div class="stats"><div><small>${tr('家具数量','Furniture')}</small><span class="big">${state.furniture.length - components}</span></div>
+      ${components ? `<div><small>${tr('构件数量','Components')}</small><span class="big">${components}</span></div>` : ''}
       <div><small>${tr('拆除墙体','Walls removed')}</small><span class="big">${fmt(demLen,1)}</span> m</div></div>
     <div class="actions"><button class="btn" id="clearMeasure">${tr('清除测量','Clear measures')} (${state.measures.length})</button>
       <button class="btn danger" id="clearFurn">${tr('清空布置','Clear layout')}</button></div></section>
@@ -1565,7 +1675,10 @@ function renderFab(){
 function clearLayout(){
   const n = state.furniture.length;
   if (!n) return toast(tr('当前没有布置任何家具', 'There is no furniture to clear'));
-  if (!confirm(tr(`确定清空全部 ${n} 件家具 / 家电吗？\n墙体、地面材料和测量线会保留，可点「撤销」恢复。`, `Remove all ${n} furniture / appliance items?\nWalls, flooring and measurements are kept. You can Undo this.`))) return;
+  const prompt = componentCount(state.furniture)
+    ? tr(`确定清空全部 ${n} 件家具、家电和构件吗？`, `Remove all ${n} furniture, appliance and component items?`)
+    : tr(`确定清空全部 ${n} 件家具 / 家电吗？`, `Remove all ${n} furniture / appliance items?`);
+  if (!confirm(prompt + '\n' + tr('墙体、地面材料和测量线会保留，可点「撤销」恢复。', 'Walls, flooring and measurements are kept. You can Undo this.'))) return;
   ui.sel = null; mutate(() => state.furniture = []);
   toast(tr('已清空布置，可点「撤销」恢复', 'Layout cleared — Undo to restore'));
 }
@@ -1602,7 +1715,7 @@ function closeDrawers(){ if (narrow()) drawer(null); }
 function roomPanel(r){
   const st = roomState(r.id), info = matInfo(st.mat);
   const a = area(r.poly), [x0,y0,x1,y1] = bbox(r.poly), inside = state.furniture.filter(f => f.cx>x0&&f.cx<x1&&f.cy>y0&&f.cy<y1);
-  const mats = Object.entries(MATS).map(([k,m]) => `<button class="mat ${k===st.mat?'on':''}" data-mat="${esc(k)}"><i style="background:${m.sw}"></i><span>${nm(m.name)}<small>¥${m.price}/m²</small></span></button>`).join('');
+  const mats = Object.entries(MATS).map(([k,m]) => `<button class="mat ${k===st.mat?'on':''}" data-mat="${esc(k)}"><i style="background:${m.sw}"></i><span>${esc(nm(m.name))}<small>¥${m.price}/m²</small></span></button>`).join('');
   // 房间效果图：显示该房间最近一张（标题条 / 效果图页签生成的都算）
   const latest = roomLatestRender(r.id);
   const shotHtml = latest
@@ -1620,8 +1733,8 @@ function roomPanel(r){
   <section><h3>${tr('地面材料','Flooring')}</h3><div class="mats">${mats}</div>
     <div class="total"><span>${tr('材料估价','Estimated cost')}</span><b>¥${Math.round(a*info.price*1.05).toLocaleString()}</b></div></section>
   <section><h3>${tr('房间效果图','Room render')} ${latest ? `<small>${tr('最近一张','Latest')}</small>` : ''}</h3>${shotHtml}</section>
-  <section><h3>${tr('房间内家具','Furniture in room')} <small>${tr(`${inside.length} 件`, `${inside.length} items`)}</small></h3>
-    <table>${inside.map(f => `<tr class="click" data-fid="${f.id}"><td>${esc(nm(f.name))}</td><td class="r muted">${f.w}×${f.d}</td></tr>`).join('') || `<tr><td class="muted">${tr('暂无','None')}</td></tr>`}</table>
+  <section><h3>${componentCount(inside) ? tr('房间内家具和构件','Furniture and components in room') : tr('房间内家具','Furniture in room')} <small>${tr(`${inside.length} 件`, `${inside.length} items`)}</small></h3>
+    <table>${inside.map(f => `<tr class="click" data-fid="${esc(f.id)}"><td>${esc(nm(f.name))}</td><td class="r muted">${f.w}×${f.d}</td></tr>`).join('') || `<tr><td class="muted">${tr('暂无','None')}</td></tr>`}</table>
     <div class="actions"><button class="btn" id="back">${tr('← 返回总览','← Back to overview')}</button></div></section>`;
 }
 function bindRoomPanel(){
@@ -1635,7 +1748,8 @@ function bindRoomPanel(){
 }
 
 function furnPanel(f){
-  return `<section><h3>${tr('家具属性','Furniture')}</h3>
+  const component = f.type === 'component';
+  return `<section><h3>${component ? tr('构件属性','Component') : tr('家具属性','Furniture')}</h3>
     <div class="form">
       <label class="full">${tr('名称','Name')}<input id="fName" value="${esc(nm(f.name))}"></label>
       <label>${tr('宽','Width')} (mm)<input type="number" id="fW" value="${f.w}" min="50" step="10"></label>
@@ -1643,15 +1757,17 @@ function furnPanel(f){
       <label>${tr('中心','Center')} X (mm)<input type="number" id="fX" value="${Math.round(f.cx)}" step="10"></label>
       <label>${tr('中心','Center')} Y (mm)<input type="number" id="fY" value="${Math.round(f.cy)}" step="10"></label>
       <label>${tr('旋转','Rotation')} (°)<input type="number" id="fR" value="${f.rot}" step="15"></label>
-      <label>${tr('颜色','Color')}<input type="color" id="fC" value="${f.color}"></label>
+      <label>${component ? tr('默认颜色','Default color') : tr('颜色','Color')}<input type="color" id="fC" value="${f.color}"></label>
     </div>
-    <div class="muted" style="margin-top:8px">${tr('占地面积','Footprint')} ${fmt(f.w*f.d/1e6)} m²</div>
+    <div class="muted" style="margin-top:8px">${tr('占地面积','Footprint')} ${fmt(f.w*f.d/1e6)} m²${component
+      ? tr(` · ${f.parts.length} 个部件 · 最高点 ${Math.round(Math.max(...f.parts.map(p => p.y + p.h)))} mm`,
+        ` · ${f.parts.length} parts · max elevation ${Math.round(Math.max(...f.parts.map(p => p.y + p.h)))} mm`) : ''}</div>
     <div class="actions">
       <button class="btn" id="aRot">${tr('旋转 90°','Rotate 90°')}</button><button class="btn" id="aDup">${tr('复制','Duplicate')}</button>
       <button class="btn" id="aTop">${tr('置于顶层','Bring to front')}</button><button class="btn" id="aBot">${tr('置于底层','Send to back')}</button>
       <button class="btn danger" id="aDel">${tr('删除','Delete')}</button><button class="btn" id="back">${tr('← 返回','← Back')}</button>
     </div></section>
-  <section class="muted" style="font-size:12px">${tr('拖动家具移动；拖动上方圆点旋转；拖动右下角方块调整尺寸。开启「贴墙吸附」后靠近墙面会自动贴齐。', 'Drag to move; drag the top dot to rotate; drag the bottom-right square to resize. With "Wall snap" on, items snap flush to nearby walls.')}</section>`;
+  <section class="muted" style="font-size:12px">${tr('拖动移动；拖动上方圆点旋转；拖动右下角方块调整尺寸。开启「贴墙吸附」后靠近墙面会自动贴齐。', 'Drag to move; drag the top dot to rotate; drag the bottom-right square to resize. With "Wall snap" on, items snap flush to nearby walls.')}</section>`;
 }
 function bindFurnPanel(f){
   const upd = (fn) => mutate(() => { const g = getF(f.id); if (g) fn(g); });
@@ -2188,14 +2304,37 @@ function setLang(l){
 $('#langSel').onclick = e => { const l = e.target.closest('[data-lang]')?.dataset.lang; if (l && l !== LANG) setLang(l); };
 
 /* ======================= 方案切换 / 项目文件 ======================= */
+function drawingFurniture(list){
+  return Array.isArray(list) ? list.filter(f => drawingItemTypes.has(f?.type) &&
+    [f.cx, f.cy, f.w, f.d, f.rot].every(Number.isFinite) && f.w > 0 && f.d > 0 &&
+    (f.type !== 'component' || normalizeComponentParts(f.parts).length > 0)) : [];
+}
+
 // 换方案：校验 → 安装 PLAN → 按新房间重建 state → 清越界拆除索引 / 无效选中 → 入撤销栈
-// opts.clearFurniture：清空现有家具（图纸导入默认）；opts.freshState：同时清掉拆墙记录 / 测量 / 房间名与地面覆盖
+// opts.furniture：导入的家具；opts.clearFurniture：移除原有家具；opts.freshState：清除拆改、测量和房间覆盖项
 function applyPlan(plan, opts = {}){
   const b = opts.history === false ? null : snap();
   const res = sanitizePlan(plan);
   if (!res.ok) return {ok:false, errors:res.errors};
+  const recognized = drawingFurniture(opts.furniture);
+  if (opts.clearFurniture || recognized.length){
+    const current = opts.clearFurniture ? [] : state.furniture;
+    const ids = new Set(current.map(f => f.id));
+    const imported = recognized.map(f => {
+      let id = uid();
+      while (ids.has(id)) id = uid();
+      ids.add(id);
+      return {...f, id};
+    });
+    // 图纸位置不做避让，二维图先绘制地毯和构件，再绘制家具。
+    state.furniture = [
+      ...imported.filter(f => f.type === 'rug'),
+      ...imported.filter(f => f.type === 'component'),
+      ...current,
+      ...imported.filter(f => f.type !== 'rug' && f.type !== 'component'),
+    ];
+  }
   installPlan(res.plan);
-  if (opts.clearFurniture) state.furniture = [];
   if (opts.freshState){ state.demolished = []; state.measures = []; state.rooms = {}; }
   state = fixState(state);
   ui.sel = null; ui.mA = ui.mCur = null;
@@ -2285,8 +2424,174 @@ function findFreeSpot(w, d){
   return [Math.round(f.cx/10)*10, Math.round(f.cy/10)*10];
 }
 
-// 契约 §4 的九种 op；返回 true 表示生效，null 表示目标不存在或参数无效
+const sceneFields = {
+  plan: new Set(['name', 'bounds', 'walls', 'wins', 'doors', 'slides', 'rooms', 'materials']),
+  state: new Set(['furniture', 'rooms', 'demolished', 'measures']),
+};
+const unsafeSceneKeys = new Set(['__proto__', 'prototype', 'constructor']);
+const sceneActions = new Set(['add', 'replace', 'remove']);
+const isSceneRecord = value => Object.prototype.toString.call(value) === '[object Object]';
+const isSceneIndex = value => Number.isInteger(value) && value >= 0 && value < 2 ** 32 - 1;
+
+function isSceneData(value, depth = 0){
+  if (depth > 32) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean' || Number.isFinite(value)) return true;
+  if (Array.isArray(value)) return Array.from(value).every(item => isSceneData(item, depth + 1));
+  return isSceneRecord(value) && Object.entries(value).every(([key, item]) => !unsafeSceneKeys.has(key) && isSceneData(item, depth + 1));
+}
+
+function patchSceneValue(draft, change){
+  const {action, path} = change || {};
+  if (!sceneActions.has(action) || !Array.isArray(path) || path.length < 2 ||
+      typeof path[0] !== 'string' || !Object.hasOwn(sceneFields, path[0]) || !sceneFields[path[0]].has(path[1]) ||
+      !path.every(key => isSceneIndex(key) || (typeof key === 'string' && key && !unsafeSceneKeys.has(key)))){
+    throw new Error(tr('场景编辑路径或操作无效', 'Invalid scene edit path or action'));
+  }
+  if (action !== 'remove' && (!Object.hasOwn(change, 'value') || !isSceneData(change.value))){
+    throw new Error(tr('缺少有效的场景编辑数据', 'Missing valid scene edit data'));
+  }
+  const invalidTarget = () => new Error(tr(`目标不存在或索引无效：${path.join('.')}`, `Missing target or invalid index: ${path.join('.')}`));
+  let node = draft;
+  for (const step of path.slice(0, -1)){
+    const validKey = Array.isArray(node) ? isSceneIndex(step) : isSceneRecord(node) && typeof step === 'string' && step !== '-';
+    if (!validKey || !Object.hasOwn(node, step)) throw invalidTarget();
+    node = node[step];
+  }
+  const key = path.at(-1), value = action === 'remove' ? undefined : deepCopy(change.value);
+  if (Array.isArray(node)){
+    const index = key === '-' && action === 'add' ? node.length : key;
+    if (!isSceneIndex(index) || (action === 'add' ? index > node.length : index >= node.length)) throw invalidTarget();
+    if (action === 'add') node.splice(index, 0, value);
+    else if (action === 'remove') node.splice(index, 1);
+    else node[index] = value;
+  } else {
+    if (!isSceneRecord(node) || typeof key !== 'string' || key === '-' ||
+        (action !== 'add' && !Object.hasOwn(node, key))) throw invalidTarget();
+    if (action === 'remove') delete node[key];
+    else node[key] = value;
+  }
+}
+
+// 允许模型省略能自动补全的字段，但不能让宽容的导入校验悄悄丢掉用户请求的改动。
+function sceneDataRetained(input, normalized){
+  if (Array.isArray(input)){
+    return Array.isArray(normalized) && input.length === normalized.length &&
+      input.every((item, i) => sceneDataRetained(item, normalized[i]));
+  }
+  if (isSceneRecord(input)){
+    return isSceneRecord(normalized) && Object.entries(input).every(([key, item]) =>
+      Object.hasOwn(normalized, key) && sceneDataRetained(item, normalized[key]));
+  }
+  return input === normalized;
+}
+
+function uniqueWallValues(walls){
+  const byValue = new Map();
+  for (const wall of Array.isArray(walls) ? walls : []){
+    const key = JSON.stringify(wall);
+    byValue.set(key, byValue.has(key) ? null : wall);
+  }
+  return byValue;
+}
+
+function applySceneEdit(changes){
+  if (!Array.isArray(changes) || !changes.length || changes.length > 200){
+    throw new Error(tr('场景编辑需要 1 至 200 项改动', 'A scene edit needs 1 to 200 changes'));
+  }
+  const draft = JSON.parse(snap());
+  // 保留旧索引对应的墙对象，使插入和删除后的拆除标记与选中对象仍指向同一面墙。
+  let oldWalls = [...draft.plan.walls];
+  for (const change of changes){
+    const prev = draft.plan.walls, path = change?.path;
+    const replacedWall = Array.isArray(path) && path[0] === 'plan' && path[1] === 'walls' &&
+      path.length === 3 && change.action === 'replace' && Array.isArray(prev) ? prev[path[2]] : undefined;
+    patchSceneValue(draft, change);
+    if (path[0] !== 'plan' || path[1] !== 'walls') continue;
+    if (path.length === 2){
+      const oldValues = uniqueWallValues(prev), newValues = uniqueWallValues(draft.plan.walls);
+      oldWalls = oldWalls.map(wall => {
+        const key = JSON.stringify(wall);
+        return oldValues.get(key) === wall ? newValues.get(key) : undefined;
+      });
+    } else if (replacedWall){
+      const oldIndex = oldWalls.indexOf(replacedWall);
+      if (oldIndex >= 0) oldWalls[oldIndex] = draft.plan.walls[path[2]];
+    }
+  }
+  const normalized = sanitizePlan(draft.plan);
+  if (!normalized.ok || normalized.errors.length || !sceneDataRetained(draft.plan, normalized.plan)){
+    throw new Error(tr('户型几何或属性无效，本次编辑未应用', 'Invalid plan geometry or properties; the edit was not applied'));
+  }
+  const plan = normalized.plan;
+  const oldWallValues = new Set(PLAN.walls.map(w => JSON.stringify(w)));
+  if (plan.walls.some(w => (w[0] === w[2] || w[1] === w[3]) && !oldWallValues.has(JSON.stringify(w))) ||
+      plan.rooms.some(r => unsafeSceneKeys.has(r.id) || !Object.hasOwn(plan.materials, r.mat))){
+    throw new Error(tr('墙体尺寸、房间编号或材料无效', 'Invalid wall dimensions, room identifier or material'));
+  }
+  const remapWall = id => {
+    const wall = oldWalls[Number(id.slice(1))], index = draft.plan.walls?.indexOf(wall) ?? -1;
+    return index < 0 ? null : 'w' + index;
+  };
+  const explicitDemolished = changes.some(({path}) => path[0] === 'state' && path[1] === 'demolished');
+  const stateDraft = draft.state;
+  const furniture = Object.hasOwn(stateDraft, 'furniture') ? stateDraft.furniture : [];
+  const measures = Object.hasOwn(stateDraft, 'measures') ? stateDraft.measures : [];
+  const rooms = Object.hasOwn(stateDraft, 'rooms') ? stateDraft.rooms : {};
+  const demolished = explicitDemolished
+    ? (Object.hasOwn(stateDraft, 'demolished') ? stateDraft.demolished : [])
+    : state.demolished.map(remapWall).filter(Boolean);
+  if (!Array.isArray(furniture) || !Array.isArray(measures) || !Array.isArray(demolished) || !isSceneRecord(rooms) ||
+      measures.some(m => !m || ![m.a?.x, m.a?.y, m.b?.x, m.b?.y].every(Number.isFinite)) ||
+      demolished.some(id => typeof id !== 'string' || !/^w(?:0|[1-9]\d*)$/.test(id) || +id.slice(1) >= plan.walls.length)){
+    throw new Error(tr('家具、房间、拆除标记或测量数据无效', 'Invalid furniture, rooms, wall removal marks or measurements'));
+  }
+
+  const ids = new Set();
+  const items = furniture.map(item => {
+    const hasId = isSceneRecord(item) && Object.hasOwn(item, 'id');
+    const normalizedItem = isSceneRecord(item) ? normalizeFurn({...item, id: hasId ? item.id || 'draft' : 'draft'}) : null;
+    if (!normalizedItem || !sceneDataRetained(item, normalizedItem) ||
+        (hasId && (typeof item.id !== 'string' || !item.id.trim() || ids.has(item.id)))){
+      throw new Error(tr('家具数据、部件几何或唯一编号无效', 'Invalid furniture data, component geometry or unique identifier'));
+    }
+    if (hasId) ids.add(item.id);
+    else delete normalizedItem.id;
+    return normalizedItem;
+  });
+  const byRoomId = new Map(plan.rooms.map(r => [r.id, r]));
+  const previousRoom = new Map(PLAN.rooms.map(r => [r.id, r]));
+  const roomWasEdited = (id, field) => changes.some(({path}) => path[0] === 'state' && path[1] === 'rooms' &&
+    (path.length === 2 || path[2] === id && (path.length === 3 || !field || path[3] === field)));
+  for (const [id, room] of Object.entries(rooms)){
+    const def = byRoomId.get(id), prior = previousRoom.get(id);
+    if (!def && prior && !roomWasEdited(id)) continue;  // 删除房间时自动丢弃旧覆盖项
+    const invalidRoom = () => new Error(tr(`房间属性无效：${id}`, `Invalid room properties: ${id}`));
+    if (!def || !isSceneRecord(room) || Object.keys(room).some(k => k !== 'name' && k !== 'mat')) throw invalidRoom();
+    for (const field of ['name', 'mat']){
+      if (prior && !roomWasEdited(id, field) && room[field] === prior[field]) room[field] = def[field];
+    }
+    if ((Object.hasOwn(room, 'name') && (typeof room.name !== 'string' || !room.name.trim())) ||
+        (Object.hasOwn(room, 'mat') && (typeof room.mat !== 'string' || !Object.hasOwn(plan.materials, room.mat)))) throw invalidRoom();
+  }
+  for (const item of items){
+    if (item.id) continue;
+    do { item.id = uid(); } while (ids.has(item.id));
+    ids.add(item.id);
+  }
+
+  const selectedWall = ui.sel?.kind === 'wall' ? remapWall(ui.sel.id) : null;
+  const boundsChanged = JSON.stringify(plan.bounds) !== JSON.stringify(PLAN.bounds);
+  if (JSON.stringify(plan) !== JSON.stringify(PLAN)) installPlan(plan);
+  state = fixState({...stateDraft, furniture:items, measures, rooms, demolished, renders:state.renders});
+  if (ui.sel?.kind === 'wall') ui.sel = selectedWall ? {kind:'wall', id:selectedWall} : null;
+  validateSel();
+  if (boundsChanged) refit();
+  return true;
+}
+
+// 契约 §4 的操作；返回 true 表示生效，null 表示目标不存在或参数无效。
 const OPS = {
+  editScene(op){ return applySceneEdit(op.changes); },
   moveFurniture(op){
     const f = getF(op.id); if (!f) return null;
     f.cx = Number.isFinite(+op.cx) ? +op.cx : f.cx + numOr(op.dx);
@@ -2307,6 +2612,7 @@ const OPS = {
   },
   addFurniture(op){
     const type = String(op.type || 'box'), w = neat(op.w), d = neat(op.d);
+    if (type === 'component') return null;       // 通用构件由图纸或项目导入提供有效的部件几何
     let cx = Number.isFinite(+op.cx) ? +op.cx : null, cy = Number.isFinite(+op.cy) ? +op.cy : null;
     if (cx === null || cy === null){ const p = findFreeSpot(w, d); cx = p[0]; cy = p[1]; }
     const f = {id:op.id ? String(op.id) : uid(), type, name:String(op.name || '家具'), cx, cy, w, d,
@@ -2356,7 +2662,7 @@ function applyOps(ops){
   let touch = false;
   list.forEach((op, i) => {
     const name = op && op.op;
-    if (typeof name !== 'string' || typeof OPS[name] !== 'function'){
+    if (typeof name !== 'string' || !Object.hasOwn(OPS, name)){
       res.skipped++; res.errors.push(tr(`第 ${i + 1} 条：未知操作 ${name}`, `#${i + 1}: unknown op ${name}`)); return;
     }
     try {
@@ -2392,17 +2698,100 @@ window.Studio = {
   undo, redo,
 };
 
+function aiResponseMessage(status, body){
+  if (PUBLIC_ACCESS === 'owner' && status === 401){
+    return tr('公网登录已过期，请刷新页面后重新登录 AI。', 'Your public session expired. Refresh and sign in to AI again.');
+  }
+  try {
+    const detail = JSON.parse(body)?.error;
+    if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  } catch(e){}
+  return `HTTP ${status}`;
+}
+
+const publicAiOffline = () => tr('公网 AI 服务暂不可用，请刷新页面后重试。', 'The public AI service is temporarily unavailable. Refresh and try again.');
+
+// 公网隧道只传短 HTTP 请求，本机入口继续直接读取原来的 SSE。
+async function readPublicJob(path, cursor, signal){
+  for (let attempt = 1; ; attempt++){
+    const response = await fetch(`${path}?cursor=${cursor}`, {cache:'no-store', signal}).catch(error => {
+      if (signal.aborted || attempt === 3) throw error;
+      return null;
+    });
+    if (response && (attempt === 3 || ![502, 503, 504].includes(response.status))) return response;
+    if (response?.body) await response.body.cancel().catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 750 * attempt));
+  }
+}
+
+async function* publicJobUpdates(id, signal){
+  if (typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id)){
+    throw new Error(tr('服务未返回任务编号。', 'The service did not return a job ID.'));
+  }
+  const path = `/api/jobs/${id}`;
+  let cursor = 0, done = false;
+  try {
+    while (!done){
+      const response = await readPublicJob(path, cursor, signal);
+      if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
+      const update = await response.json();
+      if (!Array.isArray(update?.chunks) || !Number.isSafeInteger(update.cursor) || update.cursor < cursor || typeof update.done !== 'boolean'){
+        throw new Error(tr('服务返回了无效的任务进度。', 'The service returned invalid job progress.'));
+      }
+      cursor = update.cursor;
+      done = update.done;
+      yield update;
+      if (!done && !update.chunks.length) await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  } finally {
+    if (!done) void fetch(path, {method:'DELETE', keepalive:true}).catch(() => {});
+  }
+}
+
+async function* aiTextChunks(kind, init){
+  const owner = PUBLIC_ACCESS === 'owner';
+  const response = await fetch(owner ? `/api/jobs/${kind}` : `/api/${kind}`, init);
+  if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
+  if (owner){
+    const {id} = await response.json();
+    let errorBody = '';
+    for await (const {chunks, status, done, error} of publicJobUpdates(id, init.signal)){
+      if (error) throw new Error(error);
+      if (status >= 300){
+        errorBody += chunks.join('');
+        if (done) throw new Error(aiResponseMessage(status, errorBody));
+      } else {
+        yield* chunks;
+      }
+    }
+    return;
+  }
+  if (!response.body) throw new Error(tr('当前浏览器不支持流式读取', 'Streaming is not supported in this browser'));
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  try {
+    for (;;){
+      const {done, value} = await reader.read();
+      if (done) break;
+      yield decoder.decode(value, {stream:true});
+    }
+    const rest = decoder.decode();
+    if (rest) yield rest;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /* ======================= 图纸导入（契约 §5 /api/plan/import，任务 6） =======================
  * 文件菜单「导入图纸…」→ 浮层选文件（不限格式）+ 备注 → XHR POST /api/plan/import：
  * 上传阶段有真实百分比，codex 解析阶段显示估算进度，随时可中断（abort 后服务端会打断 codex）。
- * 成功后预览户型名 / 房间 / 面积 / 墙窗门 / 房间列表 / explanation →
- * 「应用方案」调 Studio.applyPlan（默认清空家具，勾选则保留），「取消」直接丢弃。
+ * 成功后预览户型 / 面积 / 墙窗门 / 识别家具与构件数量。
+ * 「应用方案」一次写入户型、家具和构件，勾选后同时保留现有家具和构件。
  * 失败或超时只改浮层，不触碰当前方案；2D / 3D 编辑始终可继续。
  * ===================================================================== */
 const IMP_MAX_BYTES = 25 * 1024 * 1024;    // 服务端请求体上限 40 MB，base64 膨胀后留余量
 const IMP_MAX_FILES = 20;
 const IMP_TIMEOUT_MS = 10 * 60 * 1000;     // 与服务端 IMPORT_TIMEOUT_MS 一致
-const impState = {files:[], plan:null, explanation:'', busy:false, xhr:null, t0:0, timer:0, stage:'', err:''};
+const impState = {files:[], plan:null, furniture:[], explanation:'', busy:false, xhr:null, ctrl:null, t0:0, timer:0, stage:'', err:''};
 const impEls = {};
 
 const impSize = n => n >= 1048576 ? (n/1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n/1024) + ' KB' : n + ' B';
@@ -2469,7 +2858,7 @@ function impErrShow(msg){
 }
 
 function impFail(msg){
-  impState.busy = false; impState.xhr = null; impStopTimer();
+  impState.busy = false; impState.xhr = impState.ctrl = null; impStopTimer();
   impShow('pick');
   impErrShow(msg);
   impUpdateStart();
@@ -2512,7 +2901,7 @@ function impAddFiles(list){
 
 function impOpen(){
   if (impState.busy) impAbort();           // 上一次还没结束：先中断，避免两个请求叠着跑
-  impState.files = []; impState.plan = null; impState.explanation = '';
+  impState.files = []; impState.plan = null; impState.furniture = []; impState.explanation = '';
   impState.t0 = 0; impState.stage = ''; impStopTimer();
   impEls.note.value = '';
   impEls.file.value = '';
@@ -2532,8 +2921,9 @@ function impClose(){
 }
 
 function impAbort(){
-  const xhr = impState.xhr;
-  impState.xhr = null; impState.busy = false; impStopTimer();
+  const {xhr, ctrl} = impState;
+  impState.xhr = impState.ctrl = null; impState.busy = false; impStopTimer();
+  ctrl?.abort();
   if (xhr){ try { xhr.abort(); } catch(e){} }
   impShow('pick'); impUpdateStart();
   toast(tr('已取消导入', 'Import cancelled'));
@@ -2550,73 +2940,96 @@ async function impFileB64(file){
 async function impStart(){
   if (impState.busy || !impState.files.length) return;
   impErrClear();
-  impState.plan = null; impState.explanation = '';
+  impState.plan = null; impState.furniture = []; impState.explanation = '';
   impState.busy = true; impState.t0 = Date.now();
+  const ctrl = new AbortController();
+  impState.ctrl = ctrl;
   impShow('prog'); impUpdateStart(); impStartTimer();
   impStageSet('up', tr('正在读取文件…', 'Reading files…'), {pct:2, spin:true});
 
-  let files = [];
+  const files = [];
   try {
-    for (const f of impState.files) files.push({name: f.name, mime: f.type || 'application/octet-stream', data: await impFileB64(f)});
-  } catch(e){ return impFail(tr('读取文件失败：', 'Could not read the file: ') + ((e && e.message) || '')); }
+    for (const f of impState.files){
+      files.push({name: f.name, mime: f.type || 'application/octet-stream', data: await impFileB64(f)});
+      if (impState.ctrl !== ctrl) return;
+    }
+  } catch(e){
+    if (impState.ctrl === ctrl) impFail(tr('读取文件失败：', 'Could not read the file: ') + ((e && e.message) || ''));
+    return;
+  }
   if (!files.length) return impFail(tr('没有可解析的文件。', 'There is no file to analyze.'));
-  if (!impState.busy) return;                       // 读取期间被取消
 
   const xhr = new XMLHttpRequest();
   impState.xhr = xhr;
-  xhr.open('POST', '/api/plan/import');
+  const owner = PUBLIC_ACCESS === 'owner';
+  xhr.open('POST', owner ? '/api/jobs/plan-import' : '/api/plan/import');
   xhr.setRequestHeader('content-type', 'application/json');
   xhr.timeout = IMP_TIMEOUT_MS;
   impStageSet('up', tr('正在上传图纸…', 'Uploading the drawing…'), {pct:3, spin:true});
 
   xhr.upload.onprogress = e => {
-    if (!e.lengthComputable) return;
+    if (impState.xhr !== xhr || !e.lengthComputable) return;
     impStageSet('up', tr('正在上传图纸…', 'Uploading the drawing…'), {pct: Math.round(e.loaded / e.total * 100), spin:true});
   };
   xhr.upload.onload = () => {
     if (impState.xhr !== xhr) return;
     impStageSet('ai', tr('正在识别图纸（AI 解析），可能需要 1–3 分钟…', 'Analyzing the drawing (AI), this can take 1–3 minutes…'), {indet:true, spin:true});
   };
-  xhr.onload = () => {
+  xhr.onload = async () => {
     if (impState.xhr !== xhr) return;
-    impState.xhr = null; impState.busy = false; impStopTimer();
-    impStageSet('check', tr('正在校验户型…', 'Validating the plan…'), {indet:true, spin:true});
+    let status = xhr.status, body = xhr.responseText;
+    if (owner && status >= 200 && status < 300){
+      try {
+        const {id} = JSON.parse(body);
+        body = '';
+        for await (const update of publicJobUpdates(id, ctrl.signal)){
+          if (update.error) throw new Error(update.error);
+          body += update.chunks.join('');
+          if (update.done) status = update.status;
+        }
+      } catch(e){
+        if (impState.xhr === xhr) impFail(e.message || tr('无法读取图纸解析任务。', 'Could not read the drawing job.'));
+        return;
+      }
+    }
+    if (impState.xhr !== xhr) return;
+    impState.xhr = impState.ctrl = null; impState.busy = false; impStopTimer();
+    impStageSet('check', tr('正在校验解析结果…', 'Validating the result…'), {indet:true, spin:true});
     let data = null;
-    try { data = JSON.parse(xhr.responseText || '{}'); } catch(e){}
-    if (xhr.status >= 200 && xhr.status < 300 && data && data.plan){
+    try { data = JSON.parse(body || '{}'); } catch(e){}
+    if (status >= 200 && status < 300 && data && data.plan){
       const res = sanitizePlan(data.plan);
       if (!res.ok) return impFail(tr('解析结果不是有效户型：', 'The result is not a valid plan: ') + (res.errors[0] || ''));
       impState.plan = res.plan;
+      impState.furniture = drawingFurniture(data.furniture);
       impState.explanation = typeof data.explanation === 'string' ? data.explanation.trim() : '';
       impStageSet('check', tr('解析完成', 'Done'), {pct:100, allDone:true, spin:false});
       impEls.keep.checked = false;
       impShow('preview'); impRenderPreview(); impUpdateStart();
       return;
     }
-    let msg = data && typeof data.error === 'string' && data.error.trim() ? data.error.trim() : '';
-    if (!msg) msg = xhr.status === 503
+    let msg = aiResponseMessage(status, body);
+    if (msg === `HTTP ${status}`) msg = status === 503
       ? tr('图纸解析服务不可用（未检测到 codex 或未登录）。', 'The drawing service is unavailable (codex missing or not signed in).')
-      : tr(`服务返回 HTTP ${xhr.status}`, `Server returned HTTP ${xhr.status}`);
+      : tr(`服务返回 HTTP ${status}`, `Server returned HTTP ${status}`);
     impFail(msg);
   };
   xhr.onerror = () => {
     if (impState.xhr !== xhr) return;
-    impState.xhr = null;
-    impFail(tr('无法连接本地服务：请先在项目根运行 node server.mjs（file:// 打开时请直接用 JSON 方案导入）。',
+    impFail(owner ? tr('无法连接公网服务，请重试。', 'Cannot reach the public service. Try again.') :
+      tr('无法连接本地服务：请先在项目根运行 node server.mjs（file:// 打开时请直接用 JSON 方案导入）。',
               'Cannot reach the local service — run node server.mjs in the project root (or import a plan JSON when opened via file://).'));
   };
   xhr.ontimeout = () => {
     if (impState.xhr !== xhr) return;
-    impState.xhr = null;
     impFail(tr('解析超时（10 分钟）：服务没有及时返回结果。', 'Timed out after 10 minutes — the service did not return in time.'));
   };
-  xhr.onabort = () => { if (impState.xhr === xhr){ impState.xhr = null; impState.busy = false; impStopTimer(); } };
+  xhr.onabort = () => { if (impState.xhr === xhr){ impState.xhr = impState.ctrl = null; impState.busy = false; impStopTimer(); } };
 
   try {
     if (impState.xhr !== xhr) return;               // 提交前就被取消
     xhr.send(JSON.stringify({files, note: impEls.note.value.trim()}));
   } catch(e){
-    impState.xhr = null;
     impFail(tr('无法提交解析请求：', 'Could not send the request: ') + ((e && e.message) || ''));
   }
 }
@@ -2627,6 +3040,7 @@ function impRenderPreview(){
   impEls.planName.textContent = p.name;
   impEls.planSrc.textContent = tr('来自图纸', 'From drawing');
   const total = p.rooms.filter(r => r.counted !== false).reduce((a, r) => a + area(r.poly), 0);
+  const components = componentCount(impState.furniture);
   impEls.stats.innerHTML = '';
   const cell = (label, value) => {
     const d = document.createElement('div');
@@ -2634,11 +3048,18 @@ function impRenderPreview(){
     const b = document.createElement('b'); b.textContent = value;
     d.append(s, b); return d;
   };
+  const openings = cell(tr('墙 / 窗 / 门', 'Walls / Windows / Doors'), `${p.walls.length} / ${p.wins.length} / ${p.doors.length}`);
+  openings.classList.toggle('wide', components > 0);
   impEls.stats.append(
     cell(tr('房间', 'Rooms'), String(p.rooms.length)),
     cell(tr('总面积', 'Total area'), fmt(total) + ' m²'),
-    cell(tr('墙 / 窗 / 门', 'Walls / Windows / Doors'), `${p.walls.length} / ${p.wins.length} / ${p.doors.length}`),
+    openings,
+    cell(tr('识别到的家具', 'Recognized furniture'), String(impState.furniture.length - components)),
   );
+  if (components) impEls.stats.append(cell(tr('识别到的构件', 'Recognized components'), String(components)));
+  impEls.keepText.textContent = componentCount(state.furniture)
+    ? tr('同时保留现有家具和构件', 'Also keep current furniture and components')
+    : tr('同时保留现有家具', 'Also keep current furniture');
   impEls.rooms.innerHTML = '';
   p.rooms.forEach(r => {
     const li = document.createElement('li');
@@ -2655,13 +3076,21 @@ function impApplyPlan(){
   const p = impState.plan;
   if (!p) return;
   const keep = impEls.keep.checked;
-  const res = window.Studio.applyPlan(p, {clearFurniture: !keep, freshState: true});
+  const furniture = impState.furniture;
+  const res = window.Studio.applyPlan(p, {furniture, clearFurniture: !keep, freshState: true});
   if (!res || !res.ok){
     return impErrShow(tr('应用失败：', 'Could not apply: ') + ((res && res.errors && res.errors[0]) || ''));
   }
   const name = (res.plan && res.plan.name) || p.name;
+  const components = componentCount(furniture), furnitureCount = furniture.length - components;
   impClose();
-  toast(tr(`已应用方案「${name}」`, `Applied the plan “${name}”`));
+  if (components){
+    return toast(tr(`已应用方案「${name}」，导入 ${furnitureCount} 件家具和 ${components} 个构件`,
+      `Applied the plan “${name}” with ${furnitureCount} furniture items and ${components} components`));
+  }
+  toast(furniture.length
+    ? tr(`已应用方案「${name}」，导入 ${furniture.length} 件家具`, `Applied the plan “${name}” with ${furniture.length} furniture items`)
+    : tr(`已应用方案「${name}」`, `Applied the plan “${name}”`));
 }
 
 function impRelang(){
@@ -2675,7 +3104,7 @@ function impRelang(){
   impEls.cancel.textContent = tr('取消导入', 'Cancel import');
   impEls.cancelApply.textContent = tr('取消', 'Cancel');
   impEls.apply.textContent = tr('应用方案', 'Apply plan');
-  impEls.keepText.textContent = tr('保留现有家具（默认清空）', 'Keep current furniture (cleared by default)');
+  impEls.keepText.textContent = tr('同时保留现有家具', 'Also keep current furniture');
   impEls.progHint.textContent = tr('导入过程可取消，页面可继续操作', 'You can cancel anytime; the page stays usable');
   const stageTexts = [tr('上传', 'Upload'), tr('识别', 'Analyze'), tr('校验', 'Validate')];
   impEls.stages.querySelectorAll('span').forEach((el, i) => { el.textContent = stageTexts[i]; });
@@ -2823,11 +3252,14 @@ function paintChatNotice(){
   if (!chatState.notice){ box.style.display = 'none'; box.textContent = ''; return; }
   box.style.display = 'block';
   box.classList.toggle('warn', chatState.notice === 'codex');
-  box.textContent = chatState.notice === 'down'
-    ? tr('本地服务未连接：请先在项目根运行 node server.mjs，再刷新页面。对话与效果图暂不可用，2D / 3D 编辑不受影响。',
-         'Local service is not reachable: run node server.mjs in the project root, then reload. Chat stays unavailable; 2D / 3D editing keeps working.')
-    : tr('未检测到 codex（未安装或未登录）：对话可能无法回复。请先安装并登录 codex。',
-         'codex is missing or not signed in: replies may fail. Install and sign in to codex first.');
+  if (chatState.notice === 'down'){
+    box.textContent = PUBLIC_ACCESS === 'owner' ? publicAiOffline() :
+      tr('本地服务未连接：请先在项目根运行 node server.mjs，再刷新页面。对话与效果图暂不可用，2D / 3D 编辑不受影响。',
+         'Local service is not reachable: run node server.mjs in the project root, then reload. Chat stays unavailable; 2D / 3D editing keeps working.');
+  } else {
+    box.textContent = tr('未检测到 codex（未安装或未登录）：对话可能无法回复。请先安装并登录 codex。',
+                         'codex is missing or not signed in: replies may fail. Install and sign in to codex first.');
+  }
 }
 
 function renderChatChips(){
@@ -2864,10 +3296,15 @@ function chatPane(which){
   else if (onRender) renderPaneShown();
 }
 
-// 上下文：mode / selection / plan / state（选中或当前房间的家具）/ view（房间 + 3D 相机位姿）
+function editableChatState(){
+  const {renders, ...editable} = Studio.getState();
+  return editable;
+}
+
+// 当前选中和视角指明关注点，整份方案提供跨房间编辑所需的索引。
 async function buildChatContext(){
   const sel = Studio.getSelection();
-  const full = Studio.getState();
+  const plan = Studio.getPlan(), state = editableChatState();
   const selF = sel.kind === 'furn' ? getF(sel.id) : null;
   let roomId = sel.kind === 'room' ? sel.id : (selF ? roomAtPoint(selF.cx, selF.cy) : null);
   // 没有选中时，3D 下取视线中心所在的房间（groundAt 返回 2D 世界坐标）
@@ -2878,11 +3315,6 @@ async function buildChatContext(){
       if (g) roomId = roomAtPoint(g.x, g.y);
     } catch(e){}
   }
-  const furniture = selF
-    ? [selF]
-    : roomId ? full.furniture.filter(f => roomAtPoint(f.cx, f.cy) === roomId) : full.furniture;
-  const {renders, ...rest} = full;
-  const state = {...rest, furniture, rooms: roomId && full.rooms[roomId] ? {[roomId]: full.rooms[roomId]} : full.rooms};
   const view = {camera: null, room: roomId};
   const images = [];
   if (Studio.is3D()){
@@ -2893,7 +3325,7 @@ async function buildChatContext(){
       if (cut > 0 && url.startsWith('data:')) images.push({mime: 'image/png', data: url.slice(cut + 1)});
     } catch(e){}
   }
-  return [{mode: Studio.is3D() ? '3d' : '2d', selection: sel.kind ? sel : null, plan: Studio.getPlan(), state, view}, images];
+  return [{mode: Studio.is3D() ? '3d' : '2d', selection: sel.kind ? sel : null, plan, state, view}, images];
 }
 
 // focus：选中目标，3D 下飞到所在房间，1.5 秒后恢复原选中（用户自己改选则不动）
@@ -2915,10 +3347,17 @@ function chatFocus(focus){
   }, 1500);
 }
 
-// result：>3 个 op 或含 deleteFurniture / setPlan 时先确认；applyOps 整体入撤销栈
-function chatResult(r, bubble){
+// 局部方案编辑按发送时的索引寻址。期间继续编辑则用最新方案重新生成补丁。
+function chatResult(r, bubble, context){
   const ops = Array.isArray(r.ops) ? r.ops : [];
   if (ops.length){
+    if (ops.some(op => op?.op === 'editScene') &&
+        (JSON.stringify(context.plan) !== JSON.stringify(Studio.getPlan()) ||
+         JSON.stringify(context.state) !== JSON.stringify(editableChatState()))){
+      chatMeta(bubble, tr('等待回复时方案已改变，请基于当前方案重发这条指令。',
+        'The design changed while the assistant was working. Send the request again for the current design.'));
+      return;
+    }
     const hasPlan = ops.some(o => o && o.op === 'setPlan'), hasDel = ops.some(o => o && o.op === 'deleteFurniture');
     const risky = ops.length > 3 || hasPlan || hasDel;
     if (risky && !confirm(tr(
@@ -2941,6 +3380,7 @@ function chatResult(r, bubble){
 function chatErrText(e){
   const msg = (e && e.message) || String(e);
   if (e instanceof TypeError || /fetch|network|load failed/i.test(msg)){
+    if (PUBLIC_ACCESS === 'owner') return tr('无法连接公网 AI 服务，请重试。', 'Cannot reach the public AI service. Try again.');
     return tr('无法连接本地服务，请确认 node server.mjs 正在运行（对话不可用不影响编辑）。',
               'Cannot reach the local service — make sure node server.mjs is running (editing still works).');
   }
@@ -2962,25 +3402,16 @@ async function chatSend(){
     const [context, images] = await buildChatContext();
     if (ctrl.signal.aborted) throw new DOMException('aborted', 'AbortError');
     chatStatus(tr('正在思考…', 'Thinking…'), true);
-    const res = await fetch('/api/chat', {
+    const chunks = aiTextChunks('chat', {
       method:'POST',
       headers:{'content-type':'application/json'},
       body: JSON.stringify({sessionId: chatSid, message: text, context, images}),
       signal: ctrl.signal,
     });
-    if (!res.ok){
-      let m = `HTTP ${res.status}`;
-      try { const j = await res.json(); if (j && j.error) m = j.error; } catch(e){}
-      throw new Error(m);
-    }
-    if (!res.body) throw new Error(tr('当前浏览器不支持流式读取', 'Streaming is not supported in this browser'));
-    const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '', acc = '', got = false, erred = false;
     const ensure = () => cur || (cur = chatAdd('bot', ''));
-    for (;;){
-      const {done, value} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream:true});
+    for await (const textChunk of chunks){
+      buf += textChunk;
       const step = takeSSE(buf); buf = step.rest;
       for (const ev of step.events){
         const type = ev && ev.type;
@@ -2993,7 +3424,7 @@ async function chatSend(){
           const r = ev.result;
           const reply = typeof r.reply === 'string' && r.reply.trim() ? r.reply : acc;
           const m = ensure(); m.text = reply; m.el.innerHTML = mdLite(reply);
-          chatResult(r, m);
+          chatResult(r, m, context);
           chatScroll();
         }
         else if (type === 'error'){ erred = true; chatAdd('err', String(ev.message || tr('服务返回错误', 'The service returned an error'))); }
@@ -3016,6 +3447,7 @@ async function chatSend(){
 }
 
 async function chatProbe(){
+  if (PUBLIC_ACCESS === 'guest') return null;
   try {
     // /api/health 首次探测要跑 zsh 定位 codex、--version、login status 与模型表（各自 8–10s 上限），
     // 装了 codex 的机器冷启动常超过 5s；过早中止会把「服务在跑」误判成「未连接」并锁死输入。
@@ -3076,7 +3508,7 @@ const R_EYE = 1500, R_LOOK = 1100;            // mm：1.5 m 眼高看向房间�
 
 const renderState = {
   online: null, codex: true, probedAt: 0, busy: false, ctrl: null,
-  style: '现代简约', cam: 'current', corner: 0, refURL: '', refT: 0, last: null, lb: null,
+  style: '现代简约', cam: 'current', corner: 0, refURL: '', refT: 0, refRevision: 0, last: null, lb: null,
 };
 const renderEls = {};
 
@@ -3182,7 +3614,7 @@ function renderNotice(){
   let msg = '', warn = false;
   if (renderState.online === null) return;
   if (renderState.online === false){
-    msg = tr('本地服务未连接：请先在项目根运行 node server.mjs，再刷新页面。效果图暂不可用，2D / 3D 编辑不受影响。',
+    msg = PUBLIC_ACCESS === 'owner' ? publicAiOffline() : tr('本地服务未连接：请先在项目根运行 node server.mjs，再刷新页面。效果图暂不可用，2D / 3D 编辑不受影响。',
              'Local service is not reachable: run node server.mjs in the project root, then reload. Renders stay unavailable; 2D / 3D editing keeps working.');
     warn = true;
   } else if (!renderState.codex){
@@ -3212,7 +3644,9 @@ function renderAvailability(){
   if (!e.gen) return;
   const online = renderState.online === true;
   const is3 = Studio.is3D();
-  const why = !online ? tr('本地服务不可用', 'Local service unavailable')
+  e.capture.disabled = !is3;
+  e.capture.title = is3 ? '' : tr('请先切换到 3D', 'Switch to 3D first');
+  const why = !online ? tr('AI 服务不可用', 'AI service unavailable')
     : !is3 ? tr('需要 3D 场景', 'Needs the 3D scene') : '';
   e.gen.disabled = !!why || renderState.busy;
   e.gen.title = why;
@@ -3246,6 +3680,7 @@ function renderSetBusy(on){
 function renderRefShow(url){
   const img = renderEls.ref, wrap = renderEls.refWrap;
   if (!img) return;
+  renderState.refRevision++;
   renderState.refURL = url;
   wrap.classList.remove('bad');
   renderEls.refRetry.hidden = true;
@@ -3353,15 +3788,30 @@ async function renderShot(){
   return typeof url === 'string' && url.length > 100 ? url : null;
 }
 
+async function renderCaptureCurrent(){
+  if (!Studio.is3D()) return;
+  try {
+    const shot = await renderShot();
+    if (shot){
+      clearTimeout(renderState.refT);
+      renderRefShow(shot);
+      return;
+    }
+  } catch(e){}
+  toast(tr('截图失败，请重试', 'Screenshot failed. Try again.'));
+}
+
 let renderRefBusy = false;
 async function renderRefreshRef(){
   if (!Studio.is3D() || renderRefBusy) return;
   renderRefBusy = true;
+  const revision = renderState.refRevision;
   try {
     await renderWaitFly();
     await new Promise(r => setTimeout(r, 80));    // 让镜头动效最后一帧落地
+    if (!Studio.is3D() || revision !== renderState.refRevision) return;
     const url = await Studio.shot({scale: 1, clean: true});
-    if (url) renderRefShow(url);
+    if (url && revision === renderState.refRevision) renderRefShow(url);
   } catch(e){}
   finally { renderRefBusy = false; }
 }
@@ -3435,7 +3885,7 @@ async function renderGenerate(opts = {}){
     };
     const cut = shot.indexOf(',');
     renderStatus(tr('已提交，正在生成，可能需要 1–3 分钟…', 'Submitted — generating, this can take 1–3 minutes…'), true);
-    const res = await fetch('/api/render', {
+    const chunks = aiTextChunks('render', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({
@@ -3445,19 +3895,10 @@ async function renderGenerate(opts = {}){
       }),
       signal: ctrl.signal,
     });
-    if (!res.ok){
-      let m = `HTTP ${res.status}`;
-      try { const j = await res.json(); if (j && j.error) m = j.error; } catch(e){}
-      throw new Error(m);
-    }
-    if (!res.body) throw new Error(tr('当前浏览器不支持流式读取', 'Streaming is not supported in this browser'));
-    if (renderState.online !== true){ renderState.online = true; renderNotice(); renderAvailability(); }
-    const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = '', err = '';
-    for (;;){
-      const {done, value} = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, {stream: true});
+    for await (const textChunk of chunks){
+      if (renderState.online !== true){ renderState.online = true; renderNotice(); renderAvailability(); }
+      buf += textChunk;
       const step = takeSSE(buf); buf = step.rest;
       for (const ev of step.events){
         const type = ev && ev.type;
@@ -3498,9 +3939,10 @@ async function renderGenerate(opts = {}){
     } else {
       const msg = (e && e.message) || String(e);
       const net = e instanceof TypeError || /fetch|network|load failed/i.test(msg);
-      renderErr(net
-        ? tr('无法连接本地服务，请确认 node server.mjs 正在运行。', 'Cannot reach the local service — make sure node server.mjs is running.')
-        : msg);
+      const offline = PUBLIC_ACCESS === 'owner'
+        ? tr('无法连接公网 AI 服务，请重试。', 'Cannot reach the public AI service. Try again.')
+        : tr('无法连接本地服务，请确认 node server.mjs 正在运行。', 'Cannot reach the local service — make sure node server.mjs is running.');
+      renderErr(net ? offline : msg);
       renderStatus(tr('生成失败', 'Failed'), false);
       if (net){ renderState.online = false; renderNotice(); }
     }
@@ -3541,6 +3983,7 @@ function renderInit(){
   const id = s => $(s);
   Object.assign(renderEls, {
     root: id('#render'), cam: id('#rCam'), corners: id('#rCorners'), styles: id('#rStyles'),
+    capture: id('#rCapture'),
     note: id('#rNote'), st: id('#rSt'), gen: id('#rGen'), stop: id('#rStop'),
     off: id('#renderOff'), err: id('#renderErr'),
     ref: id('#rRef'), refWrap: id('#rRefWrap'), refRetry: id('#rRefRetry'), refCap: id('#rRefCap'),
@@ -3553,6 +3996,7 @@ function renderInit(){
     renderState.cam = renderEls.cam.value;
     renderCorners(); renderFly(); renderAvailability();
   };
+  renderEls.capture.onclick = renderCaptureCurrent;
   renderEls.gen.onclick = () => renderGenerate();
   renderEls.re.onclick = () => renderGenerate();
   renderEls.stop.onclick = () => { try { renderState.ctrl?.abort(); } catch(e){} };
@@ -3596,35 +4040,46 @@ const tourEls = {
 let tourSteps = [], tourIdx = 0, tourOn = false, tourEntered = -1;
 
 function tourDefs(){
+  const guest = PUBLIC_ACCESS === 'guest';
   return [
     { title: tr('欢迎使用户型装修设计', 'Welcome to the floor plan studio'),
-      body: tr('左边挑家具，中间摆布局，右边改属性或让助手直接改方案。\n花一分钟熟悉一下界面。',
-               'Pick furniture on the left, arrange it in the middle, and edit or ask the assistant on the right.\nOne minute to get oriented.') },
+      body: guest ? tr('左边挑家具，中间摆布局，右边调整房间和家具属性。\n花一分钟熟悉一下界面。',
+                       'Pick furniture on the left, arrange it in the middle, and edit properties on the right.\nOne minute to get oriented.')
+        : tr('左边挑家具，中间摆布局，右边改属性或让助手直接改方案。\n花一分钟熟悉一下界面。',
+             'Pick furniture on the left, arrange it in the middle, and edit or ask the assistant on the right.\nOne minute to get oriented.') },
     { sel: '#lib', title: tr('① 家具库', '1. Furniture library'),
       body: tr('把床、沙发、柜子拖进平面图，松开后自动贴墙吸附。\n选中家具可拖动位置、拖角缩放，按 R 旋转。',
                'Drag beds, sofas and cabinets into the plan; they snap to walls.\nSelect one to move or resize it, press R to rotate.') },
     { sel: '#viewSeg', title: tr('② 2D / 3D 随时切换', '2. Switch 2D / 3D anytime'),
       body: tr('按 T 或点这里切换。3D 里可以鸟瞰、漫游，也能直接拖动家具；\n左侧列表点房间可以飞过去，点「进入」看室内。',
                'Press T or click here. In 3D you can orbit, walk and drag furniture;\nclick a room on the left to fly there, or step inside.') },
-    { sel: '#ptabs', title: tr('③ 右侧三个页签', '3. Three tabs on the right'),
-      body: tr('属性：改房间名、换地面材质、看面积造价。\n助手：用一句话改方案，比如「客厅换个三人沙发」。\n效果图：选机位和风格，生成照片级渲染。',
-               'Properties: rename rooms, change flooring, see areas and cost.\nAssistant: change the plan in plain words.\nRenders: pick a camera and style to generate a photoreal image.') },
-    { sel: '#importPlanFile', title: tr('④ 第一步：把图纸交给助手', '4. Step one: hand over the drawing'),
-      body: tr('文件 → 导入图纸…，上传户型图（图片、PDF、CAD 导出都行，不限格式）。\n助手会自动识别墙体、门窗和房间，预览确认后点「应用方案」生成图纸。',
-               'File → Import drawing… and upload a floor plan (image, PDF or CAD export — any format).\nThe assistant reads walls, doors and rooms; check the preview, then apply it.'),
-      enter(){ const d = document.querySelector('details.menu'); if (d) d.open = true; },
-      leave(){ const d = document.querySelector('details.menu'); if (d) d.open = false; } },
-    { sel: '#chat', title: tr('⑤ 第二步：对话修改', '5. Step two: change it by talking'),
-      body: tr('切到「助手」，直接说要改哪里：\n「把客厅沙发放到窗边」「主卧衣柜加宽到 2.4 米」「厨房换成 600 地砖」。\n助手返回改动预览，确认后才应用，一次 Ctrl+Z 可整体撤销。在 3D 里提问会自动带上当前视角。',
-               'Open the Assistant tab and say what to change:\n“move the sofa to the window”, “widen the wardrobe to 2.4 m”, “use 600 tiles in the kitchen”.\nYou preview the change before it is applied, and one Ctrl+Z undoes the whole batch. In 3D your current view is attached automatically.'),
-      enter(){ try { chatPane('chat'); } catch(e) {} },
-      leave(){ try { chatPane('props'); } catch(e) {} } },
-    { sel: '#render', title: tr('⑥ 生成效果图', '6. Generate a render'),
-      body: tr('在 3D 里挑机位和风格，把当前视角交给助手生成照片级效果图；\n也可以进入某个房间，单独生成这个房间的室内效果图。',
-               'In 3D pick a camera and style, and turn the current view into a photoreal render;\nor step into a room and generate that room on its own.'),
-      enter(){ try { chatPane('render'); } catch(e) {} },
-      leave(){ try { chatPane('props'); } catch(e) {} } },
-    { sel: '#stage', title: tr('⑦ 平面图操作', '7. Working the plan'),
+    ...(guest ? [
+      { sel: '#ptabs', title: tr('③ 属性', '3. Properties'),
+        body: tr('修改房间名称或地面材质，查看面积与材料费用。', 'Change room names or flooring and review areas and material costs.') },
+      { sel: '.menu', title: tr('④ 打开或保存项目', '4. Open or save a project'),
+        body: tr('从文件菜单导入已有方案，或打开 125-C 示例。可把调整后的方案导出为项目文件。',
+                 'Use the File menu to import a project or open the 125-C sample. Export your edits as a project file.') },
+    ] : [
+      { sel: '#ptabs', title: tr('③ 右侧三个页签', '3. Three tabs on the right'),
+        body: tr('属性：改房间名、换地面材质、看面积造价。\n助手：用一句话改方案，比如「客厅换个三人沙发」。\n效果图：选机位和风格，生成照片级渲染。',
+                 'Properties: rename rooms, change flooring, see areas and cost.\nAssistant: change the plan in plain words.\nRenders: pick a camera and style to generate a photoreal image.') },
+      { sel: '#importPlanFile', title: tr('④ 第一步：把图纸交给助手', '4. Step one: hand over the drawing'),
+        body: tr('文件 → 导入图纸…，上传户型图（图片、PDF、CAD 导出都行，不限格式）。\n助手会自动识别墙体、门窗和房间，预览确认后点「应用方案」生成图纸。',
+                 'File → Import drawing… and upload a floor plan (image, PDF or CAD export — any format).\nThe assistant reads walls, doors and rooms; check the preview, then apply it.'),
+        enter(){ const d = document.querySelector('details.menu'); if (d) d.open = true; },
+        leave(){ const d = document.querySelector('details.menu'); if (d) d.open = false; } },
+      { sel: '#chat', title: tr('⑤ 第二步：对话修改', '5. Step two: change it by talking'),
+        body: tr('切到「助手」，直接说要改哪里：\n「把客厅沙发放到窗边」「主卧衣柜加宽到 2.4 米」「厨房换成 600 地砖」。\n助手返回改动预览，确认后才应用，一次 Ctrl+Z 可整体撤销。在 3D 里提问会自动带上当前视角。',
+                 'Open the Assistant tab and say what to change:\n“move the sofa to the window”, “widen the wardrobe to 2.4 m”, “use 600 tiles in the kitchen”.\nYou preview the change before it is applied, and one Ctrl+Z undoes the whole batch. In 3D your current view is attached automatically.'),
+        enter(){ try { chatPane('chat'); } catch(e) {} },
+        leave(){ try { chatPane('props'); } catch(e) {} } },
+      { sel: '#render', title: tr('⑥ 生成效果图', '6. Generate a render'),
+        body: tr('在 3D 里挑机位和风格，把当前视角交给助手生成照片级效果图；\n也可以进入某个房间，单独生成这个房间的室内效果图。',
+                 'In 3D pick a camera and style, and turn the current view into a photoreal render;\nor step into a room and generate that room on its own.'),
+        enter(){ try { chatPane('render'); } catch(e) {} },
+        leave(){ try { chatPane('props'); } catch(e) {} } },
+    ]),
+    { sel: '#stage', title: guest ? tr('⑤ 平面图操作', '5. Working the plan') : tr('⑦ 平面图操作', '7. Working the plan'),
       body: tr('拖动平移，滚轮或双指缩放，F 适应窗口。\nV 选择、M 测量、X 拆改墙体；Delete 删除，Ctrl+Z 撤销。',
                'Drag to pan, wheel or pinch to zoom, F to fit.\nV select, M measure, X demolish; Delete removes, Ctrl+Z undoes.') },
   ];
@@ -3749,7 +4204,7 @@ import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {CSS2DRenderer, CSS2DObject} from 'three/addons/renderers/CSS2DRenderer.js';
 
 const stage = $('#stage'), host = $('#view3d');
-const H = 2.8, FOV = 45;                       // 层高 2.8 m
+const H = DEFAULT_WALL_HEIGHT / 1000, FOV = 45;   // 默认层高（米）
 // 世界原点跟着方案范围中心走，换户型时 2D / 3D 坐标系仍然对齐
 const PC = () => PLAN ? {x: PLAN.bounds.x + PLAN.bounds.w/2, y: PLAN.bounds.y + PLAN.bounds.h/2} : {x:6000, y:5300};
 const wx = x => (x - PC().x) / 1000, wz = y => (y - PC().y) / 1000, M = v => v / 1000;
@@ -4023,6 +4478,42 @@ const plate = (g, r, x, y, z) => g.add(lathe([[0, 0], [r*.6, 0], [r*.72, .008], 
 function buildFurniture(f){
   const g = new THREE.Group(), w = M(f.w), d = M(f.d), c = f.color || '#ddd', bz = -d/2, R = rng(Math.round(f.w*7 + f.d*13 + f.cx + f.cy));
   switch (f.type){
+    case 'component': {
+      for (const part of f.parts || []){
+        const width = part.w*w, depth = part.d*d, height = M(part.h);
+        const color = part.color || c;
+        const group = new THREE.Group();
+        group.position.set(part.x*w, M(part.y), part.z*d);
+        group.rotation.y = -(part.rot || 0) * Math.PI/180;
+        if (part.shape === 'cylinder'){
+          const cylinder = cyl(.5, .5, height, color);
+          cylinder.scale.set(width, 1, depth);
+          group.add(cylinder);
+        } else if (part.shape === 'stairs'){
+          const steps = part.steps;
+          const tread = depth/steps, rise = height/steps;
+          // 台阶从局部 -z 往 +z 逐级升高。
+          for (let i = 0; i < steps; i++){
+            group.add(box(width, rise*(i + 1), tread, color, 0, 0, -depth/2 + tread*(i + .5)));
+          }
+        } else if (part.shape === 'winder'){
+          // 拉伸方向转到 +y，平面第二轴取反后与局部 +z 对齐。
+          const toShapePoint = ([u, v]) => new THREE.Vector2(u*width, -v*depth);
+          const pivot = toShapePoint(part.pivot), edges = part.edges.map(toShapePoint);
+          const rise = height/part.steps;
+          for (let i = 0; i < part.steps; i++){
+            const shape = new THREE.Shape([pivot, edges[i], edges[i + 1]]);
+            const geometry = new THREE.ExtrudeGeometry(shape, {depth:rise*(i + 1), bevelEnabled:false});
+            geometry.rotateX(-Math.PI/2);
+            group.add(mesh(geometry, color));
+          }
+        } else {
+          group.add(box(width, height, depth, color));
+        }
+        g.add(group);
+      }
+      break;
+    }
     case 'bed': {
       const fr = woodM('#8d7258'), fab = fabric(c), fh = .3, mt = .22, top = fh + mt, n = Math.max(3, Math.round(w/.28)), sw = (w - .04)/n;
       g.add(box(w - .12, .06, d - .14, '#4a3e33', 0, 0, .03), rbox(w, fh - .06, d - .08, fr, 0, .06, .04, .015));        // 内缩踢脚 + 床箱
@@ -4510,7 +5001,7 @@ function buildFurniture(f){
 /* ======================= 建筑 ======================= */
 function clearGroup(g){ g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); g.clear(); }
 function wallBox([x0, y0, x1, y1], yb, yt, m){
-  if (yt - yb <= .001) return;
+  if (yt <= yb) return;
   const o = new THREE.Mesh(new THREE.BoxGeometry(M(x1-x0), yt-yb, M(y1-y0)), m || [wallMat, wallMat, capMat, wallMat, wallMat, wallMat]);
   o.position.set(wx((x0+x1)/2), (yb+yt)/2, wz((y0+y1)/2)); o.castShadow = o.receiveShadow = true; archUp.add(o);
   // 漫游辅助：墙体棱线 + 踢脚线，让相邻墙面、墙角一眼可分（仅漫游模式显示）
@@ -4540,10 +5031,22 @@ function bayLintels(){
   return out;
 }
 const overlaps = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+function visibleWallHeight(wall, cut){
+  const height = M(wallHeight(wall));
+  return cut < H ? Math.min(height, cut) : height;
+}
+function openingTop(rect, walls, cut){
+  // 洞口与相邻墙段的端点相接。有实测高度时，过梁与较低的一侧对齐。
+  const along = rect[2] - rect[0] >= rect[3] - rect[1] ? 0 : 1, across = 1 - along;
+  const adjacent = walls.filter(w => (w[along + 2] === rect[along] || w[along] === rect[along + 2])
+    && w[across] < rect[across + 2] && w[across + 2] > rect[across]);
+  return adjacent.some(w => w[5] !== undefined) ? Math.min(...adjacent.map(w => visibleWallHeight(w, cut))) : cut;
+}
 
 function buildArch(){
   clearGroup(archFloor); clearGroup(archUp); lampG.clear(); doors.length = 0; colliders = [];
   const top = opt.cut;
+  const walls = WALLS.filter((_, i) => !state.demolished.includes('w'+i));
   // 阴影相机跟着方案大小走，换大户型也不会被裁掉
   const ext = Math.max(BOUNDS.w, BOUNDS.h) / 2000 + 3;
   Object.assign(sun.shadow.camera, {left:-ext, right:ext, top:ext, bottom:-ext, near:1, far:ext*4});
@@ -4566,21 +5069,20 @@ function buildArch(){
     }
   });
   [...DOORS, ...SLIDES].forEach(d => { const [x0, y0, x1, y1] = d.rect; const s = box(M(x1-x0), .012, M(y1-y0), mat('#d8d0c0', {roughness:.3}), wx((x0+x1)/2), 0, wz((y0+y1)/2)); s.castShadow = false; archFloor.add(s); });
-  WALLS.forEach((w, i) => {
-    if (state.demolished.includes('w'+i)) return;
-    wallBox(w, 0, w[4] === 'low' ? Math.min(1, top) : top);
+  walls.forEach(w => {
+    wallBox(w, 0, visibleWallHeight(w, top));
     colliders.push([wx(w[0]), wz(w[1]), wx(w[2]), wz(w[3])]);
   });
-  // 门洞、飘窗洞口上方过梁（飘窗洞口由房间轮廓短边推导，换户型同样生效）
-  [...DOORS.map(d => [d.rect, 2.1]), ...SLIDES.map(s => [s.rect, s.v ? 2.4 : 2.1]), ...bayRuns]
-    .forEach(([r, h]) => { if (top > h) wallBox(r, h, top); });
+  // 飘窗洞口上方过梁（洞口由房间轮廓短边推导）
+  bayRuns.forEach(([r, h]) => wallBox(r, h, top));
   const topY = Math.min(...WALLS.map(w => w[1]), ...WINS.map(w => w[1]));
   WINS.forEach(r => {
     // 窗台高度：飘窗 0.45m，顶部外墙的高窗 1.4m，其余 0.9m（与 125-C 原图一致）
     const sill = bayAreas.some(b => overlaps(r, b)) ? .45 : (Math.abs(r[1] - topY) < 60 ? 1.4 : .9), head = 2.4;
-    wallBox(r, 0, Math.min(sill, top)); if (top > head) wallBox(r, head, top);
+    const windowTop = openingTop(r, walls, top);
+    wallBox(r, 0, Math.min(sill, windowTop)); wallBox(r, head, windowTop);
     colliders.push([wx(r[0]), wz(r[1]), wx(r[2]), wz(r[3])]);
-    const gTop = Math.min(head, top); if (gTop <= sill) return;
+    const gTop = Math.min(head, windowTop); if (gTop <= sill) return;
     const [x0, y0, x1, y1] = r, hz = (x1-x0) >= (y1-y0), L = M(hz ? x1-x0 : y1-y0), gh = gTop - sill, cx = wx((x0+x1)/2), cz = wz((y0+y1)/2);
     const pane = new THREE.Mesh(new THREE.BoxGeometry(hz ? L : .01, gh, hz ? .01 : L), glassMat); pane.position.set(cx, sill + gh/2, cz); archUp.add(pane);
     const n = Math.max(1, Math.round(L/.9));
@@ -4589,22 +5091,29 @@ function buildArch(){
     [sill + .02, gTop - .02].forEach(y => { const tr = new THREE.Mesh(new THREE.BoxGeometry(hz ? L : .06, .04, hz ? .06 : L), frameMat); tr.position.set(cx, y, cz); archUp.add(tr); });
   });
   DOORS.forEach(d => {
-    const pivot = new THREE.Group(), L = M(d.len), dh = Math.min(2.05, top);
+    const doorTop = openingTop(d.rect, walls, top);
+    wallBox(d.rect, 2.1, doorTop);
+    const pivot = new THREE.Group(), L = M(d.len), dh = Math.min(2.05, doorTop);
     pivot.position.set(wx(d.h[0]), 0, wz(d.h[1]));
     const leaf = box(L, dh, .04, mat(d.entry ? '#6b4f3a' : '#efe6d8', {roughness:.5}), L/2);
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 8), metal()); knob.position.set(L - .07, Math.min(1, dh - .05), 0); knob.scale.z = 2.2;
-    pivot.add(leaf, knob);
     const ang = v => Math.atan2(-v[1], v[0]), door = {pivot, a0:ang(d.c), a1:ang(d.o), open:true};
     if (door.a1 - door.a0 > Math.PI) door.a1 -= Math.PI*2; if (door.a0 - door.a1 > Math.PI) door.a1 += Math.PI*2;
-    door.cur = door.a1; pivot.rotation.y = door.cur; leaf.userData.door = knob.userData.door = door;
+    door.cur = door.a1; pivot.rotation.y = door.cur; leaf.userData.door = door; pivot.add(leaf);
+    if (dh > .05){
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 8), metal());
+      knob.position.set(L - .07, Math.min(1, dh - .05), 0); knob.scale.z = 2.2;
+      knob.userData.door = door; pivot.add(knob);
+    }
     doors.push(door); archUp.add(pivot);
   });
-  SLIDES.forEach(({rect:[x0, y0, x1, y1], v}) => {
-    const L = M(v ? y1-y0 : x1-x0), ph = Math.min(v ? 2.4 : 2.1, top), pl = L*.55;
+  SLIDES.forEach(({rect, v}) => {
+    const [x0, y0, x1, y1] = rect, head = v ? 2.4 : 2.1, slideTop = openingTop(rect, walls, top);
+    wallBox(rect, head, slideTop);
+    const L = M(v ? y1-y0 : x1-x0), ph = Math.min(head, slideTop), pl = L*.55;
     [[-1, -.02], [1, .02]].forEach(([s, off]) => {
       const c = s < 0 ? -L/2 + pl/2 : L/2 - pl/2, x = v ? wx((x0+x1)/2) + off : wx(x0) + L/2 + c, z = v ? wz(y0) + L/2 + c : wz((y0+y1)/2) + off;
       const p = new THREE.Mesh(new THREE.BoxGeometry(v ? .02 : pl, ph, v ? pl : .02), glassMat); p.position.set(x, ph/2, z); archUp.add(p);
-      [ph - .03, .03].forEach(y => { const fr = new THREE.Mesh(new THREE.BoxGeometry(v ? .04 : pl, .05, v ? pl : .04), frameMat); fr.position.set(x, y, z); archUp.add(fr); });
+      if (ph > .06) [ph - .03, .03].forEach(y => { const fr = new THREE.Mesh(new THREE.BoxGeometry(v ? .04 : pl, .05, v ? pl : .04), frameMat); fr.position.set(x, y, z); archUp.add(fr); });
       [-1, 1].forEach(e => { const fr = new THREE.Mesh(new THREE.BoxGeometry(.04, ph, .04), frameMat); fr.position.set(v ? x : x + e*pl/2, ph/2, v ? z + e*pl/2 : z); archUp.add(fr); });
     });
   });
@@ -5128,7 +5637,8 @@ function bindUI(){
     const id = roomView.id; if (!id || !window.renderGenerate) return;
     if (renderState && renderState.busy) return;
     if (renderState && renderState.online === false){
-      toast(tr('本地服务未连接：请先在项目根运行 node server.mjs', 'Local service is not running — start node server.mjs in the project root'));
+      toast(PUBLIC_ACCESS === 'owner' ? publicAiOffline() :
+        tr('本地服务未连接：请先在项目根运行 node server.mjs', 'Local service is not running — start node server.mjs in the project root'));
       return;
     }
     const msg = $('#rbMsg');
