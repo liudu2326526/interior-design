@@ -188,6 +188,14 @@ SSE 事件（`data: <json>\n\n`）：
 
 服务端将资料写入 `workdir/import-<uuid>/`，由 codex 识别图纸图片、PDF、CAD 导出或 JSON。纯 PNG、JPEG 或 WebP 请求将原图直接附给模型，并从模型回复读取 JSON。需要从工作目录读取资料时，模型将 JSON 写入 `plan.json`。两种输出都将 `furniture` 与结构字段并列，服务端校验后返回户型和家具。
 
+### `/api/jobs/plan-import` → 后台图纸识别
+
+- `POST /api/jobs/plan-import` 接收同样的文件 JSON，可附 `projectName`，入队后返回 `202` 和任务 `id`。模型回合最长 30 分钟。
+- `GET /api/jobs/plan-import` 返回当前访问范围的 `jobs`，含 `id`、`name`、`phase` 和毫秒时间戳。
+- `GET /api/jobs/<id>?cursor=0` 返回 `phase`、`done`、`status`、`chunks` 和下一游标。完成时 `chunks` 中是识别结果 JSON，失败时 `error` 提供失败信息。
+- `DELETE /api/jobs/<id>` 取消任务。公网通过已认证网关访问，项目成果按本机与公网访问范围隔离。
+- 任务和结果保存在 `~/.interior-design-studio/import-jobs`，可设置 `STUDIO_IMPORT_JOBS_DIR`。队列随服务重启恢复，结束后清理上传文件，结果最多保留 7 天或各范围最近 32 条。打开和编辑后的项目由浏览器保存。
+
 ```ts
 type ImportedFurniture = {
   type: string                 // 家具库类型或 component

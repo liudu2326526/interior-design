@@ -13,10 +13,13 @@ import { fileURLToPath } from 'node:url';
 import { locateCodex, readLogin, MIN_CODEX_VERSION } from './lib/codex/binary.mjs';
 import { CodexSession, SessionPool, probeModels } from './lib/codex/session.mjs';
 import { parsePatch, validatePlan, validateImportedFurniture, summarizePlan, extractJson } from './lib/codex/plan.mjs';
+import { createImportJobs, importJobError, isImportJobPath } from './lib/import-jobs.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJECTS = path.join(ROOT, 'projects');
 const WORKDIR = path.join(ROOT, 'workdir');
+const IMPORT_JOBS_DIR = path.resolve(process.env.STUDIO_IMPORT_JOBS_DIR ||
+  path.join(os.homedir(), '.interior-design-studio', 'import-jobs'));
 const PROMPTS = path.join(ROOT, 'prompts');
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 4173;
@@ -31,7 +34,7 @@ const MAX_PUBLIC_RENDER_BYTES = 24 * 1024 * 1024;
 const MAX_BODY = 40 * 1024 * 1024;
 const CHAT_TIMEOUT_MS = 10 * 60_000;
 const RENDER_TIMEOUT_MS = 8 * 60_000;
-const IMPORT_TIMEOUT_MS = 10 * 60_000;
+const IMPORT_TIMEOUT_MS = 30 * 60_000;
 const MAX_CONCURRENT_TURNS = 4;
 const MAX_CHAT_SESSIONS = 6;
 const SSE_HEARTBEAT_MS = 15_000;
@@ -351,6 +354,11 @@ async function readPrompt(name) {
 
 const pool = new SessionPool({ max: MAX_CHAT_SESSIONS, idleMs: 30 * 60_000 });
 const limitTurns = createLimiter(MAX_CONCURRENT_TURNS);
+const importJobs = createImportJobs({
+  directory: IMPORT_JOBS_DIR,
+  execute: (body, { id, workDirectory, signal }) =>
+    analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: true }),
+});
 
 // ---------------------------------------------------------------- 路由
 
@@ -398,6 +406,11 @@ async function route(req, res) {
   if (pathname === '/api/plan/import' || pathname === '/api/plan/import/') {
     if (!api(['POST'])) return;
     return handlePlanImport(req, res, publicRequest);
+  }
+  if (isImportJobPath(pathname)) {
+    const collection = pathname === '/api/jobs/plan-import';
+    if (!api(collection ? ['GET', 'POST'] : ['GET', 'DELETE'])) return;
+    return handleImportJob(req, res, pathname.slice('/api/jobs/'.length), url, publicRequest ? 'remote' : 'local');
   }
   if (publicRequest) {
     const render = PUBLIC_RENDER_URL.exec(pathname);
@@ -778,37 +791,83 @@ async function handleRender(req, res, publicRequest) {
 
 // ---------------------------------------------------------------- /api/plan/import
 
-async function handlePlanImport(req, res, publicRequest) {
-  let body;
-  try {
-    body = await readJson(req);
-  } catch (error) {
-    return sendJson(res, error.status || 400, { error: errorMessage(error) });
-  }
-
+function drawingImportRequest(body) {
   const files = Array.isArray(body?.files)
     ? body.files.filter((file) => file && typeof file.data === 'string' && file.data.length > 0).slice(0, 20)
     : [];
-  if (!files.length) return sendJson(res, 400, { error: '缺少 files（至少上传一个文件）' });
+  if (!files.length) throw importJobError(400, '缺少 files（至少上传一个文件）');
+  const note = typeof body.note === 'string' ? body.note.trim() : '';
+  return { files, note };
+}
 
-  const id = crypto.randomUUID();
-  const importDir = path.join(WORKDIR, `import-${id}`);
-  let activeSession = null;
-  let clientGone = false;
-  res.on('close', () => {
-    clientGone = true;
-    // 浏览器关掉页面 / 取消请求时，别让 codex 继续跑完整个解析回合。
-    if (activeSession) activeSession.interrupt().catch(() => {});
-  });
+async function handleImportJob(req, res, key, url, owner) {
   try {
+    if (key === 'plan-import' && req.method === 'GET') {
+      return sendJson(res, 200, { jobs: await importJobs.list(owner) });
+    }
+    if (req.method === 'POST') {
+      const job = await importJobs.submit(owner, async () => {
+        const input = await readJson(req);
+        const body = drawingImportRequest(input);
+        const file = safeFileName(body.files[0].name, 1);
+        const name = (typeof input.projectName === 'string' ? input.projectName : '')
+          .replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 100)
+          || path.basename(file, path.extname(file));
+        return { body, name };
+      });
+      return sendJson(res, 202, job);
+    }
+    if (req.method === 'DELETE') {
+      const found = await importJobs.cancel(owner, key);
+      return sendJson(res, found ? 200 : 404, found ? { ok: true } : { error: '图纸任务不存在或已过期。' });
+    }
+    const value = url.searchParams.get('cursor') ?? '0';
+    const cursor = /^\d+$/.test(value) ? Number(value) : NaN;
+    const job = await importJobs.get(owner, key, cursor);
+    return sendJson(res, job ? 200 : 404, job || { error: '图纸任务不存在或已过期。' });
+  } catch (error) {
+    if (error.status) return sendJson(res, error.status, { error: errorMessage(error) });
+    console.error('图纸任务接口异常（drawing job API）:', error.message);
+    return sendJson(res, 503, { error: '图纸任务暂不可用，请稍后重试。' });
+  }
+}
+
+async function handlePlanImport(req, res, publicRequest) {
+  const controller = new AbortController();
+  res.once('close', () => controller.abort());
+  let body;
+  try {
+    body = drawingImportRequest(await readJson(req));
+  } catch (error) {
+    return sendJson(res, error.status || 400, { error: errorMessage(error) });
+  }
+  const id = crypto.randomUUID();
+  const result = await analyzePlanImport(body, {
+    id, importDir: path.join(WORKDIR, `import-${id}`), signal: controller.signal, cleanup: publicRequest,
+  });
+  if (!controller.signal.aborted) sendJson(res, result.status, result.body);
+}
+
+async function analyzePlanImport({ files, note }, { id, importDir, signal, cleanup }) {
+  const reply = (status, fields) => ({ status, body: { ...fields, id } });
+  let activeSession = null;
+  let stoppingSession = null;
+  const interrupt = () => {
+    const session = activeSession;
+    if (session) stoppingSession = session.interrupt().finally(() => session.dispose()).catch(() => {});
+  };
+  signal.addEventListener('abort', interrupt, { once: true });
+  try {
+    signal.throwIfAborted();
     const probe = await getProbe();
-    if (clientGone) return;
-    if (!probe.found) return sendJson(res, 503, { error: unusableMessage(probe) });
-    await fsp.mkdir(importDir, { recursive: true });
+    signal.throwIfAborted();
+    if (!probe.found) return reply(503, { error: unusableMessage(probe) });
+    await fsp.mkdir(importDir, { recursive: true, mode: 0o700 });
     const written = [];
     const images = [];
     const used = new Set(['plan.json']);
     for (let i = 0; i < files.length; i++) {
+      signal.throwIfAborted();
       const buffer = decodeBase64(files[i].data);
       if (!buffer) continue;
       const originalName = safeFileName(files[i].name, i + 1);
@@ -820,14 +879,13 @@ async function handlePlanImport(req, res, publicRequest) {
       }
       used.add(name.toLowerCase());
       const file = path.join(importDir, name);
-      await fsp.writeFile(file, buffer);
+      await fsp.writeFile(file, buffer, { mode: 0o600 });
       written.push(name);
       if (isImportImage(buffer)) images.push({ name, file });
     }
-    if (!written.length) return sendJson(res, 400, { error: '上传的文件无法解码（cannot decode files）' });
+    if (!written.length) return reply(400, { error: '上传的文件无法解码（cannot decode files）' });
 
     const imageOnly = images.length === written.length;
-    const note = typeof body.note === 'string' ? body.note.trim() : '';
     const message = [
       '请解析本工作目录中的户型文件，输出 Plan JSON。',
       `文件：${written.join('、')}`,
@@ -842,7 +900,7 @@ async function handlePlanImport(req, res, publicRequest) {
 
     const developerInstructions = await readPrompt('plan-import.md');
     const result = await limitTurns(async () => {
-      if (clientGone) throw new Error('客户端已断开（client disconnected）');
+      signal.throwIfAborted();
       const session = await CodexSession.start({
         install: probe.install,
         cwd: importDir,
@@ -852,7 +910,7 @@ async function handlePlanImport(req, res, publicRequest) {
       });
       activeSession = session;
       try {
-        if (clientGone) throw new Error('客户端已断开（client disconnected）');
+        signal.throwIfAborted();
         return await session.runTurn({
           input: [
             { type: 'text', text: message, text_elements: [] },
@@ -862,13 +920,13 @@ async function handlePlanImport(req, res, publicRequest) {
         });
       } finally {
         activeSession = null;
-        await session.dispose().catch(() => {});
+        await (stoppingSession || session.dispose().catch(() => {}));
       }
     });
 
-    if (clientGone) return;
+    signal.throwIfAborted();
     if (result.outcome !== 'completed') {
-      return sendJson(res, 502, { error: result.error || 'codex 回合未正常完成（turn incomplete）', id });
+      return reply(502, { error: result.error || 'codex 回合未正常完成（turn incomplete）' });
     }
 
     let rawPlan = null;
@@ -880,26 +938,29 @@ async function handlePlanImport(req, res, publicRequest) {
       rawPlan = extractJson(result.text);
     }
     if (!rawPlan) {
-      return sendJson(res, 422, {
+      return reply(422, {
         error: 'codex 没有产出可解析的 Plan（no Plan JSON produced）',
-        id,
         explanation: truncate(result.text, 2000),
       });
     }
 
     const validated = validatePlan(rawPlan);
     if (!validated.ok) {
-      return sendJson(res, 422, { error: validated.error, id, explanation: truncate(result.text, 2000) });
+      return reply(422, { error: validated.error, explanation: truncate(result.text, 2000) });
     }
 
     if (typeof rawPlan.explanation === 'string' && rawPlan.explanation.trim()) summary = rawPlan.explanation.trim();
     const explanation = summary ? truncate(summary, 4000) : summarizePlan(validated.plan);
     const furniture = validateImportedFurniture(rawPlan.furniture, validated.plan.bounds);
-    return sendJson(res, 200, { plan: validated.plan, furniture, explanation, id });
+    return reply(200, { plan: validated.plan, furniture, explanation });
   } catch (error) {
-    return sendJson(res, 502, { error: errorMessage(error), id });
+    if (error?.code === 'timeout' && error.message.startsWith('codex 响应超时')) {
+      return reply(504, { error: '图纸识别超过 30 分钟，请尝试拆分图纸或重新提交。' });
+    }
+    return reply(502, { error: errorMessage(error) });
   } finally {
-    if (publicRequest) fsp.rm(importDir, { recursive: true, force: true }).catch(() => {});
+    signal.removeEventListener('abort', interrupt);
+    if (cleanup) await fsp.rm(importDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -921,7 +982,9 @@ async function serveStatic(req, res, pathname) {
   try {
     const realRoot = await fsp.realpath(ROOT);
     const realFile = await fsp.realpath(file);
-    if (realFile !== realRoot && !realFile.startsWith(realRoot + path.sep)) {
+    const importDir = await fsp.realpath(IMPORT_JOBS_DIR).catch(() => IMPORT_JOBS_DIR);
+    if ((realFile !== realRoot && !realFile.startsWith(realRoot + path.sep))
+        || realFile === importDir || realFile.startsWith(importDir + path.sep)) {
       return sendJson(res, 403, { error: '禁止访问（forbidden）' });
     }
   } catch {
@@ -1018,6 +1081,7 @@ async function shutdown(signal) {
   shuttingDown = true;
   console.log(`收到 ${signal}，正在关闭…`);
   server.close();
+  importJobs.close();
   await pool.disposeAll().catch(() => {});
   process.exit(0);
 }

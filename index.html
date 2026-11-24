@@ -141,6 +141,18 @@ main.animating #hint3d{opacity:0}
 .rlabel{font-size:12px;font-weight:600;color:#2b2824;background:rgba(255,253,249,.9);border:1px solid var(--line);
   border-radius:12px;padding:2px 9px;white-space:nowrap;pointer-events:none}
 .rlabel small{font-weight:400;color:var(--muted);margin-left:4px}
+.door-control{display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:3px 8px;
+  border:1px solid #cabbab;border-radius:999px;background:#fffdf9;color:#754326;
+  box-shadow:0 2px 7px rgba(43,40,36,.18);font-size:11px;font-weight:600;line-height:1.2;
+  white-space:nowrap;pointer-events:auto;cursor:pointer;touch-action:manipulation}
+.door-control[data-open="true"]{color:#64574a}
+.door-control:hover,.door-control:focus-visible{background:#f3e3d8;border-color:#aa6442;color:#703b22}
+.door-control:focus-visible{outline:2px solid #a25734;outline-offset:2px}
+.door-control i{position:relative;width:10px;height:13px;border:1px solid currentColor;border-radius:1px}
+.door-control i::before{content:"";position:absolute;inset:0 2px 0 0;background:currentColor;opacity:.24;transform-origin:left}
+.door-control[data-open="true"] i::before{transform:skewY(-20deg) scaleX(.72)}
+.door-control i::after{content:"";position:absolute;right:2px;top:5px;width:2px;height:2px;border-radius:50%;background:currentColor}
+@media (pointer:coarse){.door-control{min-height:44px;padding:4px 11px;font-size:12px}}
 #roomList{padding:0 10px 6px;display:grid;grid-template-columns:1fr;gap:4px}
 #roomList button{display:flex;flex-direction:column;width:100%;border:1px solid var(--line);background:#fff;padding:5px 8px;border-radius:7px;cursor:pointer;text-align:left;line-height:1.3}
 #roomList button:hover{background:#f2ece2}
@@ -195,6 +207,72 @@ main.animating #roomBar{opacity:.85}
 .menu-pop{position:absolute;right:0;top:calc(100% + 6px);display:flex;flex-direction:column;min-width:150px;background:#fff;
   border:1px solid var(--line);border-radius:10px;padding:4px;box-shadow:0 10px 30px rgba(40,30,20,.14);z-index:20;animation:fadeIn .2s ease}
 .menu-pop .btn{text-align:left}
+.app > header{position:relative;padding-inline-end:104px}
+html:lang(en) .app > header{padding-inline-end:126px}
+#projectShelf{position:absolute;inset:8px 14px auto auto;z-index:24}
+#projectToggle{position:relative;display:flex;align-items:center;gap:7px;padding:6px 10px;
+  border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font-weight:600}
+#projectToggle:hover,#projectToggle[aria-expanded="true"]{background:#f7f0e8;border-color:#d7c6b5}
+#projectToggle::after,.project-row-head::after{content:"";flex:none;width:6px;height:6px;margin:0 2px 3px 1px;
+  border:solid #827363;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+#projectToggle[aria-expanded="true"]::after,.project-row[open]>.project-row-head::after{transform:translateY(3px) rotate(225deg)}
+.project-folder{position:relative;display:block;flex:none;width:15px;height:11px;border:1.4px solid currentColor;
+  border-radius:2px;color:#9b5f3d;transform:translateY(1px)}
+.project-folder::before{content:"";position:absolute;left:-1.4px;top:-4px;width:7px;height:4px;
+  border:1.4px solid currentColor;border-bottom:0;border-radius:2px 2px 0 0}
+#projectCount{position:absolute;top:-5px;right:-5px;display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;
+  box-shadow:0 0 0 1px var(--panel);
+  border-radius:9px;background:#f1dfd1;color:#794528;font:600 11px/1 -apple-system,BlinkMacSystemFont,sans-serif;font-variant-numeric:tabular-nums}
+#projectPanel{position:absolute;top:calc(100% + 8px);right:0;width:min(376px,calc(100vw - 24px));
+  display:flex;flex-direction:column;max-height:min(510px,var(--project-panel-space,max(160px,calc(100dvh - 130px))));
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 12px 32px rgba(40,30,20,.15),0 2px 6px rgba(40,30,20,.06);animation:fadeIn .18s ease}
+#projectPanel[hidden],#projectCount[hidden],#projectEmpty[hidden],#projectWarning[hidden]{display:none}
+.project-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px 8px 14px;
+  border-bottom:1px solid #eee8de}
+.project-heading h2{margin:0;font-size:14px;line-height:1.3;font-weight:650}
+#projectClose{min-width:30px;min-height:30px;padding:0;font-size:19px;line-height:1;color:#776b5e}
+#projectShelf :is(button,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#projectList{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:8px}
+#projectList:empty{padding:0}
+#projectEmpty{display:grid;gap:4px;margin:0;padding:16px 14px 18px;color:#776b5e;font-size:12px}
+#projectEmpty strong{font-size:13px;color:var(--ink);font-weight:600}
+#projectWarning{margin:0;padding:7px 14px;background:#f8eee4;color:#865132;font-size:12px}
+.project-footer{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;padding:8px 10px;border-top:1px solid #eee8de}
+#projectNew{border:1px solid var(--line)}
+.project-row{border:1px solid #ebe4d9;border-radius:9px;background:#fff}
+.project-row+.project-row{margin-top:6px}
+.project-row-head{display:flex;align-items:center;gap:8px;min-height:49px;padding:7px 8px;cursor:pointer;list-style:none;border-radius:8px}
+.project-row-head::-webkit-details-marker{display:none}
+.project-row-head:hover,.project-row[open]>.project-row-head{background:#faf6ef}
+.project-row-icon{flex:none;display:grid;place-items:center;width:29px;height:29px;border-radius:8px;background:#f8eee4;color:#a56340}
+.project-spinner{display:inline-block;width:15px;height:15px;border:1.6px solid #dec7b5;border-top-color:#985431;
+  border-right-color:#985431;border-radius:50%;animation:project-spin .95s linear infinite}
+@keyframes project-spin{to{transform:rotate(360deg)}}
+.project-row-title{display:grid;gap:1px;flex:1;min-width:0;line-height:1.35}
+.project-row-title b,.project-row-meta{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.project-row-title b{font-weight:630}
+.project-row-meta{color:#776b5e;font-size:11px;font-variant-numeric:tabular-nums}
+.project-status{flex:none;color:#776b5e;font-size:11px;line-height:1.35;text-align:right}
+.project-status.is-running{color:#915130}.project-status.is-ready{color:#3d6960}.project-status.is-failed{color:#a44333}
+.project-row-body{padding:8px 9px 10px 45px;color:#6f6254;border-top:1px solid #eee8de;font-size:12px;overflow-wrap:anywhere}
+.project-row-message,.project-row-note{margin:0;white-space:pre-wrap}
+.project-row-note{color:#776b5e}
+.project-row-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.project-row-actions .btn:not(.primary){border:1px solid var(--line)}
+@media (pointer:coarse){
+  #projectToggle,#projectClose{min-height:44px}
+  #projectClose{min-width:44px}
+  .project-row-actions .btn,.project-footer .btn{min-height:44px}
+}
+@media (max-width:760px){
+  .app > header,html:lang(en) .app > header{padding-inline-end:12px}
+  #projectShelf{position:relative;inset:auto;margin-inline-start:auto}
+  #projectPanel{position:fixed;top:auto;bottom:calc(10px + env(safe-area-inset-bottom));
+    right:calc(12px + env(safe-area-inset-right));left:calc(12px + env(safe-area-inset-left));
+    width:auto;max-height:min(440px,60dvh);border-radius:16px}
+}
+@media (prefers-reduced-motion:reduce){#projectPanel,.project-spinner{animation:none}}
 .range span{font-variant-numeric:tabular-nums;color:var(--ink)}
 /* ---------- 选中后的浮动工具条 ---------- */
 #fab{position:absolute;left:50%;bottom:16px;transform:translate(-50%,12px);display:flex;align-items:center;gap:4px;padding:5px;
@@ -373,11 +451,6 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-note{width:100%;min-height:48px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:6px 8px;
   background:#fff;font:inherit;line-height:1.5}
 .imp-note:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
-.imp-stages{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);flex-wrap:wrap}
-.imp-stages span{padding:1px 6px;border-radius:10px;background:#f2ece2}
-.imp-stages span:not(:last-child):after{content:"";}
-.imp-stages span.done{background:#e6efec;color:var(--teal)}
-.imp-stages span.on{background:var(--accent);color:#fff}
 .imp-bar{height:4px;border-radius:2px;background:#efe9de;overflow:hidden}
 .imp-bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
 .imp-bar.indet i{width:34%;animation:impbar 1.15s ease-in-out infinite}
@@ -385,7 +458,6 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-st{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;min-height:18px}
 .imp-st.spin:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;flex:none;
   border:1.5px solid var(--accent);border-top-color:transparent;animation:chatspin .8s linear infinite}
-.imp-st .elapsed{font-variant-numeric:tabular-nums}
 .imp-plan{font-size:14px;font-weight:600;display:flex;align-items:baseline;gap:8px;min-width:0}
 .imp-plan small{font-weight:400;font-size:11px;color:var(--muted);white-space:nowrap}
 .imp-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
@@ -402,9 +474,6 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-err{display:none;font-size:12px;color:#8e2f22;background:#fbeae7;border:1px solid #f0c9c2;border-radius:8px;
   padding:7px 9px;line-height:1.5}
 .imp-err.on{display:block}
-.imp-err .btn{margin-top:6px;border:1px solid #f0c9c2;background:#fff;color:#8e2f22}
-.imp-keep{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
-.imp-keep input{accent-color:var(--accent)}
 .imp-foot{display:flex;align-items:center;gap:6px;margin-top:2px}
 .imp-foot .spacer{flex:1}
 .imp-foot .btn{border:1px solid var(--line);background:#fff}
@@ -444,7 +513,7 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
   #tour .card{left:8px !important;right:8px;top:auto !important;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;max-width:none}
   #tour h4{font-size:14px}
 }
-html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile,#rbRender,#ptabs [data-pane="chat"],#ptabs [data-pane="render"]){display:none}
+html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile,#projectImport,#rbRender,#ptabs [data-pane="chat"],#ptabs [data-pane="render"]){display:none}
 </style>
 <script type="importmap">
 {"imports":{
@@ -528,6 +597,24 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
         <button class="btn" id="tourStart" data-en="Quick tour">使用引导</button>
         <button class="btn danger" id="reset" data-en="Reset to default">重置为默认方案</button>
       </div></details>
+    <div id="projectShelf">
+      <button class="btn" id="projectToggle" type="button" aria-expanded="false" aria-controls="projectPanel">
+        <i class="project-folder" aria-hidden="true"></i><span data-en="Projects">项目</span><span id="projectCount" aria-hidden="true" hidden></span>
+      </button>
+      <section id="projectPanel" aria-labelledby="projectTitle" hidden>
+        <div class="project-heading">
+          <h2 id="projectTitle" data-en="Projects">项目</h2>
+          <button class="btn" id="projectClose" type="button" title="关闭项目列表" data-en-title="Close projects"><span aria-hidden="true">×</span></button>
+        </div>
+        <p id="projectWarning" role="status" hidden></p>
+        <div id="projectList"></div>
+        <p id="projectEmpty"><strong data-en="No projects yet">还没有项目</strong></p>
+        <div class="project-footer">
+          <button class="btn" id="projectNew" type="button" data-en="New blank">新建空白</button>
+          <button class="btn primary" id="projectImport" type="button" data-en="Import drawing">导入图纸</button>
+        </div>
+      </section>
+    </div>
     <input type="file" id="fileIn" accept=".json,application/json" hidden>
     <input type="file" id="impFile" multiple hidden>
   </header>
@@ -674,7 +761,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
     </div>
   </div>
 </div>
-<!-- 图纸导入（任务 6）：浮层不遮罩整页，导入中仍可继续操作 2D / 3D -->
+<!-- 图纸上传与识别结果预览 -->
 <div class="imp-wrap" id="impWrap" aria-hidden="true">
   <div class="imp-box" id="impDlg" role="dialog" aria-modal="false" aria-labelledby="impTitle">
     <div class="imp-head"><b id="impTitle">导入图纸</b><button class="imp-x" id="impClose" type="button" title="关闭" data-en-title="Close">×</button></div>
@@ -683,20 +770,18 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <div class="imp-drop" id="impDrop" role="button" tabindex="0"><b id="impDropTitle">选择图纸文件</b><br><span id="impDropHint">支持图片、PDF、CAD 导出、JSON，不限格式</span></div>
       <div class="imp-files" id="impFiles"></div>
       <textarea class="imp-note" id="impNote" rows="2" spellcheck="false" placeholder="备注（可选，如：只识别一层）"></textarea>
+      <p class="imp-sub" id="impPickHint">上传后会在后台识别，完成后可从「项目」打开新方案。</p>
       <div class="imp-foot"><span class="spacer"></span>
         <button class="btn" id="impPickCancel" type="button">取消</button>
-        <button class="btn primary" id="impStart" type="button" disabled>解析</button>
+        <button class="btn primary" id="impStart" type="button" disabled>上传并识别</button>
       </div>
     </div>
 
     <div id="impProg" hidden>
-      <div class="imp-stages" id="impStages">
-        <span data-stage="up">上传</span><span data-stage="ai">识别</span><span data-stage="check">校验</span>
-      </div>
-      <div class="imp-bar" id="impBar"><i></i></div>
-      <div class="imp-st spin" id="impSt"><span id="impStText"></span><span class="elapsed" id="impElapsed"></span></div>
-      <div class="imp-foot"><span class="imp-sub" id="impProgHint"></span><span class="spacer"></span>
-        <button class="btn" id="impCancel" type="button">取消导入</button>
+      <div class="imp-bar" id="impBar" role="progressbar" aria-labelledby="impSt"><i></i></div>
+      <div class="imp-st spin" id="impSt" role="status"></div>
+      <div class="imp-foot"><span class="spacer"></span>
+        <button class="btn" id="impCancel" type="button">取消上传</button>
       </div>
     </div>
 
@@ -705,14 +790,14 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <div class="imp-stats" id="impStats"></div>
       <ul class="imp-rooms" id="impRooms"></ul>
       <div class="imp-exp" id="impExp"></div>
-      <label class="imp-keep"><input type="checkbox" id="impKeep"><span id="impKeepText">同时保留现有家具</span></label>
+      <p class="imp-sub" id="impResultHint">打开后会切换到这份新方案，当前项目会保存在「项目」列表中。</p>
       <div class="imp-foot"><span class="spacer"></span>
-        <button class="btn" id="impCancelApply" type="button">取消</button>
-        <button class="btn primary" id="impApply" type="button">应用方案</button>
+        <button class="btn" id="impCancelApply" type="button">关闭</button>
+        <button class="btn primary" id="impApply" type="button">打开新项目</button>
       </div>
     </div>
 
-    <div class="imp-err" id="impErr"></div>
+    <div class="imp-err" id="impErr" role="alert"></div>
   </div>
 </div>
 
@@ -727,6 +812,9 @@ const S2T = new Map(('与與两兩个個为為书書于於仅僅从從价價会�
 const s2t = s => S2T_PHRASES.reduce((a, [f, t]) => a.replaceAll(f, t), s).replace(/[\u3400-\u9fff]/g, c => S2T.get(c) || c);
 const tr = (zh, en) => LANG === 'en' ? en : LANG === 'zht' ? s2t(zh) : zh;
 const PUBLIC_ACCESS = document.querySelector('meta[name="studio-public-access"]')?.content;
+const studioPathPrefix = document.querySelector('meta[name="studio-path-prefix"]')?.content || '';
+const studioPath = path => studioPathPrefix + path;
+const renderAssetUrl = url => url.startsWith('/files/') ? studioPath(url) : url;
 // 内置的房间 / 材料 / 家具名称存的是中文；英文界面下显示译名，用户自己改过的名称原样显示
 const NAMES_EN = {
   '主卧室':'Master Bedroom', '主卫浴':'Master Bath', '小孩房':"Kids' Room", '客卫浴':'Guest Bath', '洗衣阳台':'Laundry Balcony',
@@ -767,9 +855,10 @@ function applyStaticLang(){
  *  默认加载 data/empty-plan.json；125-C 示例见 data/125c-plan.json。
  * ============================================================ */
 
-const PLAN_KEY = 'interior-plan-v1';
-const STATE_KEY = 'interior-state-v1';
-const RENDERS_KEY = 'interior-renders-v1';   // 效果图记录单独存：撤销家具 / 方案时不连带回退
+const projectScope = PUBLIC_ACCESS === 'guest' ? '-guest' : '';
+const PLAN_KEY = 'interior-plan-v1' + projectScope;
+const STATE_KEY = 'interior-state-v1' + projectScope;
+const RENDERS_KEY = 'interior-renders-v1' + projectScope;   // 效果图记录单独存：撤销家具 / 方案时不连带回退
 const DEFAULT_ROOM_MAT = 'tile800';
 
 const DEFAULT_MATERIALS = {
@@ -1124,6 +1213,7 @@ const ui = {tool:'select', sel:null, mA:null, mCur:null,
   layers:{dims:true, labels:true, furn:true, grid:false, bearing:false, wallSnap:true}};
 let view = {x0:0, y0:0, s:.06};
 const undoStack = [], redoStack = [];
+let onProjectSave = () => {};
 
 // 方案与状态一起存：撤销一步也能连户型一起回退
 function save(){
@@ -1133,6 +1223,7 @@ function save(){
     localStorage.setItem(STATE_KEY, JSON.stringify(rest));
     localStorage.setItem(RENDERS_KEY, JSON.stringify(renders || []));
   } catch(e) {}
+  onProjectSave();
 }
 const snap = () => JSON.stringify({plan: PLAN, state: {...state, renders: undefined}});
 function restore(snapshot){
@@ -1624,7 +1715,7 @@ function overviewPanel(){
     <kbd>点家具</kbd><span>选中后拖动移动；拖顶部圆点旋转、右下方块改尺寸</span>
     <kbd>工具条</kbd><span>选中后底部可旋转 / 复制 / 删除</span>
     <kbd>测量</kbd><span>按住拖出一条线，或依次点两点</span>
-    <kbd>3D 漫游</kbd><span>左下摇杆移动，拖动屏幕转向，点门开关</span>
+    <kbd>3D 漫游</kbd><span>左下摇杆移动，拖动屏幕转向，点门旁按钮开关</span>
   </div></section>`, `<section><h3>Touch Controls</h3><div class="kbd">
     <kbd>1-finger drag</kbd><span>Pan on empty space</span><kbd>2 fingers</kbd><span>Pinch to zoom, drag to pan</span>
     <kbd>Library</kbd><span>Tap to place at center, or hold and drag right to a spot</span>
@@ -1719,7 +1810,7 @@ function roomPanel(r){
   // 房间效果图：显示该房间最近一张（标题条 / 效果图页签生成的都算）
   const latest = roomLatestRender(r.id);
   const shotHtml = latest
-    ? `<button class="roomshot" id="roomThumb" title="${esc(tr('点击放大','Click to enlarge'))}"><img src="${esc(latest.url)}" alt=""><span>${esc(rRecTitle(latest))}</span></button>`
+    ? `<button class="roomshot" id="roomThumb" title="${esc(tr('点击放大','Click to enlarge'))}"><img src="${esc(renderAssetUrl(latest.url))}" alt=""><span>${esc(rRecTitle(latest))}</span></button>`
     : `<div class="muted" style="font-size:12px">${tr('进入房间后可在顶部标题条生成房间效果图','Enter the room, then generate a room render from the top bar')}</div>`;
   return `<section><h3>${tr('房间','Room')}</h3>
     <div class="form"><label class="full">${tr('名称','Name')}<input id="rName" value="${esc(nm(st.name))}"></label></div>
@@ -2186,7 +2277,7 @@ let viewMode = '2d', switching = false;
 const is3D = () => viewMode === '3d';
 const TIPS = () => COARSE
   ? {'2d':tr('点或拖动家具库添加 · 单指拖动平移 · 双指缩放 · 选中家具后底部工具条可旋转 / 复制 / 删除', 'Tap or drag from the library · 1 finger pans · pinch zooms · bottom bar rotates / duplicates / deletes'),
-     '3d':tr('单指旋转 · 双指缩放 / 平移 · 点家具或地面编辑 · 点门开关', '1 finger orbits · 2 fingers zoom / pan · tap furniture or floor to edit · tap doors to open')}
+     '3d':tr('单指旋转 · 双指缩放 / 平移 · 点家具或地面编辑 · 点门旁按钮开关', '1 finger orbits · 2 fingers zoom / pan · tap furniture or floor to edit · tap the door button')}
   : {'2d':tr('拖动左侧家具到平面图 · 滚轮缩放 · 拖动空白处平移 · T 切换 3D', 'Drag furniture onto the plan · scroll to zoom · drag empty space to pan · T for 3D'),
      '3d':tr('3D 场景与平面方案实时同步 · 右侧面板修改会立即生效 · T 返回 2D', '3D stays in sync with the plan · panel edits apply instantly · T for 2D')};
 async function setView(m){
@@ -2299,6 +2390,7 @@ function setLang(l){
   renderRelang();
   impRelang();
   tourRelang();
+  renderProjects();
   window.View3D?.relang();
 }
 $('#langSel').onclick = e => { const l = e.target.closest('[data-lang]')?.dataset.lang; if (l && l !== LANG) setLang(l); };
@@ -2365,32 +2457,25 @@ async function loadSamplePlan(){
 // 导入：新版 {version:2, plan, state, renders}；旧版 {furniture,...} 按 125-C 示例户型导入（失败时退到空壳）
 async function importProject(txt){
   let o; try { o = JSON.parse(txt); } catch(e){ return toast(tr('文件格式不正确', 'Invalid file format')); }
-  const b = snap();
-  let note;
+  let project, note;
   if (o && o.plan){
     const res = sanitizePlan(o.plan);
     if (!res.ok) return toast(tr('方案数据无效：' + res.errors[0], 'Invalid plan: ' + res.errors[0]));
-    installPlan(res.plan);
-    // 效果图记录：项目文件里的顶层 renders 优先，其次 state.renders，最后续用本地存储
+    // 效果图记录：项目文件里的顶层 renders 优先，其次 state.renders。
     const inc = Array.isArray(o.renders) ? o.renders : (o.state && Array.isArray(o.state.renders) ? o.state.renders : null);
-    state = fixState({...(o.state || defaultState()), ...(inc ? {renders: inc} : {})});
+    project = {plan:res.plan, state:{...(o.state || defaultState()), renders:inc || []}};
     note = tr('方案已导入（含户型与家具）', 'Project imported (plan + furniture)');
   } else if (o && Array.isArray(o.furniture)){
     // 旧文件只有家具（来自 125-C 站点）：优先套用 125-C 示例户型，取不到再退回空壳
     const sample = await loadPlanFile('data/125c-plan.json');
-    installPlan(sample || sanitizePlan(FALLBACK_PLAN).plan);
-    state = fixState(o);
+    project = {plan:sample || sanitizePlan(FALLBACK_PLAN).plan, state:{...o, renders:[]}};
     note = sample
       ? tr('旧版文件（仅家具）已按 125-C 示例户型导入', 'Legacy file (furniture only) imported onto the 125-C example plan')
       : tr('旧版文件（仅家具）已导入到空壳户型', 'Legacy file (furniture only) imported onto the empty plan');
   } else {
     return toast(tr('文件格式不正确', 'Invalid file format'));
   }
-  ui.sel = null; ui.mA = ui.mCur = null;
-  commit(b); save();
-  buildDefs(); renderDims(); renderOpenings();
-  renderAll(); refit();
-  toast(note);
+  if (await openNewProject(project)) toast(note);
 }
 
 async function resetProject(){
@@ -2728,7 +2813,7 @@ async function* publicJobUpdates(id, signal){
   if (typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id)){
     throw new Error(tr('服务未返回任务编号。', 'The service did not return a job ID.'));
   }
-  const path = `/api/jobs/${id}`;
+  const path = studioPath(`/api/jobs/${id}`);
   let cursor = 0, done = false;
   try {
     while (!done){
@@ -2750,7 +2835,7 @@ async function* publicJobUpdates(id, signal){
 
 async function* aiTextChunks(kind, init){
   const owner = PUBLIC_ACCESS === 'owner';
-  const response = await fetch(owner ? `/api/jobs/${kind}` : `/api/${kind}`, init);
+  const response = await fetch(studioPath(owner ? `/api/jobs/${kind}` : `/api/${kind}`), init);
   if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
   if (owner){
     const {id} = await response.json();
@@ -2781,54 +2866,26 @@ async function* aiTextChunks(kind, init){
   }
 }
 
-/* ======================= 图纸导入（契约 §5 /api/plan/import，任务 6） =======================
- * 文件菜单「导入图纸…」→ 浮层选文件（不限格式）+ 备注 → XHR POST /api/plan/import：
- * 上传阶段有真实百分比，codex 解析阶段显示估算进度，随时可中断（abort 后服务端会打断 codex）。
- * 成功后预览户型 / 面积 / 墙窗门 / 识别家具与构件数量。
- * 「应用方案」一次写入户型、家具和构件，勾选后同时保留现有家具和构件。
- * 失败或超时只改浮层，不触碰当前方案；2D / 3D 编辑始终可继续。
- * ===================================================================== */
-const IMP_MAX_BYTES = 25 * 1024 * 1024;    // 服务端请求体上限 40 MB，base64 膨胀后留余量
+/* ======================= 图纸上传与结果预览 ======================= */
+// 上传完成即登记项目。项目列表负责在后台查询识别进度与保存结果。
+const IMP_MAX_BYTES = 25 * 1024 * 1024;    // 服务端上限 40 MiB，给 base64 留余量
 const IMP_MAX_FILES = 20;
-const IMP_TIMEOUT_MS = 10 * 60 * 1000;     // 与服务端 IMPORT_TIMEOUT_MS 一致
-const impState = {files:[], plan:null, furniture:[], explanation:'', busy:false, xhr:null, ctrl:null, t0:0, timer:0, stage:'', err:''};
+const IMP_UPLOAD_TIMEOUT = 5 * 60_000;
+const impState = {files:[], result:null, onApply:null, retryId:null, submission:null, applying:false};
 const impEls = {};
 
 const impSize = n => n >= 1048576 ? (n/1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n/1024) + ' KB' : n + ' B';
-function impElapsedText(){
-  const s = Math.max(0, Math.round((Date.now() - impState.t0) / 1000));
-  if (s < 60) return tr(`已用 ${s} 秒`, `${s}s elapsed`);
-  return tr(`已用 ${Math.floor(s/60)} 分 ${String(s%60).padStart(2,'0')} 秒`, `${Math.floor(s/60)}m ${String(s%60).padStart(2,'0')}s elapsed`);
-}
 
-// 阶段条：done 之前全部打勾，当前高亮；pct 为上传百分比，indet 为解析中的不确定进度
-function impStageSet(key, text, opts = {}){
-  const order = ['up', 'ai', 'check'], idx = order.indexOf(key);
-  impEls.stages.querySelectorAll('span').forEach((el, i) => {
-    el.classList.toggle('done', !!opts.allDone || i < idx);
-    el.classList.toggle('on', i === idx && !opts.allDone);
-  });
-  impEls.bar.classList.toggle('indet', !!opts.indet);
-  impEls.bar.firstElementChild.style.width = opts.pct != null ? Math.max(1, Math.min(100, opts.pct)) + '%' : (opts.indet ? '' : '100%');
-  impEls.stText.textContent = text || '';
-  impEls.st.classList.toggle('spin', !!opts.spin);
-  impEls.elapsed.textContent = impState.t0 ? impElapsedText() : '';
-  impState.stage = key;
-}
-
-function impStopTimer(){ if (impState.timer){ clearInterval(impState.timer); impState.timer = 0; } }
-function impStartTimer(){
-  impStopTimer();
-  impState.timer = setInterval(() => {
-    impEls.elapsed.textContent = impElapsedText();
-    if (impState.stage !== 'ai') return;
-    const s = (Date.now() - impState.t0) / 1000;
-    impEls.stText.textContent = s > 120
-      ? tr('仍在解析：图纸较大或服务繁忙…', 'Still analyzing — large drawing or busy service…')
-      : s > 30
-        ? tr('图纸较复杂，仍在解析…', 'Still analyzing — the drawing is complex…')
-        : tr('正在识别图纸（AI 解析），可能需要 1–3 分钟…', 'Analyzing the drawing (AI), this can take 1–3 minutes…');
-  }, 1000);
+function impStatus(text, pct = null){
+  impEls.st.textContent = text;
+  impEls.bar.classList.toggle('indet', pct === null);
+  if (pct === null){
+    impEls.bar.removeAttribute('aria-valuenow');
+    impEls.bar.firstElementChild.style.width = '';
+  } else {
+    impEls.bar.setAttribute('aria-valuenow', String(pct));
+    impEls.bar.firstElementChild.style.width = pct + '%';
+  }
 }
 
 function impShow(view){
@@ -2837,36 +2894,34 @@ function impShow(view){
   impEls.body.hidden = view !== 'preview';
 }
 
-function impErrClear(){
-  impState.err = '';
-  impEls.err.classList.remove('on');
-  impEls.err.innerHTML = '';
-}
-// 可读错误 + 建议改用 JSON 方案导入；不触碰当前方案
-function impErrShow(msg){
-  impState.err = msg;
-  impEls.err.innerHTML = '';
-  impEls.err.classList.add('on');
-  impEls.err.appendChild(document.createTextNode(
-    msg + ' ' + tr('可以换一张更清晰的图纸重试，或改用 JSON 方案导入。', 'Try a clearer drawing, or import a plan JSON instead.')));
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'btn'; b.id = 'impJson';
-  b.textContent = tr('改用 JSON 方案导入', 'Import a plan JSON instead');
-  b.onclick = () => { impClose(); $('#fileIn').click(); };
-  impEls.err.appendChild(document.createElement('br'));
-  impEls.err.appendChild(b);
+function impShowDialog(view){
+  impShow(view);
+  impEls.wrap.classList.add('on');
+  impEls.wrap.setAttribute('aria-hidden', 'false');
+  impRelang();
 }
 
-function impFail(msg){
-  impState.busy = false; impState.xhr = impState.ctrl = null; impStopTimer();
-  impShow('pick');
-  impErrShow(msg);
+function impErrShow(msg){
+  impEls.err.textContent = msg;
+  impEls.err.classList.toggle('on', Boolean(msg));
+}
+
+function impUploadReady(){
+  impState.submission = null;
+  impEls.cancel.disabled = false;
+  impEls.close.disabled = false;
   impUpdateStart();
 }
 
+function impFail(msg){
+  impUploadReady();
+  impShow('pick');
+  impErrShow(msg);
+}
+
 function impUpdateStart(){
-  impEls.start.disabled = impState.busy || !impState.files.length;
-  impEls.start.textContent = impState.busy ? tr('解析中…', 'Analyzing…') : tr('解析', 'Analyze');
+  impEls.start.disabled = Boolean(impState.submission) || !impState.files.length;
+  impEls.start.textContent = tr('上传并识别', 'Upload and analyze');
 }
 
 function impRenderFiles(){
@@ -2885,48 +2940,49 @@ function impRenderFiles(){
 }
 
 function impAddFiles(list){
-  const incoming = Array.from(list || []);
-  impErrClear();
+  if (impState.submission) return;
+  impErrShow('');
   let total = impState.files.reduce((a, f) => a + f.size, 0), tooBig = false, empty = false;
-  for (const f of incoming){
+  for (const f of list || []){
     if (impState.files.length >= IMP_MAX_FILES) break;
     if (!f.size){ empty = true; continue; }
     if (total + f.size > IMP_MAX_BYTES){ tooBig = true; continue; }
     impState.files.push(f); total += f.size;
   }
   impRenderFiles();
-  if (tooBig) impErrShow(tr(`文件过大：一次最多约 ${Math.round(IMP_MAX_BYTES/1048576)} MB。`, `Files too large: about ${Math.round(IMP_MAX_BYTES/1048576)} MB max per import.`));
+  if (tooBig) impErrShow(tr('文件过大：一次最多约 25 MB。', 'Files too large: about 25 MB max per import.'));
   else if (empty) impErrShow(tr('选中的文件是空的。', 'The selected file is empty.'));
 }
 
-function impOpen(){
-  if (impState.busy) impAbort();           // 上一次还没结束：先中断，避免两个请求叠着跑
-  impState.files = []; impState.plan = null; impState.furniture = []; impState.explanation = '';
-  impState.t0 = 0; impState.stage = ''; impStopTimer();
-  impEls.note.value = '';
+function impOpen({retryId, note} = {}){
+  if (impState.submission || impState.applying) return false;
+  const menu = $('#importPlanFile').closest('details');
+  if (menu) menu.open = false;
+  impState.files = []; impState.result = impState.onApply = null;
+  impState.retryId = typeof retryId === 'string' ? retryId : null;
+  impEls.note.value = typeof note === 'string' ? note : '';
   impEls.file.value = '';
-  impEls.keep.checked = false;
-  impEls.err.classList.remove('on'); impEls.err.innerHTML = ''; impState.err = '';
-  impEls.bar.classList.remove('indet'); impEls.bar.firstElementChild.style.width = '0%';
+  impErrShow('');
   impRenderFiles();
-  impShow('pick');
-  impEls.wrap.classList.add('on'); impEls.wrap.setAttribute('aria-hidden', 'false');
-  impRelang();
+  impShowDialog('pick');
+  return true;
 }
 
 function impClose(){
-  if (impState.busy) impAbort();            // 关掉浮层视为取消，别让 codex 在后台空跑
+  if (impState.applying || impState.submission?.jobId) return;
+  if (impState.submission) impAbort();
+  impState.files = []; impState.result = impState.onApply = impState.retryId = null;
   impEls.wrap.classList.remove('on');
   impEls.wrap.setAttribute('aria-hidden', 'true');
 }
 
 function impAbort(){
-  const {xhr, ctrl} = impState;
-  impState.xhr = impState.ctrl = null; impState.busy = false; impStopTimer();
-  ctrl?.abort();
-  if (xhr){ try { xhr.abort(); } catch(e){} }
-  impShow('pick'); impUpdateStart();
-  toast(tr('已取消导入', 'Import cancelled'));
+  const submission = impState.submission;
+  if (!submission || submission.jobId) return;
+  impUploadReady();
+  submission.xhr?.abort();
+  impShow('pick');
+  toast(tr('已取消上传', 'Upload cancelled'));
 }
 
 // File → base64（分块，避免展开运算符在大文件上爆栈）
@@ -2938,109 +2994,106 @@ async function impFileB64(file){
 }
 
 async function impStart(){
-  if (impState.busy || !impState.files.length) return;
-  impErrClear();
-  impState.plan = null; impState.furniture = []; impState.explanation = '';
-  impState.busy = true; impState.t0 = Date.now();
-  const ctrl = new AbortController();
-  impState.ctrl = ctrl;
-  impShow('prog'); impUpdateStart(); impStartTimer();
-  impStageSet('up', tr('正在读取文件…', 'Reading files…'), {pct:2, spin:true});
+  if (impState.submission || !impState.files.length) return;
+  const submission = {xhr:null, jobId:null};
+  impState.submission = submission;
+  impErrShow('');
+  impShow('prog');
+  impUpdateStart();
+  impStatus(tr('正在读取文件…', 'Reading files…'));
 
   const files = [];
   try {
     for (const f of impState.files){
-      files.push({name: f.name, mime: f.type || 'application/octet-stream', data: await impFileB64(f)});
-      if (impState.ctrl !== ctrl) return;
+      const data = await impFileB64(f);
+      if (impState.submission !== submission) return;
+      files.push({name:f.name, mime:f.type || 'application/octet-stream', data});
     }
   } catch(e){
-    if (impState.ctrl === ctrl) impFail(tr('读取文件失败：', 'Could not read the file: ') + ((e && e.message) || ''));
+    if (impState.submission === submission) impFail(tr('读取文件失败。', 'Could not read the file.'));
     return;
   }
-  if (!files.length) return impFail(tr('没有可解析的文件。', 'There is no file to analyze.'));
 
   const xhr = new XMLHttpRequest();
-  impState.xhr = xhr;
-  const owner = PUBLIC_ACCESS === 'owner';
-  xhr.open('POST', owner ? '/api/jobs/plan-import' : '/api/plan/import');
-  xhr.setRequestHeader('content-type', 'application/json');
-  xhr.timeout = IMP_TIMEOUT_MS;
-  impStageSet('up', tr('正在上传图纸…', 'Uploading the drawing…'), {pct:3, spin:true});
-
+  const note = impEls.note.value.trim();
+  const retryId = impState.retryId;
+  const name = files[0].name;
+  submission.xhr = xhr;
   xhr.upload.onprogress = e => {
-    if (impState.xhr !== xhr || !e.lengthComputable) return;
-    impStageSet('up', tr('正在上传图纸…', 'Uploading the drawing…'), {pct: Math.round(e.loaded / e.total * 100), spin:true});
+    if (impState.submission !== submission || !e.lengthComputable || !e.total) return;
+    impStatus(tr('正在上传图纸…', 'Uploading the drawing…'), Math.round(e.loaded / e.total * 100));
   };
   xhr.upload.onload = () => {
-    if (impState.xhr !== xhr) return;
-    impStageSet('ai', tr('正在识别图纸（AI 解析），可能需要 1–3 分钟…', 'Analyzing the drawing (AI), this can take 1–3 minutes…'), {indet:true, spin:true});
+    if (impState.submission === submission) impStatus(tr('正在提交识别任务…', 'Submitting the recognition job…'));
   };
   xhr.onload = async () => {
-    if (impState.xhr !== xhr) return;
-    let status = xhr.status, body = xhr.responseText;
-    if (owner && status >= 200 && status < 300){
-      try {
-        const {id} = JSON.parse(body);
-        body = '';
-        for await (const update of publicJobUpdates(id, ctrl.signal)){
-          if (update.error) throw new Error(update.error);
-          body += update.chunks.join('');
-          if (update.done) status = update.status;
-        }
-      } catch(e){
-        if (impState.xhr === xhr) impFail(e.message || tr('无法读取图纸解析任务。', 'Could not read the drawing job.'));
-        return;
-      }
+    if (impState.submission !== submission) return;
+    if (xhr.status !== 202) return impFail(aiResponseMessage(xhr.status, xhr.responseText));
+    let jobId;
+    try { jobId = JSON.parse(xhr.responseText).id; } catch(e){}
+    if (typeof jobId !== 'string' || !/^[\w-]{1,128}$/.test(jobId)){
+      return impFail(tr('服务未返回任务编号。', 'The service did not return a job ID.'));
     }
-    if (impState.xhr !== xhr) return;
-    impState.xhr = impState.ctrl = null; impState.busy = false; impStopTimer();
-    impStageSet('check', tr('正在校验解析结果…', 'Validating the result…'), {indet:true, spin:true});
-    let data = null;
-    try { data = JSON.parse(body || '{}'); } catch(e){}
-    if (status >= 200 && status < 300 && data && data.plan){
-      const res = sanitizePlan(data.plan);
-      if (!res.ok) return impFail(tr('解析结果不是有效户型：', 'The result is not a valid plan: ') + (res.errors[0] || ''));
-      impState.plan = res.plan;
-      impState.furniture = drawingFurniture(data.furniture);
-      impState.explanation = typeof data.explanation === 'string' ? data.explanation.trim() : '';
-      impStageSet('check', tr('解析完成', 'Done'), {pct:100, allDone:true, spin:false});
-      impEls.keep.checked = false;
-      impShow('preview'); impRenderPreview(); impUpdateStart();
-      return;
+
+    submission.jobId = jobId;
+    impEls.cancel.disabled = true;
+    impEls.close.disabled = true;
+    impStatus(tr('正在保存项目记录…', 'Saving the project entry…'));
+    try {
+      await projectImportSubmitted({jobId, name, note, retryId});
+    } catch(e){
+      void fetch(studioPath('/api/jobs/' + jobId), {method:'DELETE', keepalive:true}).catch(() => {});
+      return impFail(tr('无法保存项目记录。', 'Could not save the project entry.'));
     }
-    let msg = aiResponseMessage(status, body);
-    if (msg === `HTTP ${status}`) msg = status === 503
-      ? tr('图纸解析服务不可用（未检测到 codex 或未登录）。', 'The drawing service is unavailable (codex missing or not signed in).')
-      : tr(`服务返回 HTTP ${status}`, `Server returned HTTP ${status}`);
-    impFail(msg);
+    impUploadReady();
+    impClose();
+    toast(tr('图纸已提交，在「项目」查看识别进度。', 'Drawing submitted. Check its progress in Projects.'));
   };
   xhr.onerror = () => {
-    if (impState.xhr !== xhr) return;
-    impFail(owner ? tr('无法连接公网服务，请重试。', 'Cannot reach the public service. Try again.') :
-      tr('无法连接本地服务：请先在项目根运行 node server.mjs（file:// 打开时请直接用 JSON 方案导入）。',
-              'Cannot reach the local service — run node server.mjs in the project root (or import a plan JSON when opened via file://).'));
+    if (impState.submission !== submission) return;
+    impFail(PUBLIC_ACCESS === 'owner'
+      ? tr('无法连接公网服务，请重试。', 'Cannot reach the public service. Try again.')
+      : tr('无法连接本机服务，请确认户型装修设计服务正在运行。', 'Cannot reach the local studio service. Make sure it is running.'));
   };
   xhr.ontimeout = () => {
-    if (impState.xhr !== xhr) return;
-    impFail(tr('解析超时（10 分钟）：服务没有及时返回结果。', 'Timed out after 10 minutes — the service did not return in time.'));
+    if (impState.submission === submission) impFail(tr('上传图纸超时，请重试。', 'Drawing upload timed out. Try again.'));
   };
-  xhr.onabort = () => { if (impState.xhr === xhr){ impState.xhr = impState.ctrl = null; impState.busy = false; impStopTimer(); } };
 
   try {
-    if (impState.xhr !== xhr) return;               // 提交前就被取消
-    xhr.send(JSON.stringify({files, note: impEls.note.value.trim()}));
+    xhr.open('POST', projectEndpoint);
+    xhr.setRequestHeader('content-type', 'application/json');
+    xhr.timeout = IMP_UPLOAD_TIMEOUT;
+    impStatus(tr('正在上传图纸…', 'Uploading the drawing…'), 0);
+    xhr.send(JSON.stringify({files, note}));
   } catch(e){
-    impFail(tr('无法提交解析请求：', 'Could not send the request: ') + ((e && e.message) || ''));
+    impFail(tr('无法提交图纸识别任务。', 'Could not submit the drawing job.'));
   }
 }
 
+function impOpenResult(data, onApply){
+  if (impState.submission || impState.applying) return false;
+  const result = sanitizePlan(data?.plan);
+  if (!result.ok){
+    toast(tr('识别结果不是有效户型。', 'The result is not a valid floor plan.'));
+    return false;
+  }
+  impState.result = {
+    plan:result.plan,
+    furniture:drawingFurniture(data.furniture),
+    explanation:typeof data.explanation === 'string' ? data.explanation.trim() : '',
+  };
+  impState.onApply = onApply;
+  impErrShow('');
+  impShowDialog('preview');
+  return true;
+}
+
 function impRenderPreview(){
-  const p = impState.plan;
-  if (!p) return;
+  const {plan:p, furniture, explanation} = impState.result;
   impEls.planName.textContent = p.name;
   impEls.planSrc.textContent = tr('来自图纸', 'From drawing');
   const total = p.rooms.filter(r => r.counted !== false).reduce((a, r) => a + area(r.poly), 0);
-  const components = componentCount(impState.furniture);
+  const components = componentCount(furniture);
   impEls.stats.innerHTML = '';
   const cell = (label, value) => {
     const d = document.createElement('div');
@@ -3054,12 +3107,9 @@ function impRenderPreview(){
     cell(tr('房间', 'Rooms'), String(p.rooms.length)),
     cell(tr('总面积', 'Total area'), fmt(total) + ' m²'),
     openings,
-    cell(tr('识别到的家具', 'Recognized furniture'), String(impState.furniture.length - components)),
+    cell(tr('识别到的家具', 'Recognized furniture'), String(furniture.length - components)),
   );
   if (components) impEls.stats.append(cell(tr('识别到的构件', 'Recognized components'), String(components)));
-  impEls.keepText.textContent = componentCount(state.furniture)
-    ? tr('同时保留现有家具和构件', 'Also keep current furniture and components')
-    : tr('同时保留现有家具', 'Also keep current furniture');
   impEls.rooms.innerHTML = '';
   p.rooms.forEach(r => {
     const li = document.createElement('li');
@@ -3068,49 +3118,51 @@ function impRenderPreview(){
     li.append(nmEl, ar);
     impEls.rooms.appendChild(li);
   });
-  impEls.exp.textContent = impState.explanation || '';
-  impEls.exp.hidden = !impState.explanation;
+  impEls.exp.textContent = explanation;
+  impEls.exp.hidden = !explanation;
 }
 
-function impApplyPlan(){
-  const p = impState.plan;
-  if (!p) return;
-  const keep = impEls.keep.checked;
-  const furniture = impState.furniture;
-  const res = window.Studio.applyPlan(p, {furniture, clearFurniture: !keep, freshState: true});
-  if (!res || !res.ok){
-    return impErrShow(tr('应用失败：', 'Could not apply: ') + ((res && res.errors && res.errors[0]) || ''));
+async function impApplyPlan(){
+  if (!impState.result || impState.applying || typeof impState.onApply !== 'function') return;
+  const {plan, furniture} = impState.result;
+  impState.applying = true;
+  impEls.apply.disabled = impEls.cancelApply.disabled = impEls.close.disabled = true;
+  impErrShow('');
+  let result;
+  try {
+    result = await impState.onApply({plan, furniture, keep:false});
+  } catch(e) {
+    result = {ok:false};
+  } finally {
+    impState.applying = false;
+    impEls.apply.disabled = impEls.cancelApply.disabled = impEls.close.disabled = false;
   }
-  const name = (res.plan && res.plan.name) || p.name;
-  const components = componentCount(furniture), furnitureCount = furniture.length - components;
+  if (!result?.ok){
+    return impErrShow(tr('无法打开新项目。', 'Could not open the new project.') + (result?.errors?.[0] ? ' ' + result.errors[0] : ''));
+  }
+  const name = result.plan?.name || plan.name;
   impClose();
-  if (components){
-    return toast(tr(`已应用方案「${name}」，导入 ${furnitureCount} 件家具和 ${components} 个构件`,
-      `Applied the plan “${name}” with ${furnitureCount} furniture items and ${components} components`));
-  }
-  toast(furniture.length
-    ? tr(`已应用方案「${name}」，导入 ${furniture.length} 件家具`, `Applied the plan “${name}” with ${furniture.length} furniture items`)
-    : tr(`已应用方案「${name}」`, `Applied the plan “${name}”`));
+  toast(tr(`已打开项目「${name}」`, `Opened project “${name}”`));
 }
 
 function impRelang(){
   if (!impEls.wrap) return;
-  impEls.title.textContent = tr('导入图纸', 'Import drawing');
+  impEls.title.textContent = impState.result ? tr('识别结果', 'Recognition result') : tr('导入图纸', 'Import drawing');
   impEls.close.title = tr('关闭', 'Close');
   impEls.dropTitle.textContent = tr('选择图纸文件', 'Choose drawing files');
   impEls.dropHint.textContent = tr('支持图片、PDF、CAD 导出、JSON，不限格式', 'Images, PDF, CAD exports or JSON — any format');
   impEls.note.placeholder = tr('备注（可选，如：只识别一层）', 'Note (optional, e.g. "ground floor only")');
+  impEls.pickHint.textContent = impState.retryId
+    ? tr('请重新选择图纸文件以重试识别。', 'Choose the drawing files again to retry recognition.')
+    : tr('上传后会在后台识别，完成后可从「项目」打开新方案。', 'Recognition runs in the background. Open the new design from Projects when it is ready.');
   impEls.pickCancel.textContent = tr('取消', 'Cancel');
-  impEls.cancel.textContent = tr('取消导入', 'Cancel import');
-  impEls.cancelApply.textContent = tr('取消', 'Cancel');
-  impEls.apply.textContent = tr('应用方案', 'Apply plan');
-  impEls.keepText.textContent = tr('同时保留现有家具', 'Also keep current furniture');
-  impEls.progHint.textContent = tr('导入过程可取消，页面可继续操作', 'You can cancel anytime; the page stays usable');
-  const stageTexts = [tr('上传', 'Upload'), tr('识别', 'Analyze'), tr('校验', 'Validate')];
-  impEls.stages.querySelectorAll('span').forEach((el, i) => { el.textContent = stageTexts[i]; });
+  impEls.cancel.textContent = tr('取消上传', 'Cancel upload');
+  impEls.cancelApply.textContent = tr('关闭', 'Close');
+  impEls.apply.textContent = tr('打开新项目', 'Open new project');
+  impEls.resultHint.textContent = tr('打开后会切换到这份新方案，当前项目会保存在「项目」列表中。',
+    'Opening this design switches projects. Your current project stays in Projects.');
   impUpdateStart();
-  if (impState.plan) impRenderPreview();
-  if (impState.err) impErrShow(impState.err);
+  if (impState.result) impRenderPreview();
 }
 
 function impInit(){
@@ -3118,11 +3170,10 @@ function impInit(){
     wrap: $('#impWrap'), title: $('#impTitle'), close: $('#impClose'),
     pick: $('#impPick'), drop: $('#impDrop'), dropTitle: $('#impDropTitle'), dropHint: $('#impDropHint'),
     files: $('#impFiles'), file: $('#impFile'), note: $('#impNote'),
-    pickCancel: $('#impPickCancel'), start: $('#impStart'),
-    prog: $('#impProg'), stages: $('#impStages'), bar: $('#impBar'), st: $('#impSt'), stText: $('#impStText'),
-    elapsed: $('#impElapsed'), progHint: $('#impProgHint'), cancel: $('#impCancel'),
+    pickCancel: $('#impPickCancel'), start: $('#impStart'), pickHint: $('#impPickHint'),
+    prog: $('#impProg'), bar: $('#impBar'), st: $('#impSt'), cancel: $('#impCancel'),
     body: $('#impBody'), planName: $('#impPlanName'), planSrc: $('#impPlanSrc'), stats: $('#impStats'),
-    rooms: $('#impRooms'), exp: $('#impExp'), keep: $('#impKeep'), keepText: $('#impKeepText'),
+    rooms: $('#impRooms'), exp: $('#impExp'), resultHint: $('#impResultHint'),
     cancelApply: $('#impCancelApply'), apply: $('#impApply'), err: $('#impErr'),
   });
   impEls.drop.onclick = () => impEls.file.click();
@@ -3135,7 +3186,7 @@ function impInit(){
   impEls.close.onclick = impClose;
   impEls.apply.onclick = impApplyPlan;
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && impEls.wrap.classList.contains('on')) impClose(); });
-  $('#importPlanFile').onclick = impOpen;
+  $('#importPlanFile').onclick = () => impOpen();
   impRelang();
 }
 
@@ -3405,7 +3456,7 @@ async function chatSend(){
     const chunks = aiTextChunks('chat', {
       method:'POST',
       headers:{'content-type':'application/json'},
-      body: JSON.stringify({sessionId: chatSid, message: text, context, images}),
+      body: JSON.stringify({sessionId: activeProjectId ? `${chatSid}-${activeProjectId}` : chatSid, message: text, context, images}),
       signal: ctrl.signal,
     });
     let buf = '', acc = '', got = false, erred = false;
@@ -3453,7 +3504,7 @@ async function chatProbe(){
     // 装了 codex 的机器冷启动常超过 5s；过早中止会把「服务在跑」误判成「未连接」并锁死输入。
     const c = new AbortController();
     const t = setTimeout(() => c.abort(), 30000);
-    const res = await fetch('/api/health', {cache:'no-store', signal: c.signal});
+    const res = await fetch(studioPath('/api/health'), {cache:'no-store', signal: c.signal});
     clearTimeout(t);
     if (!res.ok) return null;
     const j = await res.json();
@@ -3695,7 +3746,8 @@ function renderOutShow(url, bust){
   renderEls.outRetry.hidden = true;
   img.onerror = () => { wrap.classList.add('bad'); renderEls.outRetry.hidden = false; };
   // 重试：同源 URL 加时间戳绕过缓存里失败的结果
-  img.src = bust && /^https?:|^\//.test(url) ? url + (url.includes('?') ? '&' : '?') + 'r=' + Date.now() : url;
+  const asset = renderAssetUrl(url);
+  img.src = bust && /^https?:|^\//.test(asset) ? asset + (asset.includes('?') ? '&' : '?') + 'r=' + Date.now() : asset;
 }
 
 function renderShowRec(rec, open){
@@ -3722,7 +3774,7 @@ function renderHistory(){
     const im = document.createElement('img');
     im.alt = b.title; im.loading = 'lazy';
     im.onerror = () => { im.remove(); b.title = tr('加载失败，点击重试', 'Failed to load — click to retry'); };
-    im.src = rec.url;
+    im.src = renderAssetUrl(rec.url);
     const cap = document.createElement('span');
     cap.textContent = rStyleLabel(rec.style);
     b.append(im, cap);
@@ -3840,7 +3892,7 @@ function renderAddRecord(rec){
   state.renders = Array.isArray(state.renders) ? state.renders : [];
   state.renders.push(rec);
   if (state.renders.length > 30) state.renders.splice(0, state.renders.length - 30);
-  try { localStorage.setItem(RENDERS_KEY, JSON.stringify(state.renders)); } catch(e){}
+  save();
   renderHistory();
 }
 
@@ -3956,19 +4008,20 @@ async function renderGenerate(opts = {}){
 async function renderDownload(url, id){
   const name = `render-${String(id || Date.now().toString(36)).replace(/[^\w-]+/g, '')}.png`;
   if (String(url).startsWith('data:')){ download(name, dataURLBlob(url)); return; }
+  const asset = renderAssetUrl(url);
   try {
-    const r = await fetch(url, {cache: 'no-store'});
+    const r = await fetch(asset, {cache: 'no-store'});
     if (!r.ok) throw new Error('HTTP ' + r.status);
     download(name, await r.blob());
   } catch(e){
-    window.open(url, '_blank', 'noopener');      // 退路：新窗口打开
+    window.open(asset, '_blank', 'noopener');      // 退路：新窗口打开
   }
 }
 
 function openLightbox(url, title, rec){
   renderState.lb = {url, rec};
   renderEls.lbImg.onerror = () => { renderEls.lbCap.textContent = tr('图片加载失败，可关闭后重试', 'Image failed to load — close and retry'); };
-  renderEls.lbImg.src = url;
+  renderEls.lbImg.src = renderAssetUrl(url);
   renderEls.lbCap.textContent = title || '';
   renderEls.lb.classList.add('on');
   renderEls.lb.setAttribute('aria-hidden', 'false');
@@ -4022,11 +4075,374 @@ chatInit();
 renderInit();
 impInit();
 
+/* ======================= 项目与后台识别 ======================= */
+const projectEndpoint = studioPath('/api/jobs/plan-import');
+const projectActiveKey = 'interior-active-project-v1' + projectScope;
+const projectRows = new Map();
+const projectOpening = new Set();
+const projectPanel = $('#projectPanel'), projectToggle = $('#projectToggle'), projectList = $('#projectList');
+const projectPending = row => row.phase === 'queued' || row.phase === 'running';
+const projectAi = PUBLIC_ACCESS !== 'guest' && /^https?:$/.test(location.protocol);
+let activeProjectId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
+let projectTimer = 0, projectSyncing = false, projectSyncAgain = false;
+
+const projectDb = new Promise(resolve => {
+  try {
+    const request = indexedDB.open('interior-projects-v1' + projectScope, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('projects', {keyPath:'id'});
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = request.onblocked = () => resolve(null);
+  } catch(e){ resolve(null); }
+});
+async function projectTransaction(mode, run){
+  const db = await projectDb;
+  if (!db) throw new Error('Project storage unavailable');
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('projects', mode);
+    const request = run(transaction.objectStore('projects'));
+    transaction.oncomplete = () => resolve(request.result);
+    transaction.onabort = transaction.onerror = () => reject(transaction.error || request.error);
+  });
+}
+async function putProject(row){
+  projectRows.set(row.id, row);
+  try { await projectTransaction('readwrite', store => store.put(row)); }
+  catch(e){ projectStorageIssue = true; renderProjects(); }
+}
+function projectCurrent(){
+  const snapshot = Studio.projectJSON();
+  return {
+    ...projectRows.get(activeProjectId), id:activeProjectId, name:snapshot.plan.name,
+    phase:'saved', snapshot, updatedAt:Date.now(),
+  };
+}
+function projectRecordActive(row){
+  try {
+    sessionStorage.setItem(projectActiveKey, row.id);
+    localStorage.setItem(projectActiveKey, JSON.stringify({id:row.id, updatedAt:row.updatedAt}));
+  } catch(e){}
+}
+function saveActiveProject(){
+  if (!activeProjectId || projectSwitching) return;
+  const row = projectCurrent();
+  projectRecordActive(row);
+  void putProject(row);
+  if (!projectPanel.hidden) renderProjects();
+}
+function loadProjectScene(snapshot){
+  const result = sanitizePlan(snapshot.plan);
+  if (!result.ok) return result;
+  installPlan(result.plan);
+  state = fixState({...deepCopy(snapshot.state || defaultState()), renders:snapshot.state?.renders || []});
+  return result;
+}
+function refreshProjectScene(){
+  clearTimeout(chatState.focusT);
+  chatState.msgs = []; chatEls.msgs.replaceChildren(); chatEls.in.value = '';
+  clearTimeout(renderState.refT); renderState.refRevision++;
+  renderState.last = null; renderState.refURL = ''; renderState.refT = 0;
+  renderEls.ref.removeAttribute('src'); renderEls.out.removeAttribute('src');
+  renderEls.outCap.textContent = ''; renderEls.actions.hidden = true;
+  renderErr(''); renderStatus('', false);
+  const last = state.renders.at(-1);
+  if (last) renderShowRec(last, false);
+  else { renderHistory(); renderAvailability(); }
+  chatPane('props');
+  undoStack.length = redoStack.length = 0;
+  ui.sel = ui.mA = ui.mCur = null;
+  window.View3D?.exitRoom?.({silent:true});
+  save();
+  buildDefs(); renderDims(); renderOpenings(); renderAll(); refit();
+  if (Studio.is3D()) window.View3D?.flyIso?.();
+}
+async function switchProject(row, install){
+  await projectBoot;
+  if (projectSwitching || document.body.classList.contains('busy') || chatState.sending || renderState.busy){
+    const message = tr('请等当前操作完成后再切换项目。', 'Finish the current operation before switching projects.');
+    toast(message); return {ok:false, errors:[message]};
+  }
+  projectSwitching = true;
+  try {
+    if (activeProjectId){
+      await putProject(projectCurrent());
+      // 等待浏览器存储时，最后一次键盘操作也归到原来的项目。
+      void putProject(projectCurrent());
+    }
+    const result = install();
+    if (!result.ok) return result;
+    activeProjectId = row.id;
+    projectRows.set(row.id, {...row, result:undefined, snapshot:undefined, phase:'saved'});
+    refreshProjectScene();
+    const saved = projectCurrent();
+    projectRecordActive(saved); await putProject(saved);
+    closeProjects();
+    return result;
+  } finally {
+    projectSwitching = false;
+    saveActiveProject();
+    renderProjects();
+  }
+}
+async function openNewProject(snapshot){
+  const row = {id:uid(), createdAt:Date.now()};
+  const result = await switchProject(row, () => loadProjectScene(snapshot));
+  if (!result.ok && result.errors?.[0]) toast(result.errors[0]);
+  return result.ok;
+}
+async function startBlankProject(){
+  const plan = await loadPlanFile('data/empty-plan.json') || FALLBACK_PLAN;
+  await openNewProject({plan, state:defaultState()});
+}
+
+function projectFormatTime(value){
+  return new Intl.DateTimeFormat(LANG === 'en' ? 'en' : LANG === 'zht' ? 'zh-TW' : 'zh-CN',
+    {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}).format(value);
+}
+function projectStatus(row){
+  if (row.id === activeProjectId) return [tr('当前项目', 'Current'), 'is-ready'];
+  if (projectOpening.has(row.id)) return [tr('打开中', 'Opening'), 'is-running'];
+  switch (row.phase){
+  case 'queued': return [tr('排队中', 'Queued'), 'is-running'];
+  case 'running': return [tr('识别中', 'Analyzing'), 'is-running'];
+  case 'done': return [tr('待预览', 'Ready to review'), 'is-ready'];
+  case 'failed': return [tr('识别失败', 'Failed'), 'is-failed'];
+  case 'canceled': return [tr('已取消', 'Canceled'), ''];
+  default: return [tr('已保存', 'Saved'), 'is-ready'];
+  }
+}
+function projectDetails(row){
+  const plan = row.snapshot?.plan || row.result?.plan;
+  if (plan) {
+    const rooms = plan.rooms.filter(room => room.counted !== false);
+    const count = (row.snapshot?.state?.furniture || row.result?.furniture || []).length;
+    return tr(`${rooms.length} 个房间 · ${count} 件家具与构件`, `${rooms.length} rooms · ${count} furnishings and components`);
+  }
+  if (projectPending(row)){
+    const minutes = Math.max(0, Math.floor((Date.now() - (row.startedAt || row.createdAt)) / 60000));
+    return row.phase === 'queued'
+      ? tr('正在等待识别，可继续编辑当前项目。', 'Waiting its turn. You can keep editing.')
+      : tr(`识别已运行${minutes < 1 ? '不到 1' : ' ' + minutes} 分钟，可继续编辑。`, `Analyzing for ${minutes < 1 ? 'less than 1' : minutes} min. You can keep editing.`);
+  }
+  return row.error || (row.phase === 'canceled' ? tr('图纸识别已停止。', 'Drawing recognition was canceled.') : '');
+}
+function projectActions(row){
+  const button = (action, label, primary = false) =>
+    `<button type="button" class="btn${primary ? ' primary' : ''}" data-project-action="${action}" ${projectOpening.has(row.id) ? 'disabled' : ''}>${esc(label)}</button>`;
+  if (row.id === activeProjectId) return '';
+  if (projectPending(row)) return button('cancel', tr('取消识别', 'Cancel analysis'));
+  if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true);
+  if (row.phase === 'failed' || row.phase === 'canceled'){
+    return button('retry', tr('重新导入', 'Import again'), true) + button('hide', tr('移除记录', 'Remove entry'));
+  }
+  return button('open', tr('打开项目', 'Open project'), true);
+}
+function renderProjects(){
+  const rows = [...projectRows.values()].filter(row => !row.hidden).sort((a, b) =>
+    Number(b.id === activeProjectId) - Number(a.id === activeProjectId) || b.updatedAt - a.updatedAt);
+  const pending = rows.filter(projectPending).length, count = $('#projectCount');
+  count.hidden = pending === 0;
+  count.textContent = pending > 99 ? '99+' : String(pending);
+  projectToggle.setAttribute('aria-label', pending
+    ? tr(`项目，${pending} 个任务进行中`, `Projects, ${pending} tasks in progress`) : tr('项目','Projects'));
+  if (projectPanel.hidden) return;
+  const warning = $('#projectWarning');
+  warning.textContent = projectSyncIssue || (projectStorageIssue
+    ? tr('浏览器存储不可用，项目请及时导出备份。', 'Browser storage is unavailable. Export projects to keep a copy.') : '');
+  warning.hidden = !warning.textContent;
+  $('#projectEmpty').hidden = rows.length > 0;
+  const expanded = new Set([...projectList.querySelectorAll('details[open]')].map(el => el.dataset.projectId));
+  const focus = document.activeElement, focusRow = focus?.closest('[data-project-id]')?.dataset.projectId;
+  const scroll = projectList.scrollTop;
+  projectList.innerHTML = rows.map(row => {
+    const [status, tone] = projectStatus(row), detail = projectDetails(row);
+    const icon = projectPending(row) || projectOpening.has(row.id) ? 'project-spinner' : 'project-folder';
+    return `<details class="project-row" data-project-id="${esc(row.id)}" ${expanded.has(row.id) ? 'open' : ''}>
+      <summary class="project-row-head"><span class="project-row-icon" aria-hidden="true"><i class="${icon}"></i></span>
+        <span class="project-row-title"><b title="${esc(row.name)}">${esc(row.name)}</b><span class="project-row-meta">${esc(projectFormatTime(row.createdAt || row.updatedAt))}</span></span>
+        <span class="project-status ${tone}">${esc(status)}</span></summary>
+      <div class="project-row-body">${detail ? `<p class="project-row-message">${esc(detail)}</p>` : ''}
+        <div class="project-row-actions">${projectActions(row) || ''}</div></div></details>`;
+  }).join('');
+  projectList.scrollTop = scroll;
+  if (focusRow){
+    const node = [...projectList.children].find(el => el.dataset.projectId === focusRow);
+    (node?.querySelector(focus.dataset.projectAction ? `[data-project-action="${focus.dataset.projectAction}"]` : 'summary')
+      || node?.querySelector('summary'))?.focus({preventScroll:true});
+  }
+}
+
+async function projectResult(row){
+  let raw = '', cursor = 0;
+  const signal = AbortSignal.timeout(16000);
+  for (;;){
+    const response = await fetch(studioPath(`/api/jobs/${encodeURIComponent(row.jobId)}?cursor=${cursor}`), {cache:'no-store', signal});
+    if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
+    const data = await response.json();
+    raw += data.chunks.join('');
+    if (data.done){
+      if (data.status >= 300) throw new Error(data.error || aiResponseMessage(data.status, raw));
+      const result = JSON.parse(raw);
+      if (!result?.plan) throw new Error(tr('识别结果缺少户型数据。','The result has no floor plan.'));
+      return result;
+    }
+    if (data.cursor <= cursor) throw new Error(tr('结果尚未就绪，请稍后重试。','The result is still loading. Try again in a moment.'));
+    cursor = data.cursor;
+  }
+}
+function scheduleProjectSync(milliseconds){
+  clearTimeout(projectTimer);
+  projectTimer = setTimeout(syncProjectJobs, milliseconds);
+}
+async function syncProjectJobs(){
+  if (!projectAi) return;
+  if (projectSyncing){ projectSyncAgain = true; return; }
+  projectSyncing = true;
+  try {
+    const response = await fetch(projectEndpoint, {cache:'no-store', signal:AbortSignal.timeout(12000)});
+    if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
+    const {jobs} = await response.json();
+    const seen = new Set();
+    for (const job of jobs){
+      if (!/^import-[a-f0-9-]{36}$/.test(job.id)) continue;
+      seen.add(job.id);
+      if ([...projectRows.values()].some(row => row.oldJobs?.includes(job.id))) continue;
+      const prev = [...projectRows.values()].find(row => row.jobId === job.id);
+      if (prev?.snapshot || prev?.hidden) continue;
+      const row = {...job, ...prev, id:prev?.id || job.id, jobId:job.id,
+        phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt};
+      if ((job.phase === 'done' && !row.result) || (job.phase === 'failed' && !row.error)){
+        try { row.result = await projectResult(row); row.name = row.result.plan.name || row.name; }
+        catch(e){ if (job.phase === 'failed') row.error = e.message; }
+      }
+      const latest = projectRows.get(row.id);
+      if (latest && (latest.jobId !== row.jobId || latest.hidden || latest.snapshot)) continue;
+      if (!prev || prev.phase !== row.phase || row.result !== prev.result || row.error !== prev.error ||
+          prev.updatedAt !== row.updatedAt) await putProject(row);
+    }
+    for (const row of projectRows.values()){
+      const waiting = projectPending(row) || (row.phase === 'done' && !row.result);
+      if (waiting && !seen.has(row.jobId) && Date.now() - row.createdAt > 120000){
+        await putProject({...row, phase:'failed', error:tr('这条任务记录已过期，请重新导入。','This job expired. Import the drawing again.')});
+      }
+    }
+    projectSyncIssue = '';
+  } catch(e){
+    projectSyncIssue = e instanceof TypeError || e.name === 'TimeoutError'
+      ? tr('暂未同步任务进度，正在重连。','Job status is unavailable. Reconnecting.') : e.message;
+  } finally {
+    projectSyncing = false;
+    renderProjects();
+    const pending = [...projectRows.values()].some(projectPending);
+    const again = projectSyncAgain; projectSyncAgain = false;
+    if (again || pending || !projectPanel.hidden) scheduleProjectSync(again ? 0 : (pending ? 3500 : 12000));
+  }
+}
+
+async function projectImportSubmitted({jobId, name, note, retryId}){
+  await projectBoot;
+  const prev = projectRows.get(retryId) || projectRows.get(jobId);
+  await putProject({
+    id:prev?.id || jobId, jobId, name:name.replace(/\.[a-z\d]{1,8}$/i, '') || name, note,
+    oldJobs:prev?.jobId && prev.jobId !== jobId ? [...(prev.oldJobs || []), prev.jobId] : prev?.oldJobs,
+    phase:'queued', createdAt:Date.now(), updatedAt:Date.now(),
+  });
+  renderProjects(); scheduleProjectSync(0);
+}
+async function projectClick(e){
+  const button = e.target.closest('[data-project-action]');
+  if (!button) return;
+  const row = projectRows.get(button.closest('[data-project-id]').dataset.projectId);
+  if (!row || button.disabled || projectOpening.has(row.id)) return;
+  const action = button.dataset.projectAction, opening = action === 'open' || action === 'preview';
+  button.disabled = true;
+  if (opening){ projectOpening.add(row.id); renderProjects(); }
+  try {
+    switch (action){
+    case 'open':
+      await switchProject(row, () => loadProjectScene(row.snapshot));
+      break;
+    case 'preview': {
+      const result = row.result || await projectResult(row);
+      const current = projectRows.get(row.id);
+      if (!current || current.snapshot || current.jobId !== row.jobId) break;
+      closeProjects();
+      impOpenResult(result, ({plan,furniture}) => switchProject(row, () => {
+        state = {...defaultState(), renders:[]};
+        return applyPlan(plan, {furniture, clearFurniture:true, freshState:true, history:false});
+      }));
+      break;
+    }
+    case 'cancel': {
+      const response = await fetch(studioPath(`/api/jobs/${encodeURIComponent(row.jobId)}`), {method:'DELETE'});
+      if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
+      scheduleProjectSync(0);
+      break;
+    }
+    case 'retry': closeProjects(); impOpen({retryId:row.id, note:row.note}); break;
+    case 'hide': await putProject({...row, hidden:true}); renderProjects(); break;
+    }
+  } catch(e){ toast(e.message || tr('项目操作失败。','Project action failed.')); }
+  finally {
+    button.disabled = false;
+    if (opening){ projectOpening.delete(row.id); renderProjects(); }
+  }
+}
+function resizeProjects(){
+  const trigger = projectToggle.getBoundingClientRect();
+  projectPanel.style.setProperty('--project-panel-space', Math.max(90, window.innerHeight - trigger.bottom - 18) + 'px');
+}
+function closeProjects(returnFocus = false){
+  projectPanel.hidden = true;
+  projectToggle.setAttribute('aria-expanded','false');
+  if (returnFocus) projectToggle.focus({preventScroll:true});
+}
+projectToggle.onclick = () => {
+  if (!projectPanel.hidden) return closeProjects();
+  $('details.menu').open = false;
+  closeDrawers();
+  projectPanel.hidden = false;
+  projectToggle.setAttribute('aria-expanded','true');
+  resizeProjects(); renderProjects(); scheduleProjectSync(0);
+};
+$('#projectClose').onclick = () => closeProjects(true);
+$('#projectNew').onclick = startBlankProject;
+$('#projectImport').onclick = () => { closeProjects(); impOpen(); };
+projectList.onclick = projectClick;
+addEventListener('resize', () => { if (!projectPanel.hidden) resizeProjects(); });
+document.addEventListener('pointerdown', e => { if (!projectPanel.hidden && !e.target.closest('#projectShelf')) closeProjects(); });
+document.addEventListener('keydown', e => {
+  if (projectPanel.hidden) return;
+  if (e.key === 'Escape'){ e.stopPropagation(); closeProjects(true); }
+  else if (projectPanel.contains(e.target)) e.stopPropagation();
+}, true);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleProjectSync(0); });
+
 applyStaticLang(); syncFullscreen();
 buildDefs(); buildLib(); renderOpenings(); renderDims();
 $('#tip').textContent = TIPS()['2d'];
 fitView(); renderAll();
-hydrateDefaultPlan();                           // 未存过方案时再拉一次 data/empty-plan.json
+const projectBoot = (async () => {
+  await hydrateDefaultPlan();
+  let recent, tabId;
+  try {
+    recent = JSON.parse(localStorage.getItem(projectActiveKey) || 'null');
+    tabId = sessionStorage.getItem(projectActiveKey);
+  } catch(e){}
+  try {
+    const rows = await projectTransaction('readonly', store => store.getAll());
+    rows.forEach(row => projectRows.set(row.id, row));
+  } catch(e){ projectStorageIssue = true; }
+  const id = tabId || recent?.id, row = projectRows.get(id);
+  activeProjectId = id || uid();
+  if (row?.snapshot && !(recent?.id === id && recent.updatedAt >= row.updatedAt && hasStoredPlan())){
+    if (loadProjectScene(row.snapshot).ok) refreshProjectScene();
+  }
+  if (!row) projectRows.set(activeProjectId, {id:activeProjectId, createdAt:Date.now()});
+  onProjectSave = saveActiveProject;
+  save();
+  renderProjects();
+  scheduleProjectSync(0);
+})();
 
 /* ======================= 首次使用引导 ======================= */
 // 高亮 + 分步卡片。首次访问自动弹出；之后从「文件 → 使用引导」重看。
@@ -4063,11 +4479,9 @@ function tourDefs(){
       { sel: '#ptabs', title: tr('③ 右侧三个页签', '3. Three tabs on the right'),
         body: tr('属性：改房间名、换地面材质、看面积造价。\n助手：用一句话改方案，比如「客厅换个三人沙发」。\n效果图：选机位和风格，生成照片级渲染。',
                  'Properties: rename rooms, change flooring, see areas and cost.\nAssistant: change the plan in plain words.\nRenders: pick a camera and style to generate a photoreal image.') },
-      { sel: '#importPlanFile', title: tr('④ 第一步：把图纸交给助手', '4. Step one: hand over the drawing'),
-        body: tr('文件 → 导入图纸…，上传户型图（图片、PDF、CAD 导出都行，不限格式）。\n助手会自动识别墙体、门窗和房间，预览确认后点「应用方案」生成图纸。',
-                 'File → Import drawing… and upload a floor plan (image, PDF or CAD export — any format).\nThe assistant reads walls, doors and rooms; check the preview, then apply it.'),
-        enter(){ const d = document.querySelector('details.menu'); if (d) d.open = true; },
-        leave(){ const d = document.querySelector('details.menu'); if (d) d.open = false; } },
+      { sel: '#projectToggle', title: tr('④ 导入图纸、切换项目', '4. Import drawings and switch projects'),
+        body: tr('从「项目」上传户型图、PDF 或 CAD 导出。上传后可以继续编辑，识别完成后在项目列表里预览并打开新方案。',
+                 'Upload a drawing, PDF or CAD export from Projects. Keep editing while recognition runs, then preview and open the new plan from the list.') },
       { sel: '#chat', title: tr('⑤ 第二步：对话修改', '5. Step two: change it by talking'),
         body: tr('切到「助手」，直接说要改哪里：\n「把客厅沙发放到窗边」「主卧衣柜加宽到 2.4 米」「厨房换成 600 地砖」。\n助手返回改动预览，确认后才应用，一次 Ctrl+Z 可整体撤销。在 3D 里提问会自动带上当前视角。',
                  'Open the Assistant tab and say what to change:\n“move the sofa to the window”, “widen the wardrobe to 2.4 m”, “use 600 tiles in the kitchen”.\nYou preview the change before it is applied, and one Ctrl+Z undoes the whole batch. In 3D your current view is attached automatically.'),
@@ -4213,9 +4627,10 @@ const opt = {cut:2.8, furn:true, labels:true, night:false, hour:10, mode:'orbit'
 
 let inited = false, active = false, raf = 0, anim = null, fly = null;
 let renderer, labelRenderer, scene, camera, orbit, walkCtl, hemi, sun, ground, glassMat, wallMat, capMat, frameMat;
-let archFloor, archUp, furnG, labelG, lampG, colliders = [], selKey = null, selHelper = null;
+let archFloor, archUp, furnG, labelG, doorG, lampG, colliders = [], selKey = null, selHelper = null;
 let sigArch = '', sigFurn = '', sigLabels = '', grow = 1, furnGrow = 1;
 const doors = [], keys = {};
+let doorPlanRev = -1, lastDoorVisibility = -Infinity;
 
 /* ======================= 初始化 ======================= */
 function init(){
@@ -4256,8 +4671,9 @@ function init(){
   glassMat = new THREE.MeshPhysicalMaterial({color:0xcfe6ef, roughness:.05, transparent:true, opacity:.28, depthWrite:false, side:THREE.DoubleSide});
   wallMat = mat('#f4f1eb', {roughness:.92}); capMat = mat('#34312d', {roughness:.9}); frameMat = mat('#5d6166', {roughness:.5, metalness:.4});
 
-  archFloor = new THREE.Group(); archUp = new THREE.Group(); furnG = new THREE.Group(); labelG = new THREE.Group(); lampG = new THREE.Group();
-  scene.add(archFloor, archUp, furnG, labelG, lampG);
+  archFloor = new THREE.Group(); archUp = new THREE.Group(); furnG = new THREE.Group(); labelG = new THREE.Group();
+  doorG = new THREE.Group(); lampG = new THREE.Group();
+  scene.add(archFloor, archUp, furnG, labelG, doorG, lampG);
 
   const cv = renderer.domElement; let downAt = null, look = null;
   cv.addEventListener('pointerdown', e => {
@@ -4297,14 +4713,15 @@ function init(){
 
   cv.addEventListener('pointerup', e => {
     const tap = downAt && Math.hypot(e.clientX-downAt[0], e.clientY-downAt[1]) <= TAP;
+    downAt = null;
     if (look?.id === e.pointerId){
       look = null;
-      if (tap){ const h = pick(e); if (h?.door && h.dist < 3.5) h.door.open = !h.door.open; }   // 漫游时点门开关
+      if (tap){ const h = pick(e); if (h?.door && h.dist < 3.5) toggleDoor(h.door); }
       return;
     }
     if (anim || opt.mode !== 'orbit' || !tap) return;
     const h = pick(e);
-    if (h?.door) h.door.open = !h.door.open;
+    if (h?.door){ if (e.button === 0) toggleDoor(h.door); }
     else if (h?.fid) window.select({kind:'furn', id:h.fid});
     else if (h?.room) window.select({kind:'room', id:h.room});
     else window.select(null);
@@ -5010,6 +5427,7 @@ function wallBox([x0, y0, x1, y1], yb, yt, m){
     const p = o.geometry.parameters, sh = Math.min(.12, yt), sk = new THREE.Mesh(new THREE.BoxGeometry(p.width + .02, sh, p.depth + .02), skirtMat);
     sk.position.set(o.position.x, sh/2, o.position.z); sk.userData.walkOnly = true; sk.visible = opt.mode === 'walk'; archUp.add(sk);
   }
+  return o;
 }
 const edgeMat = new THREE.LineBasicMaterial({color:0x6f675b}), skirtMat = new THREE.MeshStandardMaterial({color:'#8b7f6e', roughness:.6});
 function shapeOf(poly, flip){ const s = new THREE.Shape(); poly.forEach(([x, y], i) => s[i ? 'lineTo' : 'moveTo'](wx(x), flip ? wz(y) : -wz(y))); return s; }
@@ -5043,7 +5461,41 @@ function openingTop(rect, walls, cut){
   return adjacent.some(w => w[5] !== undefined) ? Math.min(...adjacent.map(w => visibleWallHeight(w, cut))) : cut;
 }
 
+function labelDoor(door){
+  const action = door.open ? tr('关门','Close door') : tr('开门','Open door');
+  const label = `${action} · ${door.name ? nm(door.name) : tr('推拉门','Sliding door')}`;
+  const button = door.marker.element;
+  door.text.textContent = action;
+  button.dataset.open = String(door.open);
+  button.title = label;
+  button.setAttribute('aria-label', label);
+}
+function toggleDoor(door){
+  door.open = !door.open;
+  labelDoor(door);
+}
+function addDoor({key, name, open, rect, height, move, blocks}){
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'door-control';
+  const icon = document.createElement('i'), text = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true'); button.append(icon, text);
+  const marker = new CSS2DObject(button);
+  marker.position.set(wx((rect[0]+rect[2])/2), Math.max(.12, height - .12), wz((rect[1]+rect[3])/2));
+  marker.center.y = .85;
+  marker.visible = false;
+  marker.renderOrder = 1;
+  const door = {key, name, open, marker, text, progress:Number(open), move, blocks};
+  move(door.progress);
+  labelDoor(door);
+  button.onclick = () => toggleDoor(door);
+  doors.push(door); doorG.add(marker);
+  return door;
+}
+
 function buildArch(){
+  const previousDoors = new Map(doorPlanRev === planRev ? doors.map(d => [d.key, d.open]) : []);
+  doorPlanRev = planRev;
+  doorG.clear(); lastDoorVisibility = -Infinity;
   clearGroup(archFloor); clearGroup(archUp); lampG.clear(); doors.length = 0; colliders = [];
   const top = opt.cut;
   const walls = WALLS.filter((_, i) => !state.demolished.includes('w'+i));
@@ -5090,32 +5542,62 @@ function buildArch(){
       mu.position.set(cx + (hz ? t : 0), sill + gh/2, cz + (hz ? 0 : t)); mu.castShadow = true; archUp.add(mu); }
     [sill + .02, gTop - .02].forEach(y => { const tr = new THREE.Mesh(new THREE.BoxGeometry(hz ? L : .06, .04, hz ? .06 : L), frameMat); tr.position.set(cx, y, cz); archUp.add(tr); });
   });
-  DOORS.forEach(d => {
+  DOORS.forEach((d, i) => {
     const doorTop = openingTop(d.rect, walls, top);
-    wallBox(d.rect, 2.1, doorTop);
+    const lintel = wallBox(d.rect, 2.1, doorTop);
     const pivot = new THREE.Group(), L = M(d.len), dh = Math.min(2.05, doorTop);
     pivot.position.set(wx(d.h[0]), 0, wz(d.h[1]));
     const leaf = box(L, dh, .04, mat(d.entry ? '#6b4f3a' : '#efe6d8', {roughness:.5}), L/2);
-    const ang = v => Math.atan2(-v[1], v[0]), door = {pivot, a0:ang(d.c), a1:ang(d.o), open:true};
-    if (door.a1 - door.a0 > Math.PI) door.a1 -= Math.PI*2; if (door.a0 - door.a1 > Math.PI) door.a1 += Math.PI*2;
-    door.cur = door.a1; pivot.rotation.y = door.cur; leaf.userData.door = door; pivot.add(leaf);
+    const a0 = Math.atan2(-d.c[1], d.c[0]), a1 = Math.atan2(-d.o[1], d.o[0]);
+    const turn = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)), key = `swing-${i}`;
+    const door = addDoor({key, name:d.name, open:previousDoors.get(key) ?? true, rect:d.rect, height:dh,
+      move: t => { pivot.rotation.y = a0 + turn*t; },
+      blocks(x, z, r){
+        const a = pivot.rotation.y, px = pivot.position.x, pz = pivot.position.z;
+        const dx = Math.cos(a)*L, dz = -Math.sin(a)*L;
+        const t = clamp01(((x-px)*dx + (z-pz)*dz)/(L*L));
+        return Math.hypot(x - px - t*dx, z - pz - t*dz) < r*.8;
+      }});
+    door.lintel = lintel;
+    leaf.userData.door = door; pivot.add(leaf);
     if (dh > .05){
       const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 8), metal());
       knob.position.set(L - .07, Math.min(1, dh - .05), 0); knob.scale.z = 2.2;
       knob.userData.door = door; pivot.add(knob);
     }
-    doors.push(door); archUp.add(pivot);
+    archUp.add(pivot);
   });
-  SLIDES.forEach(({rect, v}) => {
+  SLIDES.forEach(({rect, v}, i) => {
     const [x0, y0, x1, y1] = rect, head = v ? 2.4 : 2.1, slideTop = openingTop(rect, walls, top);
-    wallBox(rect, head, slideTop);
+    const lintel = wallBox(rect, head, slideTop);
     const L = M(v ? y1-y0 : x1-x0), ph = Math.min(head, slideTop), pl = L*.55;
-    [[-1, -.02], [1, .02]].forEach(([s, off]) => {
-      const c = s < 0 ? -L/2 + pl/2 : L/2 - pl/2, x = v ? wx((x0+x1)/2) + off : wx(x0) + L/2 + c, z = v ? wz(y0) + L/2 + c : wz((y0+y1)/2) + off;
-      const p = new THREE.Mesh(new THREE.BoxGeometry(v ? .02 : pl, ph, v ? pl : .02), glassMat); p.position.set(x, ph/2, z); archUp.add(p);
-      if (ph > .06) [ph - .03, .03].forEach(y => { const fr = new THREE.Mesh(new THREE.BoxGeometry(v ? .04 : pl, .05, v ? pl : .04), frameMat); fr.position.set(x, y, z); archUp.add(fr); });
-      [-1, 1].forEach(e => { const fr = new THREE.Mesh(new THREE.BoxGeometry(.04, ph, .04), frameMat); fr.position.set(v ? x : x + e*pl/2, ph/2, v ? z + e*pl/2 : z); archUp.add(fr); });
+    const start = v ? wz(y0) : wx(x0), across = v ? wx((x0+x1)/2) : wz((y0+y1)/2);
+    const axis = v ? 'z' : 'x', travel = L - pl, key = `slide-${i}`;
+    const panels = [-.02, .02].map(off => {
+      const group = new THREE.Group();
+      group.position[v ? 'x' : 'z'] = across + off;
+      const pane = new THREE.Mesh(new THREE.BoxGeometry(v ? .02 : pl, ph, v ? pl : .02), glassMat);
+      pane.position.y = ph/2; group.add(pane);
+      if (ph > .06) [ph - .03, .03].forEach(y => {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(v ? .04 : pl, .05, v ? pl : .04), frameMat);
+        frame.position.y = y; group.add(frame);
+      });
+      [-pl/2, pl/2].forEach(at => {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(.04, ph, .04), frameMat);
+        frame.position.y = ph/2; frame.position[axis] = at; group.add(frame);
+      });
+      archUp.add(group);
+      return group;
     });
+    panels[0].position[axis] = start + pl/2;
+    const door = addDoor({key, name:'', open:previousDoors.get(key) ?? false, rect, height:ph,
+      move: t => { panels[1].position[axis] = start + pl/2 + travel*(1-t); },
+      blocks(x, z, r){
+        const along = v ? z : x, distance = Math.abs((v ? x : z) - across);
+        return distance < r*.8 && along > start - r*.65 && along < panels[1].position[axis] + pl/2 + r*.65;
+      }});
+    door.lintel = lintel;
+    panels.forEach(p => p.children.forEach(mesh => { mesh.userData.door = door; }));
   });
   applyLight(); applyGrow();
 }
@@ -5417,8 +5899,8 @@ async function enter(){
   stage.classList.remove('animating');
 }
 async function exit(){
-  if (opt.mode === 'walk'){ walkCtl.unlock(); stopTouchWalk(); $('#hint3d').textContent = HINT_ORBIT; $('#walkOverlay').style.display = 'none'; $('#cross').style.display = 'none';
-    const dir = new THREE.Vector3(); camera.getWorldDirection(dir); orbit.target.copy(camera.position).addScaledVector(dir, 3).setY(0); opt.mode = 'orbit'; syncModeBtns(); }
+  if (opt.mode === 'walk'){ walkCtl.unlock(); stopTouchWalk(); $('#walkOverlay').style.display = 'none'; $('#cross').style.display = 'none';
+    const dir = new THREE.Vector3(); camera.getWorldDirection(dir); orbit.target.copy(camera.position).addScaledVector(dir, 3).setY(0); opt.mode = 'orbit'; syncModeBtns(); syncHint3d(); }
   exitRoom({silent: true});                             // 清室内裁切 / 标题条，再走 3D → 2D 动画
   fly = null; orbit.enabled = false; showLabels(false); stage.classList.add('animating');
   const A = curPose(), B = planPose();
@@ -5437,6 +5919,46 @@ async function exit(){
 
 /* ======================= 选择 / 拾取 ======================= */
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+const doorRay = new THREE.Raycaster(), doorDirection = new THREE.Vector3(), doorScreen = new THREE.Vector3();
+const clipped = p => roomView.planes?.some(plane => plane.distanceToPoint(p) < -.005);
+
+function updateDoorControls(now){
+  if (fly || stage.classList.contains('animating') || opt.mode === 'walk' && !touchWalk){
+    doors.forEach(d => { d.marker.visible = false; });
+    lastDoorVisibility = -Infinity;
+    return;
+  }
+  if (now - lastDoorVisibility < 85) return;
+  lastDoorVisibility = now;
+  const w = SW(), h = SH(), candidates = [];
+  const gapX = LANG === 'en' ? 92 : COARSE ? 68 : 54, gapY = COARSE ? 48 : 31;
+  for (const door of doors){
+    const {marker} = door, at = marker.position;
+    marker.visible = false;
+    if (clipped(at) || touchWalk && at.distanceTo(camera.position) > 3.5) continue;
+    doorScreen.copy(at).project(camera);
+    const x = (1 + doorScreen.x)*w/2, y = (1 - doorScreen.y)*h/2;
+    if (doorScreen.z < -1 || doorScreen.z > 1 || x < gapX/2 || x > w - gapX/2 || y < gapY || y > h - gapY/2) continue;
+    candidates.push({door, x, y, depth:doorScreen.z});
+  }
+  candidates.sort((a, b) => a.depth - b.depth);
+  const placed = [];
+  for (const {door, x, y} of candidates){
+    if (placed.some(p => Math.abs(p.x - x) < gapX && Math.abs(p.y - y) < gapY)) continue;
+    doorDirection.copy(door.marker.position).sub(camera.position);
+    const distance = doorDirection.length();
+    if (distance <= .07) continue;
+    doorRay.far = distance - .07;
+    doorRay.set(camera.position, doorDirection.divideScalar(distance));
+    const hidden = doorRay.intersectObjects(archUp.children, true).some(hit =>
+      hit.object.isMesh && hit.object.visible && hit.object.material !== glassMat &&
+      hit.object !== door.lintel && hit.object.userData.door !== door && !clipped(hit.point));
+    if (hidden) continue;
+    door.marker.visible = true;
+    placed.push({x, y});
+  }
+}
+
 function pick(e){
   if (!e) ptr.set(0, 0);
   else { const r = renderer.domElement.getBoundingClientRect(); ptr.set((e.clientX - r.left)/r.width*2 - 1, -(e.clientY - r.top)/r.height*2 + 1); }
@@ -5444,8 +5966,9 @@ function pick(e){
   const hits = ray.intersectObjects([...(opt.furn ? [furnG] : []), archUp, archFloor], true);
   for (const h of hits){
     let o = h.object;
-    if (o.material === glassMat) continue;
+    if (!o.visible || clipped(h.point)) continue;
     if (o.userData.door) return {door:o.userData.door, dist:h.distance};
+    if (o.material === glassMat) continue;
     if (o.userData.room) return {room:o.userData.room};
     while (o && !o.userData.fid && o !== scene) o = o.parent;
     if (o?.userData.fid) return {fid:o.userData.fid};
@@ -5482,10 +6005,10 @@ function updateSel(){
 
 /* ======================= 漫游 ======================= */
 // 触屏漫游：左下虚拟摇杆移动，在画面上拖动转向（iPad 不支持鼠标指针锁定）
-const HINT_ORBIT = () => COARSE ? tr('单指旋转 · 双指缩放 / 平移 · 点选家具后可拖动摆放 · 点门开关', '1 finger orbits · 2 fingers zoom / pan · select furniture to drag it · tap doors to open')
-  : tr('左键旋转 · 右键平移 · 滚轮缩放 · 选中家具后拖动可摆放 · 点击门开关', 'Left-drag orbits · right-drag pans · scroll zooms · select furniture to drag it · click doors to open');
-const HINT_TOUCHWALK = () => tr('左下摇杆移动 · 拖动画面转向 · 点门开关', 'Joystick moves · drag to look · tap doors to open');
-const HINT_WALK = () => tr('WASD 移动 · 鼠标转向 · Shift 快走 · E 开关门 · Esc 暂停', 'WASD moves · mouse looks · Shift runs · E opens doors · Esc pauses');
+const HINT_ORBIT = () => COARSE ? tr('单指旋转 · 双指缩放 / 平移 · 点选家具后可拖动摆放 · 点门旁按钮开关', '1 finger orbits · 2 fingers zoom / pan · select furniture to drag it · tap the door button')
+  : tr('左键旋转 · 右键平移 · 滚轮缩放 · 选中家具后可拖动 · 点门旁按钮开关', 'Left-drag orbits · right-drag pans · scroll zooms · drag selected furniture · click the door button');
+const HINT_TOUCHWALK = () => tr('左下摇杆移动 · 拖动画面转向 · 点门旁按钮开关', 'Joystick moves · drag to look · tap the door button');
+const HINT_WALK = () => tr('WASD 移动 · 鼠标转向 · 点击 / E 开关面前的门 · Esc 暂停', 'WASD moves · mouse looks · click / E toggles the door ahead · Esc pauses');
 function syncHint3d(){ $('#hint3d').textContent = opt.mode === 'orbit' ? HINT_ORBIT() : touchWalk ? HINT_TOUCHWALK() : HINT_WALK(); }
 let touchWalk = false;
 const joy = {x:0, y:0, id:null}, eul = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -5562,12 +6085,7 @@ function setMode(m){
 }
 function blocked(x, z, r = .22){
   for (const [x0, z0, x1, z1] of colliders) if (x > x0 - r && x < x1 + r && z > z0 - r && z < z1 + r) return true;
-  for (const d of doors){
-    const a = d.pivot.rotation.y, px = d.pivot.position.x, pz = d.pivot.position.z, ex = px + Math.cos(a)*.9, ez = pz - Math.sin(a)*.9;
-    const t = clamp01(((x-px)*(ex-px) + (z-pz)*(ez-pz)) / ((ex-px)**2 + (ez-pz)**2));
-    if (Math.hypot(x - (px + t*(ex-px)), z - (pz + t*(ez-pz))) < r*.8) return true;
-  }
-  return false;
+  return doors.some(door => door.blocks(x, z, r));
 }
 function stepWalk(dt){
   if (!walkCtl.isLocked && !touchWalk) return;
@@ -5592,10 +6110,17 @@ function stepWalk(dt){
     }
   }
 }
+function toggleDoorAhead(){
+  const hit = pick();
+  if (hit?.door && hit.dist < 2.5) toggleDoor(hit.door);
+}
+addEventListener('pointerup', e => {
+  if (active && opt.mode === 'walk' && walkCtl.isLocked && e.button === 0) toggleDoorAhead();
+});
 addEventListener('keydown', e => {
   if (!active || e.target.matches('input,select,textarea')) return;
   keys[e.code] = true;
-  if (opt.mode === 'walk' && e.code === 'KeyE'){ const h = pick(); if (h?.door && h.dist < 2.5) h.door.open = !h.door.open; }
+  if (opt.mode === 'walk' && e.code === 'KeyE' && !e.repeat) toggleDoorAhead();
 });
 addEventListener('keyup', e => keys[e.code] = false);
 
@@ -5605,10 +6130,10 @@ function syncCutBtns(){ document.querySelectorAll('[data-cut]').forEach(b => b.c
 function syncWalkTexts(){
   const t = COARSE
     ? [tr('点击开始，从入户门进入', 'Tap to start at the front door'), tr('左下摇杆移动 · 在画面上拖动转向', 'Joystick moves · drag on screen to look'),
-       tr('点门开关 · 点「退出漫游」回到鸟瞰', 'Tap doors to open · "Exit walk" returns to orbit')]
+       tr('点门旁按钮开关 · 点「退出漫游」回到鸟瞰', 'Tap the door button · "Exit walk" returns to orbit')]
     : [tr('点击开始，从入户门进入', 'Click to start at the front door'),
        tr('<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 移动 · 鼠标转向 · <kbd>Shift</kbd> 快走', '<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · mouse looks · <kbd>Shift</kbd> runs'),
-       tr('<kbd>E</kbd> 开关正前方的门 · <kbd>Esc</kbd> 暂停', '<kbd>E</kbd> opens the door ahead · <kbd>Esc</kbd> pauses')];
+       tr('点击或按 <kbd>E</kbd> 开关正前方的门 · <kbd>Esc</kbd> 暂停', 'Click or press <kbd>E</kbd> to toggle the door ahead · <kbd>Esc</kbd> pauses')];
   t.forEach((h, i) => $('#wo' + (i + 1)).innerHTML = h);
   syncHint3d();
 }
@@ -5659,9 +6184,13 @@ function loop(){
   else if (fly){ const t = clamp01((now - fly.t0)/fly.dur); camTween(fly.A, fly.B, ease(t)); if (t >= 1){ const f = fly; fly = null; f.done && f.done(); } }
   else if (opt.mode === 'orbit') orbit.update();
   else stepWalk(dt);
-  doors.forEach(d => { const tg = d.open ? d.a1 : d.a0; d.cur += (tg - d.cur) * Math.min(1, dt*6); d.pivot.rotation.y = d.cur; });
+  doors.forEach(d => {
+    d.progress += (Number(d.open) - d.progress) * Math.min(1, dt*6);
+    d.move(d.progress);
+  });
   updateSel();
   renderer.render(scene, camera);
+  updateDoorControls(now);
   labelRenderer.render(scene, camera);
 }
 
@@ -5697,7 +6226,7 @@ function viewInfo(){
   return {mode: opt.mode, fov: FOV, position: r3(camera.position), target: r3(orbit.target), room: roomView.id || null};
 }
 
-function relang(){ syncWalkTexts(); if (inited){ buildLabels(); renderRoomBar(); } }
+function relang(){ syncWalkTexts(); if (inited){ buildLabels(); doors.forEach(labelDoor); renderRoomBar(); } }
 
 window.View3D = {enter, exit, relang, sync:() => sync(), shotURL, groundAt, flyToRoom:id => active && !anim && flyToRoom(id),
   flyIso: () => active && !anim && flyTo(isoWhole()),
