@@ -1,0 +1,23 @@
+[Unit]
+Description=Interior Design public gateway
+Wants=interior-design-studio.service
+After=interior-design-studio.service
+
+[Service]
+User=interior-design
+Group=interior-design
+WorkingDirectory=/opt/interior-design/app
+ExecStart=/usr/bin/node /opt/interior-design/app/deploy/public-gateway.mjs
+Environment=STUDIO_PUBLIC_URL=https://aitobee.muskapis.com/interior-design/
+Environment=STUDIO_PUBLIC_ACCESS_KEY_HASH_FILE=/var/lib/interior-design/config/access.sha256
+Environment=STUDIO_PUBLIC_BRIDGE_TOKEN_FILE=/var/lib/interior-design/config/bridge.key
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

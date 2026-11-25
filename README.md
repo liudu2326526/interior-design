@@ -23,9 +23,10 @@ npm start                    # 同上
 公网隧道连接 `deploy/public-gateway.mjs` 的 `127.0.0.1:4174`。访客可以编辑方案，持访问密钥的用户登录后可以使用 AI。网关将 AI 结果分批返回给浏览器，适配 Cloudflare Quick Tunnel。
 
 - 本机服务和公网网关都设置 `STUDIO_PUBLIC_BRIDGE_TOKEN_FILE`，指向同一份本地桥接密钥文件。
-- 公网网关额外设置 `STUDIO_PUBLIC_ACCESS_KEY_FILE`，指向另一份本地登录密钥文件。两份密钥应独立随机生成，文件权限设为 `0600`。
+- 公网网关额外设置 `STUDIO_PUBLIC_ACCESS_KEY_FILE`，指向独立随机生成的登录密钥文件，也可以用 `STUDIO_PUBLIC_ACCESS_KEY_HASH_FILE` 读取高熵登录密钥的 SHA-256 十六进制摘要。密钥文件权限设为 `0600`。
 - 浏览器分别保存本机域名和公网域名的方案。需要在另一端打开时，通过项目 JSON 导出和导入。
-- 固定域名可设置 `STUDIO_PUBLIC_URL` 为完整 HTTPS 地址，例如 `https://aitobee.muskapis.com/interior-design/`。Nginx 转发时保留域名和路径。将 [Nginx 片段](deploy/nginx-interior-design.conf) 加入对应 HTTPS 站点，并把监听服务器回环地址的 SSH 反向转发接到本机网关端口 4174。
+- 固定域名可设置 `STUDIO_PUBLIC_URL` 为完整 HTTPS 地址，例如 `https://aitobee.muskapis.com/interior-design/`。将 [Nginx 片段](deploy/nginx-interior-design.conf) 加入对应 HTTPS 站点，保留原始域名和路径，把请求转给同机的 4174 网关。Linux 的 systemd 服务定义在 `deploy/`。
+- 如 Codex 环境使用 API 密钥，效果图可以通过服务端配置注入 `image_gen`。设置 `STUDIO_RENDER_IMAGE_CONFIG_FILE` 指向私有 JSON，内容为固定 HTTPS API 基址 `baseUrl`、图像模型名 `model` 和本机 Codex API 密钥文件路径 `authFile`。图像工具只供效果图回合调用，使用该次请求的参考截图。有些兼容网关返回临时图片链接，可设置 `allowPublicResultUrls: true`，应用会验证公开地址和 PNG 内容。
 
 ## 目录
 
@@ -33,7 +34,7 @@ npm start                    # 同上
 index.html            页面 + 2D 引擎 + 3D 场景（保持单文件，原生 JS）
 server.mjs            本地 HTTP/SSE 桥接：静态服务、/api/chat、/api/render、/api/plan/import、/files
 lib/codex/            codex app-server 客户端（定位可执行文件、stdio JSON-RPC、会话/回合、Plan 校验）
-prompts/              三个 codex 会话的系统提示词：patch.md / render.md / plan-import.md
+prompts/              四个 codex 会话的系统提示词：patch.md / render.md / plan-import.md / plan-verify.md
 data/                 默认空户型 empty-plan.json、示例 125-C 户型 125c-plan.json
 docs/contract.md      接口契约（Plan/State 结构、window.Studio、HTTP API、op 列表）
 projects/             运行期产出：效果图 renders/，/files/* 映射到这里（只读）
@@ -61,6 +62,8 @@ tests/                零依赖自测：run.mjs 启服务 + headless Chrome，se
    列表显示排队、识别中、待预览、失败和取消。刷新或离开页面后，可以回来查看任务，失败时可以重新导入。
    识别保留家具、家电、洁具、楼梯和端景在图中的位置、尺寸与朝向。确认预览后，方案作为独立项目打开。
    已打开的项目和编辑保存在当前浏览器。后台任务结果最多保留 7 天，每个访问范围保留最近 32 条已结束任务。
+   识别完成后会自动对照原图复核一次（默认开启），可在项目列表里切换「识别结果 / 修正后」查看差异并应用修正，接口见 `docs/contract.md` §5。
+   复核需要 codex 可用；不想保留原图和复核产物时设置 `STUDIO_PLAN_REVIEW=off` 关闭自动复核，本机任务的工作目录随后会立即清理。
 
 ## codex 未安装 / 未登录时
 

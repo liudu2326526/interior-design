@@ -16,9 +16,9 @@
 - 2D 平面：原点在户型左上角附近，x 向右，y **向下**（屏幕坐标）。3D 由页面自行转换，你不需要处理。
 - 家具：`cx, cy` 是家具**中心**（不是左上角）；`w` 是本地 x 方向尺寸，`d` 是本地 y 方向尺寸；`rot` 是绕中心**顺时针**角度（0 / 90 / 180 / 270 为主）。`rot` 为 90 / 270 时，`w` / `d` 字段本身不变，由 `rot` 决定朝向。
 - 每件家具完整字段：`id`、`type`、`name`、`cx`、`cy`、`w`、`d`、`rot`、`color`。`id` 由页面生成（`f` 开头），你只引用，不要改写。
-- 墙：轴对齐矩形 `[x0, y0, x1, y1, kind, height?]`，坐标已含墙厚。`kind` 为 `e` 外墙、`b` 承重墙、`n` 非承重墙或 `low` 矮墙。第六项 `height` 可选，单位 mm。省略时 `low` 使用矮墙默认高度，其余类型使用标准全高。
+- 直墙的轴对齐矩形 `[x0, y0, x1, y1, kind, height?]` 已含厚度。`kind` 为 `e` 外墙、`b` 承重墙、`n` 非承重墙或 `low` 矮墙。`height` 可选，单位 mm。省略时 `low` 使用矮墙默认高度，其余类型使用标准全高。
 - 墙体编号是 `w` + 墙在 `plan.walls` 数组里的下标（例如 `w17`）。下标从 0 开始；换方案后编号会变，以上下文里当前 `plan.walls` 为准。
-- 门 / 窗 / 推拉门的 rect 同样是轴对齐矩形。
+- 平开门、推拉门和直窗的洞口使用轴对齐矩形。圆弧墙窗使用 `{from:[x,y],to:[x,y],sweep,thickness}`，圆弧墙还可设 `kind` 和 `height`。`from`、`to` 为中心线两端，`thickness` 为总厚度（mm）。`sweep` 顺时针为正，逆时针为负，绝对值为 0.5–180 度。
 - 用户说「左移 20cm」时，`dx = -200`；「上移」在 2D 里是 `dy = -200`（y 向下）；「靠近窗户」需要先看上下文里窗的位置，算不出就不再猜。
 - 尺寸参考 §2.1；页面不会自动补尺寸，`addFurniture` / `resizeFurniture` 必须显式给 `w`、`d`。
 
@@ -43,6 +43,10 @@
 
 颜色（`color`）可省略，省略时页面用家具库默认色；需要时给 `#rrggbb`（3 位或 6 位十六进制）。
 
+转角沙发 `cornersofa` 的 `handedness` 决定短段落在局部左侧 `"left"` 或右侧 `"right"`，缺省为左侧。`rot: 0` 时靠背在图上，`"right"` 的短段向图右下延伸。整体朝向由 `rot` 指定。
+
+茶几 `coffeetable` 和边几 `sidetable` 可指定 `topShape` 为 `"rect"`、`"round"` 或 `"oval"`，圆形和椭圆的台面外径用 `w`、`d` 表达。`height` 为台面离地高度（200–800 mm）。高低套叠的组合可在平面上重叠。
+
 ## 3. 可用操作（ops）
 
 每个 op 是一个对象，`op` 字段必填：
@@ -52,7 +56,7 @@
 | `moveFurniture` | `id, dx, dy` | 相对移动（mm）。也可用 `cx, cy` 给绝对坐标，二者不要同时给 |
 | `rotateFurniture` | `id, rot` | 绝对角度（顺时针 0–359） |
 | `resizeFurniture` | `id, w, d` | 绝对尺寸（mm） |
-| `addFurniture` | `type, name, cx, cy, w, d, rot, color?` | 新增家具；`cx, cy` 是绝对中心坐标，`id` 由页面生成，不要给 |
+| `addFurniture` | `type, name, cx, cy, w, d, rot, color?, handedness?, topShape?, height?` | 新增家具。`cx, cy` 是绝对中心坐标，`id` 由页面生成 |
 | `deleteFurniture` | `id` | 删除家具 |
 | `setRoom` | `room, name?, mat?` | 改房间名称 / 地面材料；`room` 用 `plan.rooms[].id`，`mat` 用 `plan.materials` 里已有的键 |
 | `demolishWall` | `id` | 拆墙，`id` 形如 `w17`；**只能拆 `n` 或 `low`** |
@@ -67,10 +71,11 @@
 ```
 
 - 每条变更使用 `action`（`add`、`replace`、`remove`）、`path`（路径数组）和 `value`（新增、替换必填）。数字是从 0 开始的数组索引。数组插入或删除后，后续路径使用变更后的索引。末尾 `"-"` 用于追加数组元素。
-- `plan` 可编辑 `name,bounds,walls,wins,doors,slides,rooms,materials`。可改字段、单件几何、数组或材料项。窗用矩形，门和推拉门用当前方案中的对象结构，房间用多边形。
+- `plan` 可编辑 `name,bounds,walls,wins,doors,slides,rooms,materials`。可改字段、单件几何、数组或材料项。保留未涉及的圆弧墙窗和房间轮廓。修改 `poly` 的顶点时同步更新房间的 `arcs` 边编号。
 - `state` 可编辑 `furniture,rooms,demolished,measures`。已有家具保留其 id，新增家具省略 id。房间显示名称和地面用 `["state","rooms",房间ID,"name"]` 或 `"mat"` 修改，因为页面显示的是覆盖层。
 - 封闭开口前先确定它是什么。若是矮墙，把该段改为 `n` 等全高类型，并删去或调整已有的矮墙高度覆盖。若是门窗、推拉门洞或真实缺口，删除对应开口记录并按原墙线补墙，与两端墙段衔接。保留其它门洞和墙，尤其是入户门。
 - 修改自定义构件时，按家具索引修改 `parts` 或其字段。若新增自定义家具，一次写入整体尺寸、位置、朝向和部件。
+- 修改已有家具的转角侧、台面轮廓或台面高度时，按家具索引修改 `handedness`、`topShape` 或 `height`。为之前省略的字段使用 `add`。
 - 根据上下文选取对象。只修改用户指定的内容。墙、开口或房间重新布局时，按需要联动相邻字段。能用现有场景数据表达的修改要返回实际变更。
 
 地面材料默认 8 种（键名固定）：`wood` 橡木地板、`walnut` 胡桃木地板、`tile800` 800 地砖、`tile600` 600 地砖、`marble` 大理石、`antislip` 300 防滑砖、`terrazzo` 水磨石、`carpet` 满铺地毯。上下文 `plan.materials` 里额外出现的键也可以直接用；不在其中的键不要编。
@@ -84,8 +89,8 @@
 - `mode`：`2d` / `3d`
 - `selection`：`{kind: 'furn'|'room'|'wall'|null, id}`
 - `plan`：当前 Plan（`bounds` / `walls` / `wins` / `doors` / `slides` / `rooms` / `materials`）；房间 id、墙 id、材料键都以它为准
-  - `plan.rooms[]`：`{id, name, poly: [[x, y], ...], mat, at?, counted?}`；`poly` 是房间轮廓（mm，视觉顺时针），`at` 是标签位置
-  - `plan.walls[]`：`[x0, y0, x1, y1, kind, height?]`，数组下标对应墙 id（`w0`、`w1`…）
+  - `plan.rooms[]` 包含 `{id, name, poly: [[x, y], ...], mat, at?, counted?, arcs?}`。`poly` 是房间轮廓（mm，视觉顺时针），`at` 是标签位置。`arcs` 中的 `{edge,sweep}` 表示从 `poly[edge]` 到下一个顶点的圆弧，最后一点接回首点。
+  - `plan.walls[]` 支持矩形和圆弧两种墙段，数组下标对应墙 id（`w0`、`w1`…）。
 - `state`：整套家具和构件 `furniture`、房间覆盖项 `rooms`、已标记拆除的墙 `demolished`、测量线 `measures`。构件带 `parts`。
 - `view`：`camera`、当前 `room`
 

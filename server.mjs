@@ -12,8 +12,11 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { locateCodex, readLogin, MIN_CODEX_VERSION } from './lib/codex/binary.mjs';
 import { CodexSession, SessionPool, probeModels } from './lib/codex/session.mjs';
+import { loadRenderImageProvider } from './lib/codex/render-image.mjs';
 import { parsePatch, validatePlan, validateImportedFurniture, summarizePlan, extractJson } from './lib/codex/plan.mjs';
 import { createImportJobs, importJobError, isImportJobPath } from './lib/import-jobs.mjs';
+import { renderPlanPng } from './lib/plan-render.mjs';
+import { buildReviewMessage, checkPlan, parseReviewReply, reviewDelta } from './lib/plan-review.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJECTS = path.join(ROOT, 'projects');
@@ -30,11 +33,16 @@ const PUBLIC_RENDER_URL = /^\/files\/public-ai\/remote-owner\/([0-9a-f]{8}-[0-9a
 const PUBLIC_BRIDGE_TOKEN = loadPublicBridgeToken(process.env.STUDIO_PUBLIC_BRIDGE_TOKEN_FILE);
 const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex');
 const MAX_PUBLIC_RENDER_BYTES = 24 * 1024 * 1024;
+const renderImage = loadRenderImageProvider(process.env.STUDIO_RENDER_IMAGE_CONFIG_FILE);
 
 const MAX_BODY = 40 * 1024 * 1024;
 const CHAT_TIMEOUT_MS = 10 * 60_000;
 const RENDER_TIMEOUT_MS = 8 * 60_000;
 const IMPORT_TIMEOUT_MS = 30 * 60_000;
+const REVIEW_TIMEOUT_MS = 10 * 60_000;
+const MAX_REVIEWS = 2;
+/** 复核默认开启；STUDIO_PLAN_REVIEW=off 时完全跳过（job.review 保持 null）。 */
+const PLAN_REVIEW_ENABLED = String(process.env.STUDIO_PLAN_REVIEW || '').trim().toLowerCase() !== 'off';
 const MAX_CONCURRENT_TURNS = 4;
 const MAX_CHAT_SESSIONS = 6;
 const SSE_HEARTBEAT_MS = 15_000;
@@ -354,10 +362,46 @@ async function readPrompt(name) {
 
 const pool = new SessionPool({ max: MAX_CHAT_SESSIONS, idleMs: 30 * 60_000 });
 const limitTurns = createLimiter(MAX_CONCURRENT_TURNS);
+const reviewQueue = createLimiter(MAX_REVIEWS);
+/** POST /api/jobs/<id>/review 触发的重跑控制器；关闭服务时一并中止。 */
+const rerunReviews = new Set();
+/** 正在重跑复核的任务 id，阻止并发重复提交。 */
+const reviewing = new Set();
 const importJobs = createImportJobs({
   directory: IMPORT_JOBS_DIR,
-  execute: (body, { id, workDirectory, signal }) =>
-    analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: true }),
+  execute: async (body, { id, owner, workDirectory, signal }) => {
+    // 识别阶段不清理工作目录：复核需要原图和 plan.json。
+    const result = await analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: false });
+    if (result.status >= 400) {
+      // 公网任务失败后不保留用户上传的文件。
+      if (owner === 'remote') await fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {});
+      return result;
+    }
+    if (!PLAN_REVIEW_ENABLED) {
+      // 复核关闭时不需要保留工作目录，恢复识别完成后立即清理的旧行为。
+      await fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {});
+      return result;
+    }
+    // 重新复核时仍要带上用户备注；与识别产物一起留在工作目录。
+    if (typeof body?.note === 'string' && body.note) {
+      await fsp.writeFile(path.join(workDirectory, 'review-note.json'),
+        JSON.stringify({ note: body.note }), { mode: 0o600 }).catch(() => {});
+    }
+    return {
+      ...result,
+      after: ({ signal: reviewSignal, updateReview, saveReview }) =>
+        runPlanReview({
+          workDirectory,
+          body,
+          result: result.body,
+          signal: reviewSignal,
+          updateReview,
+          saveReview,
+        }).finally(() => (owner === 'remote'
+          ? fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {})
+          : undefined)),
+    };
+  },
 });
 
 // ---------------------------------------------------------------- 路由
@@ -406,6 +450,12 @@ async function route(req, res) {
   if (pathname === '/api/plan/import' || pathname === '/api/plan/import/') {
     if (!api(['POST'])) return;
     return handlePlanImport(req, res, publicRequest);
+  }
+  const reviewPath = /^\/api\/jobs\/(.+)\/review$/.exec(pathname);
+  if (reviewPath && isImportJobPath(pathname)) {
+    // 复核子资源要先于通用 job 路由处理（后者只接受 GET / DELETE）。
+    if (!api(['GET', 'POST'])) return;
+    return handlePlanReview(req, res, reviewPath[1], publicRequest ? 'remote' : 'local');
   }
   if (isImportJobPath(pathname)) {
     const collection = pathname === '/api/jobs/plan-import';
@@ -605,6 +655,54 @@ function buildRenderMessage(body, targetFile) {
     .join('\n');
 }
 
+const renderImageTool = {
+  type: 'function',
+  name: 'image_gen',
+  description: 'Generate the final photorealistic interior render from the reference screenshot already attached to this turn. The image is saved to the requested PNG target by the tool.',
+  inputSchema: {
+    type: 'object',
+    properties: { prompt: { type: 'string', description: 'Describe the photorealistic lighting, materials, and furnishing details to keep from the reference.' } },
+    required: ['prompt'],
+    additionalProperties: false,
+  },
+};
+
+function createRenderTool(shot, body, targetFile, sse) {
+  let generation;
+  let generated = false;
+  let error;
+  return {
+    get generated() { return generated; },
+    get error() { return error; },
+    dynamicTools: [renderImageTool],
+    async onToolCall({ arguments: args, signal }) {
+      const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : '';
+      if (!prompt) return { success: false, contentItems: [{ type: 'inputText', text: 'Please provide a render prompt.' }] };
+      generation ??= (async () => {
+        sse.send({ type: 'status', text: '正在根据参考视角生成图像…' });
+        try {
+          const constraints = [
+            'Render the attached interior-design screenshot as a photorealistic architectural visualization.',
+            'Keep the camera angle, crop, walls, door and window openings, and furniture layout from the screenshot.',
+            `Design style: ${truncate(String(body.style || '现代简约'), 80)}.`,
+            typeof body.note === 'string' ? truncate(body.note, 1000) : '',
+            truncate(prompt, 6000),
+          ].filter(Boolean).join('\n');
+          const image = await renderImage({ image: shot, mime: body.mime, prompt: constraints, signal });
+          signal.throwIfAborted();
+          await fsp.writeFile(targetFile, image, { flag: 'wx', mode: 0o600 });
+          generated = true;
+          return { success: true, contentItems: [{ type: 'inputText', text: 'The requested PNG has been generated and saved. Return a short confirmation.' }] };
+        } catch (cause) {
+          error = errorMessage(cause);
+          return { success: false, contentItems: [{ type: 'inputText', text: 'The image provider did not return a finished PNG.' }] };
+        }
+      })();
+      return generation;
+    },
+  };
+}
+
 /**
  * 从通知/最终文本里找生成的图片；找不到时扫描 renders 目录中本次新增的文件兜底。
  */
@@ -717,7 +815,11 @@ async function handleRender(req, res, publicRequest) {
     await fsp.writeFile(shotPath, shot);
 
     sse.send({ type: 'status', text: '正在生成效果图，可能需要 1–3 分钟…' });
-    const developerInstructions = await readPrompt('render.md');
+    const tool = renderImage ? createRenderTool(shot, body, targetFile, sse) : null;
+    let developerInstructions = await readPrompt('render.md');
+    if (tool) {
+      developerInstructions += '\n使用本会话提供的 image_gen 函数并传入 prompt。工具会使用已附参考图并将 PNG 写入目标位置。无需自行复制文件。';
+    }
     const input = [
       { type: 'text', text: buildRenderMessage(body, targetFile), text_elements: [] },
       { type: 'localImage', path: shotPath },
@@ -732,6 +834,8 @@ async function handleRender(req, res, publicRequest) {
         sandbox: 'workspace-write',
         approvalPolicy: 'never',
         developerInstructions,
+        dynamicTools: tool?.dynamicTools,
+        onToolCall: tool?.onToolCall,
       });
       activeSession = session;
       try {
@@ -752,6 +856,11 @@ async function handleRender(req, res, publicRequest) {
     if (cancelled || sse.closed) return;
     if (result.outcome !== 'completed') {
       sse.send({ type: 'error', message: result.error || 'codex 回合未正常完成（turn incomplete）' });
+      sse.send({ type: 'done' });
+      return;
+    }
+    if (tool && !tool.generated) {
+      sse.send({ type: 'error', message: tool.error || 'Codex 未调用生图工具，请重试。' });
       sse.send({ type: 'done' });
       return;
     }
@@ -964,6 +1073,206 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
   }
 }
 
+// ---------------------------------------------------------------- 图纸复核
+
+/** 只读文件头，用来判断工作目录里的文件是不是图片。 */
+async function readHeader(file, length = 16) {
+  const handle = await fsp.open(file, 'r').catch(() => null);
+  if (!handle) return null;
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+/** 工作目录里除识别产物外的文件；图片重新作为 localImage 附给复核回合。 */
+async function collectReviewInputs(workDirectory) {
+  const entries = await fsp.readdir(workDirectory, { withFileTypes: true }).catch(() => []);
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const name = entry.name;
+    if (name === 'plan.json' || name === 'review-plan.png' || name === 'review-note.json') continue;
+    files.push({ name, file: path.join(workDirectory, name) });
+  }
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  const images = [];
+  for (const item of files) {
+    const header = await readHeader(item.file);
+    if (header && isImportImage(header)) images.push(item.file);
+  }
+  return { names: files.map(item => item.name), images };
+}
+
+/**
+ * 复核一次识别结果。复核失败一律静默：状态标记为 unavailable，不写 review.json。
+ * 由 importJobs 的 after 钩子或 POST 重跑调用，不占用识别并发槽位。
+ */
+async function runPlanReview({ workDirectory, body, result, signal, updateReview, saveReview }) {
+  const plan = result?.plan ?? null;
+  const furniture = Array.isArray(result?.furniture) ? result.furniture : [];
+  // 失败时清掉上一次的复核正文，只保留契约要求的 state / count / updatedAt。
+  const unavailable = () => updateReview({
+    state: 'unavailable', count: 0, updatedAt: Date.now(),
+    summary: undefined, issues: undefined, fixed: undefined, delta: undefined,
+  }).catch(() => {});
+
+  try {
+    await updateReview({
+      state: 'running', count: 0, updatedAt: Date.now(),
+      summary: undefined, issues: undefined, fixed: undefined, delta: undefined,
+    });
+    if (signal.aborted) return await unavailable();
+
+    const probe = await getProbe();
+    if (!probe.found) return await unavailable();
+
+    const rendered = path.join(workDirectory, 'review-plan.png');
+    await fsp.writeFile(rendered, renderPlanPng(plan), { mode: 0o600 });
+    if (signal.aborted) return await unavailable();
+
+    const inputs = await collectReviewInputs(workDirectory);
+    const check = checkPlan(plan, furniture);
+    const message = buildReviewMessage({
+      plan,
+      furniture,
+      explanation: typeof result?.explanation === 'string' ? result.explanation : '',
+      note: typeof body?.note === 'string' ? body.note : '',
+      check,
+      fileNames: ['review-plan.png', ...inputs.names],
+    });
+    const developerInstructions = await readPrompt('plan-verify.md');
+
+    const turn = await reviewQueue(async () => {
+      signal.throwIfAborted();
+      const session = await CodexSession.start({
+        install: probe.install,
+        cwd: workDirectory,
+        sandbox: 'read-only',
+        approvalPolicy: 'never',
+        developerInstructions,
+      });
+      let stopping = null;
+      const interrupt = () => {
+        stopping = session.interrupt().finally(() => session.dispose()).catch(() => {});
+      };
+      signal.addEventListener('abort', interrupt, { once: true });
+      try {
+        signal.throwIfAborted();
+        return await session.runTurn({
+          input: [
+            { type: 'text', text: message, text_elements: [] },
+            { type: 'localImage', path: rendered },
+            ...inputs.images.map(file => ({ type: 'localImage', path: file })),
+          ],
+          timeoutMs: REVIEW_TIMEOUT_MS,
+        });
+      } finally {
+        signal.removeEventListener('abort', interrupt);
+        await (stopping || session.dispose().catch(() => {}));
+      }
+    });
+
+    if (signal.aborted) return await unavailable();
+    if (!turn || turn.outcome !== 'completed') return await unavailable();
+
+    const reviewed = parseReviewReply(turn.text, { plan, furniture });
+    const afterPlan = reviewed.fixed?.plan ?? plan;
+    const afterFurniture = reviewed.fixed?.furniture ?? furniture;
+    const review = {
+      state: reviewed.verdict,
+      summary: reviewed.summary,
+      issues: reviewed.issues,
+      fixed: reviewed.fixed,
+      delta: reviewDelta(plan, furniture, afterPlan, afterFurniture),
+      updatedAt: Date.now(),
+    };
+    // 先落 review.json 再落 meta：写盘失败时不能留下「列表说 differ、详情 404」的矛盾状态。
+    // 严格比较 true：saveReview 的契约是成功返回 true，undefined 不能被当成成功。
+    const saved = await saveReview(review);
+    if (saved !== true) return await unavailable();
+    await updateReview({ state: reviewed.verdict, count: reviewed.issues.length, updatedAt: review.updatedAt });
+  } catch (error) {
+    if (!(error?.name === 'ReviewParseError' || error?.code === 'timeout' ||
+          error?.name === 'AbortError' || signal.aborted)) {
+      console.error('图纸复核异常（plan review）:', errorMessage(error));
+    }
+    await unavailable();
+  }
+}
+
+async function handlePlanReview(req, res, id, owner) {
+  try {
+    if (req.method === 'GET') {
+      const review = await importJobs.getReview(owner, id);
+      if (!review) return sendJson(res, 404, { error: '复核结果不存在或暂不可用。' });
+      // 重新复核需要工作目录里的原图；公网任务复核结束后上传文件已清理，前端据此隐藏按钮。
+      const rerun = Boolean(await importJobs.workDirectory(owner, id));
+      return sendJson(res, 200, { ...review, rerun });
+    }
+
+    if (!PLAN_REVIEW_ENABLED) return sendJson(res, 404, { error: '复核功能未启用。' });
+    if (reviewing.has(id)) return sendJson(res, 409, { error: '复核正在进行，请稍候。' });
+    reviewing.add(id);
+    let started = false;
+    try {
+      const job = await importJobs.get(owner, id, 0);
+      if (!job) return sendJson(res, 409, { error: '图纸任务不存在或已过期。' });
+      if (job.phase !== 'done') return sendJson(res, 409, { error: '图纸尚未识别完成，暂时无法复核。' });
+      if (job.review?.state === 'pending' || job.review?.state === 'running') {
+        return sendJson(res, 409, { error: '复核正在进行，请稍候。' });
+      }
+      const workDirectory = await importJobs.workDirectory(owner, id);
+      // 工作目录清理后无法再复核：这是永久状态，用 404 而不是 409（后者会让客户端以为稍后能重试）。
+      if (!workDirectory) return sendJson(res, 404, { error: '复核工作目录已清理，无法重新复核。' });
+      const probe = await getProbe();
+      if (!probe.found) return sendJson(res, 503, { error: unusableMessage(probe) });
+
+      let result = null;
+      try {
+        result = JSON.parse(job.chunks?.[0] || '');
+      } catch {
+        result = null;
+      }
+      if (!result?.plan) return sendJson(res, 409, { error: '识别结果不可用，无法重新复核。' });
+
+      const note = await fsp.readFile(path.join(workDirectory, 'review-note.json'), 'utf8')
+        .then(text => JSON.parse(text))
+        .then(value => (typeof value?.note === 'string' ? value.note : ''))
+        .catch(() => '');
+
+      await importJobs.setReview(owner, id, {
+        state: 'pending', count: 0, updatedAt: Date.now(),
+        summary: undefined, issues: undefined, fixed: undefined, delta: undefined,
+      });
+      const controller = new AbortController();
+      rerunReviews.add(controller);
+      started = true;
+      void runPlanReview({
+        workDirectory,
+        body: { note },
+        result,
+        signal: controller.signal,
+        updateReview: patch => importJobs.setReview(owner, id, patch),
+        saveReview: review => importJobs.saveReview(owner, id, review),
+      }).finally(() => {
+        rerunReviews.delete(controller);
+        reviewing.delete(id);
+      });
+      return sendJson(res, 202, { ok: true });
+    } finally {
+      if (!started) reviewing.delete(id);
+    }
+  } catch (error) {
+    if (error.status) return sendJson(res, error.status, { error: errorMessage(error) });
+    console.error('图纸复核接口异常（plan review API）:', error.message);
+    return sendJson(res, 503, { error: '复核暂不可用，请稍后重试。' });
+  }
+}
+
 // ---------------------------------------------------------------- 静态文件
 
 async function serveStatic(req, res, pathname) {
@@ -1082,6 +1391,9 @@ async function shutdown(signal) {
   console.log(`收到 ${signal}，正在关闭…`);
   server.close();
   importJobs.close();
+  for (const controller of rerunReviews) controller.abort();
+  rerunReviews.clear();
+  reviewing.clear();
   await pool.disposeAll().catch(() => {});
   process.exit(0);
 }

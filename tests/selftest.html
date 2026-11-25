@@ -235,6 +235,61 @@ async function main(){
     return '直梯和四级扇形踏步已绘制、保存并支持撤销';
   });
 
+  await check('applyPlan.curves', () => {
+    const S = studio(), doc = win().document, original = S.projectJSON();
+    const curve = {from:[0,0], to:[2000,0], sweep:90, thickness:180};
+    const room = {id:'curved',name:'弧形测试房',poly:[[0,0],[2000,0],[2000,2000],[0,2000]],arcs:[{edge:0,sweep:90}],mat:'wood'};
+    const plan = {name:'弧形测试', walls:[[0,2000,2000,2180,'e'],{...curve,kind:'n',height:2300}],
+      wins:[{...curve,from:[2000,0],to:[2000,2000]}], rooms:[room]};
+    const result = S.applyPlan(plan);
+    assert(result.ok && result.errors.length === 0, '弧形方案校验失败');
+    try {
+      const active = S.getPlan();
+      assert(active.walls[1].height === 2300 && active.wins[0].sweep === 90 && active.rooms[0].arcs[0].edge === 0, '圆弧字段未保留');
+      assert(active.bounds.y < -414 && active.bounds.x + active.bounds.w > 2414, '方案范围未包含圆弧外缘');
+      assert(doc.querySelector('#gWalls rect') && doc.querySelector('#gWalls path[data-wall="w1"]'), '二维墙体应同时绘制直线和弧线');
+      assert(doc.querySelectorAll('#gOpen path').length === 3, '圆弧窗缺少外轮廓或框线');
+      assert(/A[\d.]+/.test(doc.querySelector('#gRooms path[data-room="curved"]').getAttribute('d')), '房间边界未绘制圆弧');
+      assert(doc.querySelector('#subtitle').textContent.includes('4.57 m²'), '房间面积应包含圆弧弓形');
+      assert(JSON.parse(win().localStorage.getItem('interior-plan-v1')).rooms[0].arcs[0].sweep === 90, '圆弧边未写入项目存储');
+    } finally { S.undo(); }
+    assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original), '撤销未恢复原方案');
+    return '弧形墙窗、房间轮廓、面积、存储和撤销';
+  });
+
+  await check('importReview.furnitureGeometry', () => {
+    const S = studio(), w = win(), doc = w.document, original = S.projectJSON();
+    const plan = {...original.plan, rooms:[{id:'living',name:'客餐厅',mat:'wood',poly:[[0,0],[6000,0],[6000,5000],[0,5000]]}]};
+    const furniture = [
+      {type:'cornersofa',name:'右转角沙发',cx:3600,cy:1700,w:3300,d:2800,rot:0,handedness:'right'},
+      {type:'coffeetable',name:'小圆茶几',cx:3200,cy:1800,w:800,d:800,rot:0,topShape:'round',height:310},
+      {type:'sidetable',name:'矩形条几',cx:5500,cy:1600,w:1750,d:400,rot:90,topShape:'rect'},
+    ];
+    assert(w.impOpenResult({plan, furniture}, () => null), '无法打开图纸结果预览');
+    try {
+      const preview = doc.querySelector('#impRoomDrawing');
+      assert(preview.querySelector('g[transform="scale(-1 1)"]') && preview.querySelector('ellipse[rx="400"]') && preview.querySelector('rect[width="1750"]'), '预览与家具几何不一致');
+    } finally { w.impClose(); }
+
+    assert(S.applyPlan(plan, {furniture, clearFurniture:true, freshState:true}).ok, '无法应用家具几何');
+    try {
+      const [sofa, table, side] = S.projectJSON().state.furniture;
+      assert(sofa.handedness === 'right' && table.topShape === 'round' && table.height === 310 && side.topShape === 'rect', '保存或导出时遗失家具几何');
+      const shape = id => doc.querySelector('#gFurn [data-fid="' + id + '"]');
+      assert(shape(sofa.id).querySelector('g[transform="scale(-1 1)"]'), '转角未在沙发右侧');
+      assert(shape(table.id).querySelector('ellipse[rx="400"][ry="400"]') && shape(side.id).querySelector('rect'), '台面形状丢失');
+      S.select({kind:'furn', id:sofa.id});
+      const select = doc.querySelector('#fHandedness');
+      assert(select.value === 'right', '右侧属性未加载');
+      select.value = 'left'; select.dispatchEvent(new w.Event('change'));
+      assert(!shape(sofa.id).querySelector('g[transform="scale(-1 1)"]'), '属性修改未影响沙发轮廓');
+      S.undo();
+      assert(S.getState().furniture[0].handedness === 'right', '属性修改无法撤销');
+    } finally { S.undo(); }
+    assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original), '撤销未恢复原项目');
+    return '逐房预览、转角侧、台面形状和高度可保存与撤销';
+  });
+
   await check('applyOps.editScene', () => {
     const S = studio();
     const before = S.projectJSON();

@@ -255,6 +255,12 @@ html:lang(en) .app > header{padding-inline-end:126px}
 .project-row-meta{color:#776b5e;font-size:11px;font-variant-numeric:tabular-nums}
 .project-status{flex:none;color:#776b5e;font-size:11px;line-height:1.35;text-align:right}
 .project-status.is-running{color:#915130}.project-status.is-ready{color:#3d6960}.project-status.is-failed{color:#a44333}
+.project-chip{flex:none;align-self:center;padding:1px 7px;border-radius:999px;font-size:10.5px;line-height:1.6;
+  white-space:nowrap;background:var(--accent-soft);color:var(--accent)}
+.project-chip.is-review{background:#eef3f0;color:var(--teal)}
+.project-chip.is-review::before{content:"";display:inline-block;width:5px;height:5px;margin-right:5px;
+  border-radius:50%;background:currentColor;vertical-align:middle;animation:project-pulse 1.6s ease-in-out infinite}
+@keyframes project-pulse{50%{opacity:.25}}
 .project-row-body{padding:8px 9px 10px 45px;color:#6f6254;border-top:1px solid #eee8de;font-size:12px;overflow-wrap:anywhere}
 .project-row-message,.project-row-note{margin:0;white-space:pre-wrap}
 .project-row-note{color:#776b5e}
@@ -469,6 +475,8 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-rooms li{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;font-size:12px;border-bottom:1px dashed #eee6d9}
 .imp-rooms li:last-child{border-bottom:0}
 .imp-rooms small{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.imp-room-review{display:grid;gap:6px}
+.imp-room-review svg{display:block;width:100%;height:190px;border:1px solid var(--line);border-radius:8px;background:#f5f1eb}
 .imp-exp{font-size:12px;color:var(--muted);line-height:1.5;max-height:96px;overflow:auto;white-space:pre-wrap;
   border-left:2px solid var(--line);padding-left:8px;word-break:break-word}
 .imp-err{display:none;font-size:12px;color:#8e2f22;background:#fbeae7;border:1px solid #f0c9c2;border-radius:8px;
@@ -481,6 +489,84 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-foot .btn.primary:hover{background:#9f5530}
 .imp-foot .btn:disabled{opacity:.45;cursor:not-allowed}
 .imp-sub{font-size:11px;color:var(--muted);line-height:1.45}
+/* 自动复核卡：识别结果 / 修正后单图切换 */
+.imp-review{display:grid;gap:8px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 10px}
+.imp-review[hidden],.imp-review-note[hidden]{display:none}
+.imp-review-head{font-size:12.5px;font-weight:600;color:var(--accent);line-height:1.4}
+.imp-review-seg{display:flex;gap:2px;width:fit-content;max-width:100%;padding:2px;background:#faf6ef;border:1px solid var(--line);border-radius:8px}
+.imp-review-seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;line-height:1.4;
+  padding:3px 11px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.imp-review-seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.imp-review-seg button:disabled{opacity:.45;cursor:not-allowed}
+.imp-review svg{display:block;width:100%;height:220px;border:1px solid var(--line);border-radius:8px;background:#f5f1eb}
+/* 卡片里的对比图：点击打开大图 */
+.imp-review-map{position:relative;cursor:zoom-in;border-radius:8px;outline:none}
+.imp-review-map svg{pointer-events:none}
+.imp-review-map:focus-visible{box-shadow:0 0 0 2px var(--accent-soft),0 0 0 3px var(--accent)}
+.imp-review-expand{position:absolute;right:8px;bottom:8px;border:1px solid var(--line);background:rgba(255,253,249,.92);
+  color:var(--ink);font:inherit;font-size:11px;line-height:1.4;padding:3px 9px;border-radius:999px;cursor:pointer;
+  box-shadow:0 1px 4px rgba(40,30,20,.12)}
+.imp-review-expand:hover{border-color:var(--accent);color:var(--accent)}
+/* 复核大图：切换悬浮在图上，滚轮缩放、拖动平移 */
+.imp-view{position:fixed;inset:0;z-index:46;display:none;background:rgba(30,28,25,.66);backdrop-filter:blur(3px)}
+.imp-view.on{display:block}
+.imp-view-head{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:10px;padding:12px 16px;
+  color:#fff;pointer-events:none}
+.imp-view-head b{font-size:14px;font-weight:600;letter-spacing:.02em}
+.imp-view-head small{font-size:11.5px;color:rgba(255,255,255,.72);font-variant-numeric:tabular-nums}
+.imp-view-head .spacer{flex:1}
+.imp-view-x{pointer-events:auto;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;
+  width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1;cursor:pointer}
+.imp-view-x:hover{background:rgba(255,255,255,.24)}
+/* 悬浮的分段切换：固定在视口内，不随图片缩放平移 */
+.imp-view-seg{position:absolute;left:50%;top:56px;transform:translateX(-50%);display:flex;gap:2px;padding:2px;
+  background:rgba(250,246,239,.96);border:1px solid var(--line);border-radius:9px;z-index:2;
+  box-shadow:0 4px 16px rgba(20,16,10,.28)}
+.imp-view-seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;line-height:1.5;
+  padding:4px 14px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.imp-view-seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.imp-view-seg button:disabled{opacity:.45;cursor:not-allowed}
+.imp-view-stage{position:absolute;inset:96px 0 70px;overflow:hidden;touch-action:none;cursor:grab}
+.imp-view-stage.grabbing{cursor:grabbing}
+.imp-view-canvas{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+.imp-view-canvas svg{display:block;width:100%;height:100%;background:#fffdf9;border-radius:10px;
+  box-shadow:0 18px 60px rgba(10,8,6,.35);pointer-events:none}
+.imp-view-hint{position:absolute;left:16px;bottom:16px;display:grid;gap:3px;color:rgba(255,255,255,.78);font-size:11.5px;
+  line-height:1.5;pointer-events:none;max-width:52vw}
+.imp-view-hint .imp-view-delta{color:#fff;font-variant-numeric:tabular-nums}
+.imp-view-hint .imp-view-delta[hidden]{display:none}
+.imp-view-zoom{position:absolute;right:16px;bottom:16px;display:flex;align-items:center;gap:2px;padding:3px;
+  background:rgba(250,246,239,.96);border:1px solid var(--line);border-radius:9px;box-shadow:0 4px 16px rgba(20,16,10,.28)}
+.imp-view-zoom button{border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;
+  min-width:30px;padding:2px 8px;border-radius:6px;cursor:pointer;font-variant-numeric:tabular-nums}
+.imp-view-zoom button:hover{background:var(--accent-soft);color:var(--accent)}
+.imp-view-zoom #impViewPct{min-width:52px;color:var(--muted);font-size:11.5px}
+.imp-review-delta{font-size:11.5px;color:var(--ink);line-height:1.45;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.imp-review-summary{margin:0;font-size:11.5px;color:var(--muted);line-height:1.5;white-space:pre-wrap;
+  max-height:76px;overflow:auto;overflow-wrap:anywhere}
+.imp-review-issues{margin:0;padding-left:16px;font-size:11.5px;color:var(--ink);line-height:1.5;
+  max-height:110px;overflow:auto;overflow-wrap:anywhere}
+.imp-review-issues li+li{margin-top:2px}
+.imp-review-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.imp-review-foot .btn{border:1px solid var(--line);background:#fff}
+.imp-review-foot .btn.primary{border-color:transparent;background:var(--accent);color:#fff}
+.imp-review-foot .btn.primary:hover{background:#9f5530}
+.imp-review-foot .btn:disabled{opacity:.45;cursor:not-allowed}
+.imp-review-hint{font-size:11px;color:var(--muted);line-height:1.45}
+.imp-review-retry{border:0;background:none;color:var(--muted);font:inherit;font-size:11px;line-height:1.4;
+  padding:0;width:fit-content;cursor:pointer;text-decoration:underline}
+.imp-review-retry:hover{color:var(--accent)}
+.imp-review-pending{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.imp-review-pending:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;flex:none;
+  border:1.5px solid var(--accent);border-top-color:transparent;animation:chatspin .8s linear infinite}
+.imp-review-applied{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;font-size:11.5px;color:var(--teal)}
+.imp-review-applied button{border:0;background:none;color:var(--accent);font:inherit;font-size:11.5px;padding:0;cursor:pointer;text-decoration:underline}
+.imp-review-note{margin:0;font-size:11.5px;color:var(--teal);line-height:1.45}
+@media (max-width:520px){
+  .imp-review-seg{width:100%}
+  .imp-review-seg button{flex:1}
+  .imp-review-foot .btn{flex:1 1 auto}
+}
 @media (max-width:640px){
   .imp-wrap{padding:8px 8px 8px;align-items:flex-end}
   .imp-box{width:100%;max-height:calc(100dvh - 16px)}
@@ -787,7 +873,13 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 
     <div id="impBody" hidden>
       <div class="imp-plan"><span id="impPlanName"></span><small id="impPlanSrc"></small></div>
+      <div class="imp-review" id="impReview" hidden></div>
       <div class="imp-stats" id="impStats"></div>
+      <p class="imp-review-note" id="impReviewNote" hidden></p>
+      <div class="imp-room-review">
+        <div class="form"><label class="full"><span id="impRoomReviewLabel"></span><select id="impRoomReview"></select></label></div>
+        <svg id="impRoomDrawing" role="img" aria-labelledby="impRoomReviewLabel"></svg>
+      </div>
       <ul class="imp-rooms" id="impRooms"></ul>
       <div class="imp-exp" id="impExp"></div>
       <p class="imp-sub" id="impResultHint">打开后会切换到这份新方案，当前项目会保存在「项目」列表中。</p>
@@ -801,6 +893,22 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
   </div>
 </div>
 
+<!-- 复核大图：对比切换悬浮在图上，滚轮缩放、拖动平移 -->
+<div class="imp-view" id="impView" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="impViewTitle">
+  <div class="imp-view-head"><b id="impViewTitle">户型对比</b><small id="impViewNote"></small><span class="spacer"></span>
+    <button class="imp-view-x" id="impViewClose" type="button" title="关闭" data-en-title="Close">×</button></div>
+  <div class="imp-view-seg" id="impViewSeg" role="group" aria-label="对比视图"></div>
+  <div class="imp-view-stage" id="impViewStage"><div class="imp-view-canvas" id="impViewCanvas"></div></div>
+  <div class="imp-view-hint"><span class="imp-view-delta" id="impViewDelta"></span>
+    <span id="impViewHint">滚轮缩放 · 拖动平移 · 双击适应</span></div>
+  <div class="imp-view-zoom">
+    <button type="button" id="impViewOut" title="缩小" aria-label="缩小">−</button>
+    <button type="button" id="impViewPct" type="button" title="点击恢复到适应大小">100%</button>
+    <button type="button" id="impViewIn" title="放大" aria-label="放大">+</button>
+    <button type="button" id="impViewFit" type="button">适应</button>
+  </div>
+</div>
+
 <script>
 /* ======================= 多语言（中文 / English，默认中文） ======================= */
 const LANG_KEY = 'huxing-lang';
@@ -808,7 +916,7 @@ const LANGS = ['zh', 'zht', 'en'];             // 简体 / 繁體（台湾用字
 let LANG = (() => { try { const l = localStorage.getItem(LANG_KEY); return LANGS.includes(l) ? l : 'zh'; } catch(e) { return 'zh'; } })();
 // 简 → 繁：先按词替换一字多义的字，再逐字查表（表由 OpenCC s2tw 按本页用到的字生成）
 const S2T_PHRASES = [['布置','佈置'],['布局','佈局'],['台面','檯面'],['复制','複製']];
-const S2T = new Map(('与與两兩个個为為书書于於仅僅从從价價会會传傳体體余餘侧側倾傾储儲儿兒关關内內写寫净淨准準击擊则則刚剛删刪制製办辦动動势勢区區单單占佔卧臥卫衛厅廳历歷压壓厨廚双雙发發变變叶葉后後吗嗎听聽启啟哑啞围圍图圖圆圓场場坐座块塊垫墊墙牆处處备備复復头頭妆妝婴嬰实實宽寬对對导導层層屉屜属屬岛島带帶干乾并並库庫应應开開当當径徑态態总總悬懸懒懶户戶护護拟擬择擇挂掛挡擋挤擠损損换換据據摆擺摇搖撑撐数數无無时時显顯暂暫机機杂雜杆桿条條来來松鬆构構柜櫃标標栈棧栏欄样樣梁樑棱稜椭橢横橫橱櫥气氣没沒注註浅淺测測浏瀏游遊滚滾满滿灯燈灵靈点點热熱状狀独獨环環现現电電画畫监監盖蓋盘盤砖磚确確离離积積称稱竖豎筑築签籤类類约約级級线線结結绕繞绘繪给給统統继繼绿綠缀綴编編缝縫缩縮网網联聯脚腳获獲虚虛装裝见見视視览覽触觸计計认認让讓议議记記设設识識译譯该該语語请請读讀调調负負败敗质質贴貼赶趕转轉轮輪软軟轴軸轻輕载載较較辅輔辑輯边邊过過这這进進远遠适適选選邻鄰里裡针針钢鋼钮鈕铰鉸铺鋪销銷锁鎖键鍵镜鏡长長门門闭閉闲閒间間阅閱阳陽阴陰阶階随隨隐隱静靜页頁顶頂项項顺順颜顏飘飄飞飛马馬鸟鳥齐齊龙龍').match(/../gu).map(p => [...p]));
+const S2T = new Map(('异異将將与與两兩个個为為书書于於仅僅从從价價会會传傳体體余餘侧側倾傾储儲儿兒关關内內写寫净淨准準击擊则則刚剛删刪制製办辦动動势勢区區单單占佔卧臥卫衛厅廳历歷压壓厨廚双雙发發变變叶葉后後吗嗎听聽启啟哑啞围圍图圖圆圓场場坐座块塊垫墊墙牆处處备備复復头頭妆妝婴嬰实實宽寬对對导導层層屉屜属屬岛島带帶干乾并並库庫应應开開当當径徑态態总總悬懸懒懶户戶护護拟擬择擇挂掛挡擋挤擠损損换換据據摆擺摇搖撑撐数數无無时時显顯暂暫机機杂雜杆桿条條来來松鬆构構柜櫃标標栈棧栏欄样樣梁樑棱稜椭橢横橫橱櫥气氣没沒注註浅淺测測浏瀏游遊滚滾满滿灯燈灵靈点點热熱状狀独獨环環现現电電画畫监監盖蓋盘盤砖磚确確离離积積称稱竖豎筑築签籤类類约約级級线線结結绕繞绘繪给給统統继繼绿綠缀綴编編缝縫缩縮网網联聯脚腳获獲虚虛装裝见見视視览覽触觸计計认認让讓议議记記设設识識译譯该該语語请請读讀调調负負败敗质質贴貼赶趕转轉轮輪软軟轴軸轻輕载載较較辅輔辑輯边邊过過这這进進远遠适適选選邻鄰里裡针針钢鋼钮鈕铰鉸铺鋪销銷锁鎖键鍵镜鏡长長门門闭閉闲閒间間阅閱阳陽阴陰阶階随隨隐隱静靜页頁顶頂项項顺順颜顏飘飄飞飛马馬鸟鳥齐齊龙龍').match(/../gu).map(p => [...p]));
 const s2t = s => S2T_PHRASES.reduce((a, [f, t]) => a.replaceAll(f, t), s).replace(/[\u3400-\u9fff]/g, c => S2T.get(c) || c);
 const tr = (zh, en) => LANG === 'en' ? en : LANG === 'zht' ? s2t(zh) : zh;
 const PUBLIC_ACCESS = document.querySelector('meta[name="studio-public-access"]')?.content;
@@ -918,13 +1026,91 @@ function normPoly(p){
 }
 const polyCenter = poly => [Math.round(poly.reduce((a,p) => a + p[0], 0)/poly.length), Math.round(poly.reduce((a,p) => a + p[1], 0)/poly.length)];
 
+// 在 x 向右、y 向下的平面内，正角度沿顺时针方向。
+function arcGeometry(from, to, degrees, thickness = 0){
+  if (![from, to].every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) ||
+      !Number.isFinite(degrees) || Math.abs(degrees) < .5 || Math.abs(degrees) > 180) return null;
+  const dx = to[0] - from[0], dy = to[1] - from[1], chord = Math.hypot(dx, dy);
+  const sweep = degrees * Math.PI / 180, half = sweep / 2;
+  const radius = chord / (2 * Math.sin(Math.abs(half)));
+  const offset = Math.abs(degrees) === 180 ? 0 : .5 / Math.tan(half);
+  const cx = from[0] / 2 + to[0] / 2 - dy * offset;
+  const cy = from[1] / 2 + to[1] / 2 + dx * offset;
+  const outer = radius + thickness / 2;
+  if (!(radius > thickness / 2) || ![cx - outer, cx + outer, cy - outer, cy + outer].every(Number.isFinite)) return null;
+  return {cx, cy, radius, start:Math.atan2(from[1] - cy, from[0] - cx), sweep, thickness};
+}
+
+function curvePoint(curve, fraction, offset = 0){
+  const angle = curve.start + curve.sweep * fraction, radius = curve.radius + offset;
+  return [curve.cx + radius * Math.cos(angle), curve.cy + radius * Math.sin(angle)];
+}
+function curveFraction(curve, angle){
+  const turn = 2 * Math.PI, delta = (angle - curve.start) * Math.sign(curve.sweep);
+  const fraction = ((delta % turn + turn) % turn) / Math.abs(curve.sweep);
+  return fraction <= 1 ? fraction : null;
+}
+function closestCurvePoint(curve, x, y, offset = 0){
+  const fraction = curveFraction(curve, Math.atan2(y - curve.cy, x - curve.cx));
+  if (fraction !== null) return curvePoint(curve, fraction, offset);
+  const a = curvePoint(curve, 0, offset), b = curvePoint(curve, 1, offset);
+  return Math.hypot(x - a[0], y - a[1]) <= Math.hypot(x - b[0], y - b[1]) ? a : b;
+}
+function curveDistance(curve, x, y){
+  const [px, py] = closestCurvePoint(curve, x, y);
+  return Math.hypot(x - px, y - py);
+}
+function curveBounds(curve){
+  const samples = [0, 1];
+  for (let n = 0; n < 4; n++){
+    const fraction = curveFraction(curve, n * Math.PI / 2);
+    if (fraction !== null) samples.push(fraction);
+  }
+  const points = samples.flatMap(t => [curvePoint(curve, t, -curve.thickness / 2), curvePoint(curve, t, curve.thickness / 2)]);
+  return [Math.min(...points.map(p => p[0])), Math.min(...points.map(p => p[1])),
+          Math.max(...points.map(p => p[0])), Math.max(...points.map(p => p[1]))];
+}
+function curveSamples(curve, offset = 0){
+  // 把 3D 弦与圆弧间的偏差控制在约 0.5mm，限制单段网格规模。
+  const maxStep = 2 * Math.acos(1 - Math.min(1, .5 / (curve.radius + curve.thickness / 2)));
+  const steps = Math.min(128, Math.max(2, Math.ceil(Math.abs(curve.sweep) / maxStep)));
+  return Array.from({length:steps + 1}, (_, i) => curvePoint(curve, i / steps, offset));
+}
+function curveOutline(curve, width = curve.thickness){
+  return [...curveSamples(curve, width / 2), ...curveSamples(curve, -width / 2).reverse()];
+}
+function curvedSpan(raw){
+  if (!Number.isFinite(raw?.thickness) || raw.thickness <= 0) return null;
+  return arcGeometry(raw.from, raw.to, raw.sweep, raw.thickness);
+}
+const arcFields = raw => ({from:[...raw.from], to:[...raw.to], sweep:raw.sweep, thickness:raw.thickness});
+const isCurvedSpan = raw => raw && typeof raw === 'object' && !Array.isArray(raw) &&
+  ['from', 'to', 'sweep', 'thickness'].some(key => Object.hasOwn(raw, key));
+
+function roomCurves(room){
+  if (!room.arcs?.length) return new Map();
+  const poly = room.vertices || room.poly;
+  return new Map(room.arcs.map(({edge, sweep}) => [edge, arcGeometry(poly[edge], poly[(edge + 1) % poly.length], sweep)]));
+}
+function roomOutline(room){
+  if (!room.arcs?.length) return room.poly;
+  const curves = roomCurves(room);
+  return room.poly.flatMap((p, i) => {
+    const curve = curves.get(i);
+    return curve ? [p, ...curveSamples(curve).slice(1, -1)] : [p];
+  });
+}
+
 // 方案范围：墙体 / 窗 / 房间的外接矩形，四边留白
 function planExtentOf(plan){
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const grow = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
-  plan.walls.forEach(w => { grow(w[0], w[1]); grow(w[2], w[3]); });
-  plan.wins.forEach(w => { grow(w[0], w[1]); grow(w[2], w[3]); });
-  plan.rooms.forEach(r => r.poly.forEach(p => grow(p[0], p[1])));
+  const growRect = ([x0,y0,x1,y1]) => { grow(x0, y0); grow(x1, y1); };
+  [...plan.walls, ...plan.wins].forEach(w => growRect(Array.isArray(w) ? w : curveBounds(curvedSpan(w))));
+  plan.rooms.forEach(room => {
+    room.poly.forEach(p => grow(...p));
+    roomCurves(room).forEach(curve => growRect(curveBounds(curve)));
+  });
   if (!Number.isFinite(x0)) return {x:-4000, y:-4000, w:8000, h:8000};
   const pad = Math.max(600, Math.max(x1 - x0, y1 - y0) * .12);
   return {x:x0 - pad, y:y0 - pad, w:Math.round(x1 - x0 + pad*2), h:Math.round(y1 - y0 + pad*2)};
@@ -962,6 +1148,13 @@ function sanitizePlan(input){
 
   const walls = [];
   if (Array.isArray(raw.walls)) raw.walls.forEach((w, i) => {
+    if (isCurvedSpan(w)){
+      if (!curvedSpan(w)){ errors.push(tr(`弧形墙体 ${i} 数据无效`, `Curved wall ${i} is invalid`)); return; }
+      const wall = {...arcFields(w), kind:WALL_KINDS.includes(w.kind) ? w.kind : 'n'};
+      if (Number.isFinite(w.height) && w.height > 0) wall.height = w.height;
+      walls.push(wall);
+      return;
+    }
     const r = Array.isArray(w) ? normRect(w) : w && typeof w === 'object' ? normRect(w.rect) : null;
     if (!r){ errors.push(tr(`墙体 ${i} 数据无效`, `Wall ${i} is invalid`)); return; }
     const kind = Array.isArray(w) ? w[4] : w.kind;
@@ -972,7 +1165,12 @@ function sanitizePlan(input){
   });
 
   const wins = [];
-  if (Array.isArray(raw.wins)) raw.wins.forEach(w => {
+  if (Array.isArray(raw.wins)) raw.wins.forEach((w, i) => {
+    if (isCurvedSpan(w)){
+      if (curvedSpan(w)) wins.push(arcFields(w));
+      else errors.push(tr(`弧形窗 ${i} 数据无效`, `Curved window ${i} is invalid`));
+      return;
+    }
     const r = normRect(Array.isArray(w) ? w : w && w.rect);
     if (r) wins.push(r);
   });
@@ -1017,6 +1215,21 @@ function sanitizePlan(input){
     };
     room.at = normPoint(r.at) || polyCenter(poly);
     if (r.counted === false) room.counted = false;
+    if (r.arcs !== undefined){
+      const edges = new Set(), arcs = [];
+      if (!Array.isArray(r.arcs) || !Array.isArray(r.poly) || !r.poly.every(p => normPoint(p))){
+        errors.push(tr(`房间 ${id} 圆弧轮廓无效`, `Room ${id} has an invalid curved outline`));
+      } else for (const arc of r.arcs){
+        const {edge, sweep} = arc || {};
+        if (!Number.isInteger(edge) || edge < 0 || edge >= poly.length || edges.has(edge) ||
+            !arcGeometry(poly[edge], poly[(edge + 1) % poly.length], sweep)){
+          errors.push(tr(`房间 ${id} 圆弧边无效`, `Room ${id} has an invalid curved edge`));
+          continue;
+        }
+        edges.add(edge); arcs.push({edge, sweep});
+      }
+      if (Array.isArray(r.arcs)) room.arcs = arcs;
+    }
     rooms.push(room);
   });
   if (!rooms.length) return {ok:false, plan:null, errors:errors.concat(tr('方案至少需要一个房间', 'A plan needs at least one room'))};
@@ -1039,8 +1252,19 @@ function sanitizePlan(input){
 // PLAN 各字段同步成模块级别名；planRev 变化会让 3D 顶层重建
 function installPlan(plan){
   PLAN = plan; planRev++;
-  WALLS = plan.walls; WINS = plan.wins; DOORS = plan.doors; SLIDES = plan.slides;
-  ROOMS = plan.rooms; MATS = plan.materials; BOUNDS = plan.bounds;
+  WALLS = plan.walls.map(w => {
+    if (Array.isArray(w)) return w;
+    const curve = curvedSpan(w);
+    return [...curveBounds(curve), w.kind, w.height, curve];
+  });
+  WINS = plan.wins.map(w => {
+    if (Array.isArray(w)) return w;
+    const curve = curvedSpan(w);
+    return [...curveBounds(curve), curve];
+  });
+  DOORS = plan.doors; SLIDES = plan.slides;
+  ROOMS = plan.rooms.map(r => r.arcs?.length ? {...r, vertices:r.poly, poly:roomOutline(r)} : r);
+  MATS = plan.materials; BOUNDS = plan.bounds;
   matPat = {};
 }
 
@@ -1162,6 +1386,10 @@ function normalizeComponentParts(input){
   }
   return parts;
 }
+const tableTopType = type => type === 'coffeetable' || type === 'sidetable';
+const tableTopShapes = ['rect', 'round', 'oval'];
+const tableTopShape = f => f.topShape || (f.type === 'sidetable' ? 'oval' : 'rect');
+const tableHeight = f => f.height ?? (f.type === 'sidetable' ? 545 : 400);
 function normalizeFurn(f){
   if (!f || typeof f !== 'object') return null;
   const cx = +f.cx, cy = +f.cy, w = +f.w, d = +f.d;
@@ -1169,12 +1397,18 @@ function normalizeFurn(f){
   const type = String(f.type || 'box');
   const parts = type === 'component' ? normalizeComponentParts(f.parts) : null;
   if (parts && !parts.length) return null;
-  return {
+  const item = {
     id: String(f.id || uid()), type, name: String(f.name || type), cx, cy, w, d,
     rot: wrapRotation(+f.rot),
     color: /^#[0-9a-f]{3,8}$/i.test(f.color || '') ? f.color : typeColor(type),
     ...(parts ? {parts} : {}),
   };
+  if (type === 'cornersofa' && ['left', 'right'].includes(f.handedness)) item.handedness = f.handedness;
+  if (tableTopType(type)){
+    if (tableTopShapes.includes(f.topShape)) item.topShape = f.topShape;
+    if (Number.isFinite(f.height) && f.height >= 200 && f.height <= 800) item.height = f.height;
+  }
+  return item;
 }
 function readRenders(){
   try {
@@ -1248,13 +1482,30 @@ function validateSel(){ if (ui.sel && !selOk(ui.sel)) ui.sel = null; }
 const getF = id => state.furniture.find(f => f.id === id);
 
 /* ======================= 几何工具 ======================= */
-const area = poly => Math.abs(poly.reduce((a,p,i) => { const q = poly[(i+1)%poly.length]; return a + p[0]*q[1] - q[0]*p[1]; }, 0)) / 2 / 1e6;
-const perim = poly => poly.reduce((a,p,i) => { const q = poly[(i+1)%poly.length]; return a + Math.hypot(q[0]-p[0], q[1]-p[1]); }, 0) / 1000;
+function roomArea(room){
+  const poly = room.vertices || room.poly, curves = roomCurves(room), [ox, oy] = poly[0];
+  let twiceArea = 0;
+  poly.forEach(([x, y], i) => {
+    const [nx, ny] = poly[(i + 1) % poly.length], curve = curves.get(i);
+    twiceArea += (x - ox) * (ny - oy) - (nx - ox) * (y - oy);
+    if (curve) twiceArea += curve.radius ** 2 * (curve.sweep - Math.sin(curve.sweep));
+  });
+  return Math.abs(twiceArea) / 2e6;
+}
+function roomPerimeter(room){
+  const poly = room.vertices || room.poly, curves = roomCurves(room);
+  return poly.reduce((sum, p, i) => {
+    const q = poly[(i + 1) % poly.length], curve = curves.get(i);
+    return sum + (curve ? curve.radius * Math.abs(curve.sweep) : Math.hypot(q[0] - p[0], q[1] - p[1]));
+  }, 0) / 1000;
+}
 const bbox = poly => { const xs = poly.map(p=>p[0]), ys = poly.map(p=>p[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]; };
 function aabb(f){ const a = f.rot*Math.PI/180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a)); return {hw:f.w/2*c + f.d/2*s, hh:f.w/2*s + f.d/2*c}; }
 const fmt = (n, d=2) => n.toFixed(d);
 const norm = a => ((Math.round(a) % 360) + 360) % 360;
-function snapRects(){ return WALLS.filter((w,i) => !state.demolished.includes('w'+i)).concat(WINS); }
+const wallLength = w => w[6] ? w[6].radius * Math.abs(w[6].sweep) : Math.max(w[2]-w[0], w[3]-w[1]);
+function snapRects(){ return WALLS.filter((w,i) => !w[6] && !state.demolished.includes('w'+i)).concat(WINS.filter(w => !w[4])); }
+function snapCurves(){ return WALLS.filter((w,i) => w[6] && !state.demolished.includes('w'+i)).map(w => w[6]).concat(WINS.map(w => w[4]).filter(Boolean)); }
 
 /* ======================= 颜色 / 材质图案 ======================= */
 function hex2rgb(h){ h = h.replace('#',''); if (h.length===3) h = h.split('').map(c=>c+c).join(''); const n = parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255]; }
@@ -1339,7 +1590,7 @@ function componentSVG(f){
   }).join('');
 }
 
-function furnSVG(t,w,d,c){
+function furnSVG(t,w,d,c,details = {}){
   const x = -w/2, y = -d/2, m = Math.min(w,d);
   switch (t){
     case 'bed': {
@@ -1363,7 +1614,8 @@ function furnSVG(t,w,d,c){
       let s = pa(`M${x} ${y}H${x+w}V${y+k}H${x+k}V${y+d}H${x}Z`, dk);
       const cw = (w-b-200)/2;
       s += rc(x+b,y+b,cw,k-b-30,c,'rx="40"') + rc(x+b+cw,y+b,cw,k-b-30,c,'rx="40"') + rc(x+b,y+k,k-b-30,d-k-200,c,'rx="40"');
-      return s + rc(x,y,w,b,dk,'rx="50"') + rc(x,y,b,d,dk,'rx="50"') + rc(x+w-200,y,200,k,dk,'rx="50"') + rc(x,y+d-200,k,200,dk,'rx="50"');
+      s += rc(x,y,w,b,dk,'rx="50"') + rc(x,y,b,d,dk,'rx="50"') + rc(x+w-200,y,200,k,dk,'rx="50"') + rc(x,y+d-200,k,200,dk,'rx="50"');
+      return details.handedness === 'right' ? `<g transform="scale(-1 1)">${s}</g>` : s;
     }
     case 'nightstand': return rc(x,y,w,d,c,'rx="30"') + `<circle r="${m*.24}" fill="#fff6dd" ${ST}/>` + `<circle r="${m*.08}" fill="${shade(c,.8)}" ${ST}/>`;
     case 'wardrobe': {
@@ -1377,7 +1629,8 @@ function furnSVG(t,w,d,c){
     case 'chair': return rc(x+25,y+d*.16,w-50,d*.84-10,c,'rx="60"') + rc(x,y,w,d*.2,shade(c,.78),'rx="40"');
     case 'bookshelf': { let s = rc(x,y,w,d,c); for (let bx = x+400; bx < x+w-50; bx += 400) s += ln(bx,y,bx,y+d); return s; }
     case 'baycushion': return rc(x,y,w,d,c,'rx="60"') + rc(x+60,y+80,w-120,Math.min(300,d*.2),'#fff','rx="60"') + rc(x+60,y+d-80-Math.min(300,d*.2),w-120,Math.min(300,d*.2),'#fff','rx="60"');
-    case 'coffeetable': return rc(x,y,w,d,c,'rx="80"') + rc(x+60,y+60,w-120,d-120,shade(c,1.06),'rx="50"');
+    case 'coffeetable': return details.topShape === 'round' || details.topShape === 'oval' ? ec(0,0,w/2,d/2,c)
+      : rc(x,y,w,d,c,'rx="80"') + rc(x+60,y+60,w-120,d-120,shade(c,1.06),'rx="50"');
     case 'tvstand': return rc(x,y,w,d,c) + rc(x+w*.15,y+30,w*.7,55,'#3a3a3a');
     case 'rug': return rc(x,y,w,d,c,'rx="40" fill-opacity=".6"') + rc(x+90,y+90,w-180,d-180,'none','rx="30" stroke-dasharray="3 3" opacity=".6"');
     case 'plant': {
@@ -1407,7 +1660,8 @@ function furnSVG(t,w,d,c){
       return s;
     }
     case 'beanbag': return ec(0,0,w/2,d/2,c) + ec(-w*.04,-d*.06,w*.3,d*.28,shade(c,1.12),'opacity=".9"');
-    case 'sidetable': return ec(0,0,w/2,d/2,c) + ec(0,0,w*.12,d*.12,'none','opacity=".5"');
+    case 'sidetable': return details.topShape === 'rect' ? rc(x,y,w,d,c,'rx="18"')
+      : ec(0,0,w/2,d/2,c) + (details.topShape ? '' : ec(0,0,w*.12,d*.12,'none','opacity=".5"'));
     case 'floorlamp': return `<circle r="${m*.5}" fill="#fff6dd" fill-opacity=".85" ${ST}/>` + `<circle r="${m*.32}" fill="none" ${ST} ${DASH}/>` + `<circle r="${m*.07}" fill="${c}" ${ST}/>`;
     case 'island': return rc(x,y,w,d,c) + ln(x,y+d-250,x+w,y+d-250,DASH);
     case 'barstool': return `<circle r="${m/2}" fill="${c}" ${ST}/><circle r="${m*.3}" fill="${shade(c,1.15)}" ${ST}/>`;
@@ -1442,14 +1696,40 @@ function furnSVG(t,w,d,c){
 
 /* ======================= 渲染 ======================= */
 const NOLABEL = ['plant','floorlamp','sidetable','barstool','beanbag'];
+function svgArc(curve, end, offset = 0, reverse = false){
+  const radius = curve.radius + offset, direction = (curve.sweep > 0) !== reverse ? 1 : 0;
+  return `A${radius} ${radius} 0 0 ${direction} ${end.join(' ')}`;
+}
+function curveLinePath(curve, offset){
+  return `M${curvePoint(curve, 0, offset).join(' ')}${svgArc(curve, curvePoint(curve, 1, offset), offset)}`;
+}
+function curveBandPath(curve){
+  const half = curve.thickness / 2;
+  return `${curveLinePath(curve, half)}L${curvePoint(curve, 1, -half).join(' ')}${svgArc(curve, curvePoint(curve, 0, -half), -half, true)}Z`;
+}
+function roomShape(room, attrs){
+  if (!room.arcs?.length) return `<polygon points="${room.poly.map(p => p.join(',')).join(' ')}" ${attrs}/>`;
+  const vertices = room.vertices || room.poly, curves = roomCurves(room);
+  let path = `M${vertices[0].join(' ')}`;
+  vertices.forEach((_, i) => {
+    const end = vertices[(i + 1) % vertices.length], curve = curves.get(i);
+    path += curve ? svgArc(curve, end) : `L${end.join(' ')}`;
+  });
+  return `<path d="${path}Z" ${attrs}/>`;
+}
+function wallShape([x0,y0,x1,y1,,,curve], attrs){
+  return curve ? `<path d="${curveBandPath(curve)}" ${attrs}/>`
+    : `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" ${attrs}/>`;
+}
 function renderRooms(){
   let s = '';
-  ROOMS.forEach(r => s += `<polygon class="room" data-room="${esc(r.id)}" points="${r.poly.map(p=>p.join(',')).join(' ')}" fill="${patURL(roomState(r.id).mat)}"/>`);
+  ROOMS.forEach(r => s += roomShape(r, `class="room" data-room="${esc(r.id)}" fill="${patURL(roomState(r.id).mat)}"`));
   const sill = ([a,b,c,d]) => `<rect x="${a}" y="${b}" width="${c-a}" height="${d-b}" fill="#e2dacb" stroke="#b9b0a0" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
   DOORS.forEach(d => s += sill(d.rect)); SLIDES.forEach(d => s += sill(d.rect));
   $('#gRooms').innerHTML = s;
 }
 
+function furnitureShape(f){ return f.type === 'component' ? componentSVG(f) : furnSVG(f.type,f.w,f.d,f.color,f); }
 function renderFurn(){
   const g = $('#gFurn');
   g.setAttribute('display', ui.layers.furn ? 'inline' : 'none');
@@ -1459,25 +1739,30 @@ function renderFurn(){
     const label = Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type)
       ? `<text transform="rotate(${-f.rot})" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#4a443c" opacity=".8" pointer-events="none">${esc(nm(f.name))}</text>` : '';
     const title = component ? `<title>${esc(nm(f.name))}</title>` : '';
-    const shape = component ? componentSVG(f) : furnSVG(f.type,f.w,f.d,f.color);
+    const shape = furnitureShape(f);
     return `<g class="furn" data-fid="${esc(f.id)}" transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${title}${shape}${label}</g>`;
   }).join('');
 }
 
 function renderWalls(){
   $('#gWalls').innerHTML = WALLS.map((w,i) => {
-    const [x0,y0,x1,y1,k] = w, id = 'w'+i, dem = state.demolished.includes(id);
+    const k = w[4], id = 'w'+i, dem = state.demolished.includes(id);
     let fill = k==='b' ? (ui.layers.bearing ? '#b8412c' : '#26241f') : k==='low' ? '#e9e3d8' : k==='e' ? '#8f897d' : '#a7a195';
     let ex = k==='low' ? 'stroke="#8f897d" stroke-width="1" vector-effect="non-scaling-stroke"' : '';
     if (dem){ fill = 'rgba(198,91,58,.12)'; ex = 'stroke="#c65b3a" stroke-width="1.2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"'; }
-    return `<rect class="wall" data-wall="${id}" x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="${fill}" ${ex}/>`;
+    return wallShape(w, `class="wall" data-wall="${id}" fill="${fill}" ${ex}`);
   }).join('');
 }
 
 function renderOpenings(){
   const WS = 'stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"';
   let s = '';
-  WINS.forEach(([x0,y0,x1,y1]) => {
+  WINS.forEach(([x0,y0,x1,y1,curve]) => {
+    if (curve){
+      s += `<path d="${curveBandPath(curve)}" fill="#f7fbfd" ${WS}/>`;
+      for (const t of [-1/6, 1/6]) s += `<path d="${curveLinePath(curve, curve.thickness * t)}" fill="none" ${WS}/>`;
+      return;
+    }
     const w = x1-x0, h = y1-y0;
     s += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#f7fbfd" ${WS}/>`;
     if (w >= h) [1/3,2/3].forEach(t => s += `<line x1="${x0}" y1="${y0+h*t}" x2="${x1}" y2="${y0+h*t}" ${WS}/>`);
@@ -1517,7 +1802,7 @@ function renderLabels(){
   g.innerHTML = ROOMS.filter(r => r.at).map(r => {
     const [x,y] = r.at, halo = 'stroke="#fbf9f4" stroke-width="45" paint-order="stroke" stroke-linejoin="round"';
     return `<text x="${x}" y="${y}" font-size="250" font-weight="600" text-anchor="middle" fill="#2b2824" ${halo}>${esc(nm(roomState(r.id).name))}</text>
-      <text x="${x}" y="${y+260}" font-size="175" text-anchor="middle" fill="#7d7366" ${halo}>${fmt(area(r.poly))} m²</text>`;
+      <text x="${x}" y="${y+260}" font-size="175" text-anchor="middle" fill="#7d7366" ${halo}>${fmt(roomArea(r))} m²</text>`;
   }).join('');
 }
 
@@ -1594,10 +1879,10 @@ function renderSel(){
     }
   } else if (ui.sel?.kind === 'room'){
     const r = roomDef(ui.sel.id);
-    if (r) s += `<polygon points="${r.poly.map(p=>p.join(',')).join(' ')}" fill="rgba(181,101,58,.08)" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
+    if (r) s += roomShape(r, 'fill="rgba(181,101,58,.08)" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"');
   } else if (ui.sel?.kind === 'wall'){
     const w = wallOf(ui.sel.id);
-    if (w) s += `<rect x="${w[0]}" y="${w[1]}" width="${w[2]-w[0]}" height="${w[3]-w[1]}" fill="none" stroke="#b5653a" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
+    if (w) s += wallShape(w, 'fill="none" stroke="#b5653a" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"');
   }
   $('#gSel').innerHTML = s;
 }
@@ -1609,7 +1894,7 @@ function renderAll(){
 
 let renaming = false;                 // 顶栏方案名就地编辑中：暂不覆写 #brandName
 function updateHeader(){
-  const tot = ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + area(r.poly), 0);
+  const tot = ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + roomArea(r), 0);
   if (!renaming) $('#brandName').textContent = `${PLAN.name} · ${tr('装修设计', 'Interior Design')}`;
   $('#subtitle').textContent = tr(`套内使用面积约 ${fmt(tot)} m² · 尺寸单位 mm · 原图比例 1:60`, `Net floor area ≈ ${fmt(tot)} m² · Units: mm · Original scale 1:60`);
   const components = componentCount(state.furniture) > 0;
@@ -1668,8 +1953,8 @@ function wallPanel(id){
   return `<section><h3>${tr('墙体','Wall')} <small>${esc(id)}</small></h3>
     <div class="stats">
       <div><small>${tr('类型','Kind')}</small><span class="big" style="font-size:15px">${esc(KINDS[w[4]] || w[4])}</span></div>
-      <div><small>${tr('长度','Length')}</small><span class="big">${fmt(Math.max(w[2]-w[0], w[3]-w[1])/1000, 1)}</span> m</div></div>
-    <div class="muted" style="font-size:12px;margin-top:6px">${tr('厚度','Thickness')} ${Math.round(Math.min(w[2]-w[0], w[3]-w[1]))} mm · ${tr('高度','Height')} ${wallHeight(w)} mm</div>
+      <div><small>${tr('长度','Length')}</small><span class="big">${fmt(wallLength(w)/1000, 1)}</span> m</div></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">${tr('厚度','Thickness')} ${Math.round(w[6]?.thickness ?? Math.min(w[2]-w[0], w[3]-w[1]))} mm · ${tr('高度','Height')} ${wallHeight(w)} mm</div>
     <div class="actions">
       ${canDem ? `<button class="btn ${dem ? '' : 'danger'}" id="wToggle">${dem ? tr('恢复墙体','Restore wall') : tr('标记拆除','Mark for removal')}</button>`
                : `<span class="muted">${tr('承重墙与外墙不可拆除','Bearing and exterior walls cannot be removed')}</span>`}
@@ -1684,16 +1969,16 @@ function overviewPanel(){
   const rows = ROOMS.map(r => {
     const st = roomState(r.id), m = matInfo(st.mat);
     return `<tr class="click" data-room="${esc(r.id)}"><td><span class="sw" style="background:${m.sw}"></span>${esc(nm(st.name))}${r.counted===false?' <span class="muted">*</span>':''}</td>
-      <td class="r">${fmt(area(r.poly))} m²</td></tr>`;
+      <td class="r">${fmt(roomArea(r))} m²</td></tr>`;
   }).join('');
-  const tot = ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + area(r.poly), 0);
+  const tot = ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + roomArea(r), 0);
   const byMat = {};
-  ROOMS.forEach(r => { const m = roomState(r.id).mat; byMat[m] = (byMat[m]||0) + area(r.poly); });
+  ROOMS.forEach(r => { const m = roomState(r.id).mat; byMat[m] = (byMat[m]||0) + roomArea(r); });
   let cost = 0;
   const matRows = Object.entries(byMat).map(([m,a]) => { const info = matInfo(m), c = a*info.price*1.05; cost += c;
     return `<tr><td><span class="sw" style="background:${info.sw}"></span>${esc(nm(info.name))}</td><td class="r">${fmt(a,1)} m²</td><td class="r">¥${Math.round(c).toLocaleString()}</td></tr>`; }).join('');
   const dem = state.demolished.map(wallOf).filter(Boolean);
-  const demLen = dem.reduce((a,w) => a + Math.max(w[2]-w[0], w[3]-w[1]), 0) / 1000;
+  const demLen = dem.reduce((a,w) => a + wallLength(w), 0) / 1000;
   const components = componentCount(state.furniture);
   return `
   <section><h3>${tr('房间面积','Room Areas')} <small>${tr('点击查看 / 更换地面','Click to view / change flooring')}</small></h3>
@@ -1805,7 +2090,7 @@ function closeDrawers(){ if (narrow()) drawer(null); }
 
 function roomPanel(r){
   const st = roomState(r.id), info = matInfo(st.mat);
-  const a = area(r.poly), [x0,y0,x1,y1] = bbox(r.poly), inside = state.furniture.filter(f => f.cx>x0&&f.cx<x1&&f.cy>y0&&f.cy<y1);
+  const a = roomArea(r), [x0,y0,x1,y1] = bbox(r.poly), inside = state.furniture.filter(f => f.cx>x0&&f.cx<x1&&f.cy>y0&&f.cy<y1);
   const mats = Object.entries(MATS).map(([k,m]) => `<button class="mat ${k===st.mat?'on':''}" data-mat="${esc(k)}"><i style="background:${m.sw}"></i><span>${esc(nm(m.name))}<small>¥${m.price}/m²</small></span></button>`).join('');
   // 房间效果图：显示该房间最近一张（标题条 / 效果图页签生成的都算）
   const latest = roomLatestRender(r.id);
@@ -1816,10 +2101,10 @@ function roomPanel(r){
     <div class="form"><label class="full">${tr('名称','Name')}<input id="rName" value="${esc(nm(st.name))}"></label></div>
     <div class="stats" style="margin-top:10px">
       <div><small>${tr('使用面积','Floor area')}</small><span class="big">${fmt(a)}</span> m²</div>
-      <div><small>${tr('周长','Perimeter')}</small><span class="big">${fmt(perim(r.poly),1)}</span> m</div>
+      <div><small>${tr('周长','Perimeter')}</small><span class="big">${fmt(roomPerimeter(r),1)}</span> m</div>
       <div><small>${tr('开间','Width')}</small><span class="big">${x1-x0}</span> mm</div>
       <div><small>${tr('进深','Depth')}</small><span class="big">${y1-y0}</span> mm</div></div>
-    <div class="muted">${tr(`墙面面积（层高 2.8m，未扣门窗）约 ${fmt(perim(r.poly)*2.8,1)} m²`, `Wall area (2.8m ceiling, openings not deducted) ≈ ${fmt(perim(r.poly)*2.8,1)} m²`)}</div>
+    <div class="muted">${tr(`墙面面积（层高 2.8m，未扣门窗）约 ${fmt(roomPerimeter(r)*2.8,1)} m²`, `Wall area (2.8m ceiling, openings not deducted) ≈ ${fmt(roomPerimeter(r)*2.8,1)} m²`)}</div>
     <div class="actions"><button class="btn primary" id="enterRoomBtn">${tr('进入房间','Enter room')}</button></div></section>
   <section><h3>${tr('地面材料','Flooring')}</h3><div class="mats">${mats}</div>
     <div class="total"><span>${tr('材料估价','Estimated cost')}</span><b>¥${Math.round(a*info.price*1.05).toLocaleString()}</b></div></section>
@@ -1840,6 +2125,11 @@ function bindRoomPanel(){
 
 function furnPanel(f){
   const component = f.type === 'component';
+  const table = tableTopType(f.type), top = tableTopShape(f);
+  const circular = table && top !== 'rect';
+  const cornerDepth = Math.min(950, f.d*.56, f.w*.4);
+  const footprint = f.type === 'cornersofa' ? cornerDepth * (f.w + f.d - cornerDepth)
+    : f.w*f.d * (circular ? Math.PI/4 : 1);
   return `<section><h3>${component ? tr('构件属性','Component') : tr('家具属性','Furniture')}</h3>
     <div class="form">
       <label class="full">${tr('名称','Name')}<input id="fName" value="${esc(nm(f.name))}"></label>
@@ -1849,8 +2139,17 @@ function furnPanel(f){
       <label>${tr('中心','Center')} Y (mm)<input type="number" id="fY" value="${Math.round(f.cy)}" step="10"></label>
       <label>${tr('旋转','Rotation')} (°)<input type="number" id="fR" value="${f.rot}" step="15"></label>
       <label>${component ? tr('默认颜色','Default color') : tr('颜色','Color')}<input type="color" id="fC" value="${f.color}"></label>
+      ${f.type === 'cornersofa' ? `<label class="full">${tr('转角所在侧（未旋转时）','Return side at 0°')}
+        <select id="fHandedness"><option value="left">${tr('左侧','Left')}</option>
+          <option value="right" ${f.handedness === 'right' ? 'selected' : ''}>${tr('右侧','Right')}</option></select></label>` : ''}
+      ${table ? `<label>${tr('台面形状','Top shape')}<select id="fTopShape">
+        <option value="">${tr('家具库默认','Library default')}</option>
+        <option value="rect" ${f.topShape === 'rect' ? 'selected' : ''}>${tr('矩形','Rectangle')}</option>
+        <option value="round" ${f.topShape === 'round' ? 'selected' : ''}>${tr('圆形','Round')}</option>
+        <option value="oval" ${f.topShape === 'oval' ? 'selected' : ''}>${tr('椭圆','Oval')}</option></select></label>
+        <label>${tr('台面高度','Top height')} (mm)<input type="number" id="fHeight" value="${f.height ?? ''}" placeholder="${tableHeight(f)}" min="200" max="800" step="any"></label>` : ''}
     </div>
-    <div class="muted" style="margin-top:8px">${tr('占地面积','Footprint')} ${fmt(f.w*f.d/1e6)} m²${component
+    <div class="muted" style="margin-top:8px">${tr('占地面积','Footprint')} ${fmt(footprint/1e6)} m²${component
       ? tr(` · ${f.parts.length} 个部件 · 最高点 ${Math.round(Math.max(...f.parts.map(p => p.y + p.h)))} mm`,
         ` · ${f.parts.length} parts · max elevation ${Math.round(Math.max(...f.parts.map(p => p.y + p.h)))} mm`) : ''}</div>
     <div class="actions">
@@ -1868,6 +2167,16 @@ function bindFurnPanel(f){
   num('#fD', (g,v) => g.d = Math.max(50, Math.round(v)));
   num('#fX', (g,v) => g.cx = v); num('#fY', (g,v) => g.cy = v); num('#fR', (g,v) => g.rot = norm(v));
   $('#fC').onchange = e => upd(g => g.color = e.target.value);
+  if ($('#fHandedness')) $('#fHandedness').onchange = e => upd(g => { g.handedness = e.target.value; });
+  if ($('#fTopShape')) $('#fTopShape').onchange = e => upd(g => {
+    if (e.target.value) g.topShape = e.target.value;
+    else delete g.topShape;
+  });
+  if ($('#fHeight')) $('#fHeight').onchange = e => upd(g => {
+    const height = e.target.valueAsNumber;
+    if (Number.isFinite(height)) g.height = Math.min(800, Math.max(200, height));
+    else delete g.height;
+  });
   $('#aRot').onclick = () => rotateSel(90);
   $('#aDup').onclick = duplicateSel;
   $('#aDel').onclick = deleteSel;
@@ -1916,7 +2225,8 @@ function toggleWall(id){
   if (w[4]==='e') return toast(tr('外墙属于建筑外围护结构，不建议拆除', 'Exterior walls are part of the building envelope and should not be removed'));
   const on = state.demolished.includes(id);
   mutate(() => state.demolished = on ? state.demolished.filter(x => x!==id) : [...state.demolished, id]);
-  toast(on ? tr('已恢复墙体', 'Wall restored') : tr(`已标记拆除 ${Math.max(w[2]-w[0], w[3]-w[1])} mm 墙体`, `Marked ${Math.max(w[2]-w[0], w[3]-w[1])} mm of wall for removal`));
+  const length = Math.round(wallLength(w));
+  toast(on ? tr('已恢复墙体', 'Wall restored') : tr(`已标记拆除 ${length} mm 墙体`, `Marked ${length} mm of wall for removal`));
 }
 
 function setTool(t){
@@ -1983,6 +2293,12 @@ function snapPoint(p, shift){
   for (const r of snapRects()){
     for (const ex of [r[0], r[2]]) if (Math.abs(ex-p.x) < bx){ bx = Math.abs(ex-p.x); x = ex; }
     for (const ey of [r[1], r[3]]) if (Math.abs(ey-p.y) < by){ by = Math.abs(ey-p.y); y = ey; }
+  }
+  let curveTolerance = Math.min(bx, by);
+  for (const curve of snapCurves()) for (const offset of [-curve.thickness / 2, curve.thickness / 2]){
+    const [px, py] = closestCurvePoint(curve, p.x, p.y, offset);
+    const distance = Math.hypot(px - p.x, py - p.y);
+    if (distance < curveTolerance){ x = px; y = py; curveTolerance = distance; }
   }
   if (shift && ui.mA){ if (Math.abs(x-ui.mA.x) > Math.abs(y-ui.mA.y)) y = ui.mA.y; else x = ui.mA.x; }
   return {x, y};
@@ -2063,7 +2379,7 @@ svg.addEventListener('pointermove', e => {
   $('#cx').textContent = Math.round(p.x) + ' mm'; $('#cy').textContent = Math.round(p.y) + ' mm';
   if (!drag){
     const room = e.target.closest && e.target.closest('[data-room]'), def = room && roomDef(room.dataset.room);
-    $('#hover').innerHTML = def ? `<b>${esc(nm(roomState(def.id).name))}</b> ${fmt(area(def.poly))} m²` : '';
+    $('#hover').innerHTML = def ? `<b>${esc(nm(roomState(def.id).name))}</b> ${fmt(roomArea(def))} m²` : '';
     if (ui.tool === 'measure' && ui.mA){ ui.mCur = snapPoint(p, e.shiftKey); renderMeasure(); }
     return;
   }
@@ -2609,7 +2925,7 @@ function applySceneEdit(changes){
   }
   const plan = normalized.plan;
   const oldWallValues = new Set(PLAN.walls.map(w => JSON.stringify(w)));
-  if (plan.walls.some(w => (w[0] === w[2] || w[1] === w[3]) && !oldWallValues.has(JSON.stringify(w))) ||
+  if (plan.walls.some(w => Array.isArray(w) && (w[0] === w[2] || w[1] === w[3]) && !oldWallValues.has(JSON.stringify(w))) ||
       plan.rooms.some(r => unsafeSceneKeys.has(r.id) || !Object.hasOwn(plan.materials, r.mat))){
     throw new Error(tr('墙体尺寸、房间编号或材料无效', 'Invalid wall dimensions, room identifier or material'));
   }
@@ -2700,8 +3016,8 @@ const OPS = {
     if (type === 'component') return null;       // 通用构件由图纸或项目导入提供有效的部件几何
     let cx = Number.isFinite(+op.cx) ? +op.cx : null, cy = Number.isFinite(+op.cy) ? +op.cy : null;
     if (cx === null || cy === null){ const p = findFreeSpot(w, d); cx = p[0]; cy = p[1]; }
-    const f = {id:op.id ? String(op.id) : uid(), type, name:String(op.name || '家具'), cx, cy, w, d,
-      rot:norm(numOr(op.rot)), color:/^#[0-9a-f]{3,8}$/i.test(op.color || '') ? op.color : typeColor(type)};
+    const f = normalizeFurn({...op, type, name:op.name || '家具', cx, cy, w, d, rot:norm(numOr(op.rot))});
+    if (!f) return null;
     if (getF(f.id)) f.id = uid();
     pushOut(f);
     state.furniture.push(f);
@@ -2871,7 +3187,10 @@ async function* aiTextChunks(kind, init){
 const IMP_MAX_BYTES = 25 * 1024 * 1024;    // 服务端上限 40 MiB，给 base64 留余量
 const IMP_MAX_FILES = 20;
 const IMP_UPLOAD_TIMEOUT = 5 * 60_000;
-const impState = {files:[], result:null, onApply:null, retryId:null, submission:null, applying:false};
+const impState = {files:[], result:null, onApply:null, retryId:null, submission:null, applying:false,
+  review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null,
+  reviewVariant:'fixed', reviewBase:null, reviewApplied:false, reviewTimer:0,
+  reviewRerun:true, reviewGen:0, reviewSince:0};
 const impEls = {};
 
 const impSize = n => n >= 1048576 ? (n/1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n/1024) + ' KB' : n + ' B';
@@ -2960,6 +3279,7 @@ function impOpen({retryId, note} = {}){
   if (menu) menu.open = false;
   impState.files = []; impState.result = impState.onApply = null;
   impState.retryId = typeof retryId === 'string' ? retryId : null;
+  impReviewReset();
   impEls.note.value = typeof note === 'string' ? note : '';
   impEls.file.value = '';
   impErrShow('');
@@ -2971,7 +3291,9 @@ function impOpen({retryId, note} = {}){
 function impClose(){
   if (impState.applying || impState.submission?.jobId) return;
   if (impState.submission) impAbort();
+  impViewClose();
   impState.files = []; impState.result = impState.onApply = impState.retryId = null;
+  impReviewReset();
   impEls.wrap.classList.remove('on');
   impEls.wrap.setAttribute('aria-hidden', 'true');
 }
@@ -3070,7 +3392,7 @@ async function impStart(){
   }
 }
 
-function impOpenResult(data, onApply){
+function impOpenResult(data, onApply, meta = {}){
   if (impState.submission || impState.applying) return false;
   const result = sanitizePlan(data?.plan);
   if (!result.ok){
@@ -3083,16 +3405,626 @@ function impOpenResult(data, onApply){
     explanation:typeof data.explanation === 'string' ? data.explanation.trim() : '',
   };
   impState.onApply = onApply;
+  impState.review = null;
+  impState.reviewJobId = typeof meta.jobId === 'string' ? meta.jobId : null;
+  impState.reviewState = typeof meta.reviewState === 'string' ? meta.reviewState : null;
+  impState.reviewMode = meta.mode === 'project' ? 'project' : 'preview';
+  impState.reviewRowId = typeof meta.rowId === 'string' ? meta.rowId : null;
+  impState.reviewVariant = 'fixed';
+  impState.reviewBase = null;
+  impState.reviewApplied = false;
   impErrShow('');
   impShowDialog('preview');
+  impReviewStart();
   return true;
+}
+
+/* ---------- 自动复核（服务端契约：GET/POST /api/jobs/<id>/review） ---------- */
+// 复核失败一律静默：任何请求错误、404、解析失败都当作 unavailable，界面不提示。
+const IMP_REVIEW_POLL = 5000;
+// 服务端单次复核最长 10 分钟；连续 404 超过这个时间说明它不会再回来了（例如服务重启）。
+const IMP_REVIEW_GIVEUP = 11 * 60_000;
+const IMP_REVIEW_STATES = ['pending', 'running', 'match', 'differ', 'unavailable'];
+const impReviewURL = jobId => studioPath('/api/jobs/' + encodeURIComponent(jobId) + '/review');
+
+function impReviewStop(){
+  clearTimeout(impState.reviewTimer);
+  impState.reviewTimer = 0;
+  // 代次递增让在途请求的结果作废，避免旧轮询把新状态覆盖掉。
+  impState.reviewGen++;
+}
+
+function impReviewReset(){
+  impReviewStop();
+  impState.review = null; impState.reviewJobId = null; impState.reviewState = null;
+  impState.reviewMode = 'preview'; impState.reviewRowId = null;
+  impState.reviewVariant = 'fixed'; impState.reviewBase = null; impState.reviewApplied = false;
+  impState.reviewRerun = true; impState.reviewSince = 0;
+  impReviewRender();
+}
+
+async function impReviewFetch(jobId){
+  try {
+    const response = await fetch(impReviewURL(jobId), {cache:'no-store', signal:AbortSignal.timeout(15000)});
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && typeof data === 'object' ? data : null;
+  } catch(e){ return null; }
+}
+
+function impReviewAccept(raw){
+  const s = raw && typeof raw === 'object' ? raw : {};
+  const now = IMP_REVIEW_STATES.includes(s.state) ? s.state : 'unavailable';
+  impState.review = {
+    state: now,
+    summary: typeof s.summary === 'string' ? s.summary : '',
+    issues: Array.isArray(s.issues) ? s.issues.filter(i => i && typeof i === 'object') : [],
+    fixed: s.fixed && typeof s.fixed === 'object' ? s.fixed : null,
+    delta: s.delta && typeof s.delta === 'object' ? s.delta : null,
+    updatedAt: Number.isFinite(+s.updatedAt) ? +s.updatedAt : Date.now(),
+  };
+  // 旧服务端不带 rerun 字段：按可重跑处理，保持原行为。
+  impState.reviewRerun = s.rerun !== false;
+  impState.reviewState = now;
+  impReviewRender();
+}
+
+// 当前这轮轮询是否仍然有效：job 未换、代次未变、弹窗仍打开。
+function impReviewAlive(jobId, gen){
+  return impState.reviewJobId === jobId && impState.reviewGen === gen &&
+    Boolean(impEls.wrap) && impEls.wrap.classList.contains('on');
+}
+
+function impReviewStart(){
+  impReviewStop();
+  const jobId = impState.reviewJobId, now = impState.reviewState, gen = impState.reviewGen;
+  if (!jobId || !['differ', 'pending', 'running'].includes(now)){
+    impReviewRender();
+    return;
+  }
+  impState.reviewSince = Date.now();
+  if (now === 'differ'){ void impReviewInitial(jobId, gen); return; }
+  impReviewRender();
+  impReviewPoll(jobId, gen);
+}
+
+async function impReviewInitial(jobId, gen){
+  const data = await impReviewFetch(jobId);
+  if (!impReviewAlive(jobId, gen)) return;
+  if (!data){ impState.reviewState = 'unavailable'; impReviewRender(); return; }
+  impReviewAccept(data);
+  if (impState.review.state === 'pending' || impState.review.state === 'running') impReviewPoll(jobId, gen);
+}
+
+function impReviewPoll(jobId, gen){
+  clearTimeout(impState.reviewTimer);
+  impState.reviewTimer = 0;
+  const tick = async () => {
+    impState.reviewTimer = 0;
+    const data = await impReviewFetch(jobId);
+    if (!impReviewAlive(jobId, gen)) return;
+    // GET 只有 match / differ 才返回 200；复核未完成时的 404 继续按「复核中」轮询
+    if (!data){
+      // 服务重启会把进行中的复核改成 unavailable，此时会一直 404：超时后静默放弃，不再转圈。
+      if (Date.now() - impState.reviewSince > IMP_REVIEW_GIVEUP){
+        impState.review = null;
+        impState.reviewState = 'unavailable';
+        impReviewRender();
+        return;
+      }
+      impState.reviewState = 'pending';
+      impReviewRender();
+      impState.reviewTimer = setTimeout(tick, IMP_REVIEW_POLL);
+      return;
+    }
+    impReviewAccept(data);
+    if (impState.review.state === 'pending' || impState.review.state === 'running')
+      impState.reviewTimer = setTimeout(tick, IMP_REVIEW_POLL);
+  };
+  impState.reviewTimer = setTimeout(tick, IMP_REVIEW_POLL);
+}
+
+async function impReviewRetry(){
+  const jobId = impState.reviewJobId;
+  if (!jobId) return;
+  try {
+    const response = await fetch(impReviewURL(jobId), {method:'POST', signal:AbortSignal.timeout(15000)});
+    if (!response.ok) return;
+  } catch(e){ return; }
+  if (impState.reviewJobId !== jobId) return;
+  impReviewStop();
+  const gen = impState.reviewGen;
+  impState.review = null;
+  impState.reviewState = 'pending';
+  impState.reviewApplied = false;
+  impState.reviewSince = Date.now();
+  impReviewRender();
+  impReviewPoll(jobId, gen);
+}
+
+// 服务端修正数据：户型走 sanitizePlan，家具沿用图纸导入的过滤口径
+function impReviewFixedData(){
+  const fixed = impState.review?.fixed;
+  if (!fixed) return null;
+  const result = sanitizePlan(fixed.plan);
+  if (!result.ok) return null;
+  return {plan:result.plan, furniture:drawingFurniture(fixed.furniture)};
+}
+
+function impReviewApply(){
+  const fixed = impReviewFixedData();
+  if (!fixed) return;
+  if (!impState.reviewApplied) impState.reviewBase = impState.result;
+  impState.reviewApplied = true;
+  impState.reviewVariant = 'fixed';
+  impState.result = {...impState.result, plan:fixed.plan, furniture:fixed.furniture};
+  impRenderPreview();
+}
+
+function impReviewUndo(){
+  if (!impState.reviewBase) return;
+  impState.result = impState.reviewBase;
+  impState.reviewBase = null;
+  impState.reviewApplied = false;
+  impState.reviewVariant = 'fixed';
+  impRenderPreview();
+}
+
+// P2：把修正应用到已打开的当前项目，一次 Ctrl+Z 完整撤销户型与家具
+async function impReviewApplyProject(){
+  const fixed = impReviewFixedData();
+  if (!fixed) return;
+  // 对比弹窗不拦截背景点击：执行前必须确认用户还在被对比的那个项目上。
+  if (!impState.reviewRowId || impState.reviewRowId !== activeProjectId){
+    impClose();
+    toast(tr('当前项目已切换，请重新打开对比后再应用。', 'The project changed. Reopen the comparison to apply.'));
+    return;
+  }
+  const before = snap();
+  const oldWalls = WALLS.slice();
+  installPlan(fixed.plan);
+  const taken = new Set(state.furniture.map(f => f.id));
+  state.furniture = fixed.furniture.map(f => {
+    let id = uid();
+    while (taken.has(id)) id = uid();
+    taken.add(id);
+    return {...f, id};
+  });
+  // 墙体列表可能被整份替换：拆除标记按几何重新映射，落空就丢弃，避免标到别的墙上。
+  state.demolished = remapDemolished(oldWalls, WALLS, state.demolished);
+  state = fixState(state);
+  commit(before);
+  afterHistory();
+  refit();
+  const current = projectRows.get(activeProjectId);
+  if (current){
+    // 记住应用时的场景指纹与复核版本：撤销或重新复核后「已应用」自动失效。
+    void putProject({...current, reviewApplied:true,
+      reviewAppliedSig:sceneSignature(Studio.projectJSON()),
+      reviewAppliedReview:Number.isFinite(+impState.review?.updatedAt) ? +impState.review.updatedAt : 0,
+      updatedAt:current.updatedAt || Date.now()});
+  }
+  renderProjects();
+  impClose();
+  toast(tr('已应用自动修正，可用 Ctrl+Z 撤销', 'Corrections applied. Press Ctrl+Z to undo.'));
+}
+
+// 按几何（先整条 JSON、再矩形范围）把旧墙下标映射到新墙体；匹配不到就丢弃。
+function remapDemolished(oldWalls, walls, demolished){
+  const rectOf = wall => Array.isArray(wall) && wall.length >= 4 &&
+    [wall[0], wall[1], wall[2], wall[3]].every(Number.isFinite)
+    ? [Math.min(+wall[0], +wall[2]), Math.min(+wall[1], +wall[3]),
+      Math.max(+wall[0], +wall[2]), Math.max(+wall[1], +wall[3])]
+    : null;
+  const plain = wall => Array.isArray(wall) && wall.length <= 6 && rectOf(wall);
+  const sameRect = (a, b) => a && b && a.every((value, index) => Math.abs(value - b[index]) < 1);
+  const out = [];
+  for (const id of Array.isArray(demolished) ? demolished : []){
+    const index = +String(id).slice(1);
+    const old = oldWalls[index];
+    if (!old) continue;
+    const raw = JSON.stringify(old);
+    let next = walls.findIndex(wall => JSON.stringify(wall) === raw);
+    if (next < 0 && plain(old)) next = walls.findIndex(wall => plain(wall) && sameRect(rectOf(wall), rectOf(old)));
+    const mapped = next >= 0 ? 'w' + next : '';
+    if (mapped && !out.includes(mapped)) out.push(mapped);
+  }
+  return out;
+}
+
+function impReviewDelta(delta){
+  if (!delta || typeof delta !== 'object') return '';
+  const parts = [];
+  const pair = (label, item, digits, unit) => {
+    if (!item || typeof item !== 'object') return;
+    const before = Number(item.before), after = Number(item.after);
+    if (!Number.isFinite(before) || !Number.isFinite(after) || before === after) return;
+    const show = v => digits ? v.toFixed(digits) : String(v);
+    parts.push(`${label} ${show(before)}→${show(after)}${unit || ''}`);
+  };
+  pair(tr('房间', 'Rooms'), delta.rooms);
+  pair(tr('面积', 'Area'), delta.area, 1, ' m²');
+  pair(tr('墙', 'Walls'), delta.walls);
+  pair(tr('窗', 'Windows'), delta.wins);
+  pair(tr('门', 'Doors'), delta.doors);
+  pair(tr('家具', 'Furniture'), delta.furniture);
+  return parts.join(' · ');
+}
+
+// 墙体 / 窗：sanitizePlan 的弧线条目是对象，转成渲染层使用的数组形态
+function impReviewWall(w){
+  if (Array.isArray(w)) return w;
+  const curve = curvedSpan(w);
+  return [...curveBounds(curve), w.kind, w.height, curve];
+}
+function impReviewWin(w){
+  if (Array.isArray(w)) return w;
+  return [...curveBounds(curvedSpan(w)), curvedSpan(w)];
+}
+
+// 整图 SVG：按 bounds 适配，只画房间、墙体、门窗和家具，不做标注与尺寸线
+function impReviewViewBox(plans){
+  const list = plans.filter(p => p && p.bounds);
+  if (!list.length) return '0 0 1 1';
+  const x0 = Math.min(...list.map(p => p.bounds.x)), y0 = Math.min(...list.map(p => p.bounds.y));
+  const x1 = Math.max(...list.map(p => p.bounds.x + p.bounds.w));
+  const y1 = Math.max(...list.map(p => p.bounds.y + p.bounds.h));
+  const pad = Math.max(200, Math.max(x1-x0, y1-y0) * .02);
+  return `${x0-pad} ${y0-pad} ${x1-x0+pad*2} ${y1-y0+pad*2}`;
+}
+function impReviewMap(plan, furniture, changedIds, viewBox){
+  const changed = new Set((Array.isArray(changedIds) ? changedIds : []).map(String));
+  let s = '';
+  plan.rooms.forEach(r => {
+    const room = r.arcs?.length ? {...r, vertices:r.poly, poly:roomOutline(r)} : r;
+    s += roomShape(room, changed.has(String(r.id))
+      ? 'fill="#f3e3d8" stroke="#b5653a" stroke-width="1.6" vector-effect="non-scaling-stroke"'
+      : 'fill="#faf6ef" stroke="#ded5c7" stroke-width="1" vector-effect="non-scaling-stroke"');
+  });
+  plan.slides.forEach(({rect:[x0, y0, x1, y1]}) => {
+    s += `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#fffdf9" stroke="#b9b0a0" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  });
+  plan.doors.forEach(d => {
+    const [x0, y0, x1, y1] = d.rect;
+    s += `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#e2dacb" stroke="#b9b0a0" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  });
+  plan.walls.forEach(w => { s += wallShape(impReviewWall(w), 'fill="#a7a195"'); });
+  plan.wins.forEach(w => {
+    const [x0, y0, x1, y1, curve] = impReviewWin(w);
+    s += curve ? `<path d="${curveBandPath(curve)}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`
+      : `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  });
+  const list = (Array.isArray(furniture) ? furniture : []).map(normalizeFurn).filter(Boolean);
+  const paint = f => `<g transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${furnitureShape(f)}</g>`;
+  s += list.filter(f => f.type === 'rug').map(paint).join('') +
+    list.filter(f => f.type === 'component').map(paint).join('') +
+    list.filter(f => f.type !== 'rug' && f.type !== 'component').map(paint).join('');
+  return `<svg viewBox="${viewBox || impReviewViewBox([plan])}" role="img" aria-label="${esc(tr('户型对比图', 'Plan comparison'))}">${s}</svg>`;
+}
+
+function impReviewButton(label, primary, onClick){
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn' + (primary ? ' primary' : '');
+  b.textContent = label;
+  b.onclick = onClick;
+  return b;
+}
+
+/* ---------- 复核大图：滚轮缩放 / 拖动平移 / 悬浮对比切换 ---------- */
+// 缩放和位移只作用在 canvas 上；分段切换与缩放控件是覆盖层，不随图片变换。
+const impView = {open:false, x:0, y:0, scale:1, baseW:0, baseH:0, vb:[0, 0, 1, 1], pointers:new Map(), pinch:null};
+
+function impReviewShown(){
+  const fixed = impReviewFixedData();
+  const variant = fixed && impState.reviewVariant === 'fixed' ? 'fixed' : 'recognized';
+  return {
+    variant,
+    fixed,
+    shown: variant === 'fixed' ? fixed : {plan:impState.result.plan, furniture:impState.result.furniture},
+  };
+}
+
+function impReviewSetVariant(value){
+  impState.reviewVariant = value === 'fixed' ? 'fixed' : 'recognized';
+  impReviewRender();
+  if (impView.open) impViewRender();
+}
+
+function impViewEls(){
+  return {
+    wrap: $('#impView'), stage: $('#impViewStage'), canvas: $('#impViewCanvas'), seg: $('#impViewSeg'),
+    title: $('#impViewTitle'), note: $('#impViewNote'), pct: $('#impViewPct'),
+    delta: $('#impViewDelta'), hint: $('#impViewHint'),
+  };
+}
+
+function impViewApply(){
+  const els = impViewEls();
+  if (!els.canvas) return;
+  els.canvas.style.transform = `translate(${impView.x}px, ${impView.y}px) scale(${impView.scale})`;
+  els.pct.textContent = Math.round(impView.scale * 100) + '%';
+}
+
+function impViewFit(){
+  const els = impViewEls();
+  if (!impView.open || !els.stage) return;
+  const stageW = els.stage.clientWidth, stageH = els.stage.clientHeight;
+  const [vx, vy, vw, vh] = impView.vb;
+  if (!stageW || !stageH || !(vw > 0) || !(vh > 0)) return;
+  const fit = Math.min(stageW / vw, stageH / vh) * .92;
+  const w = Math.max(1, vw * fit), h = Math.max(1, vh * fit);
+  els.canvas.style.width = w + 'px';
+  els.canvas.style.height = h + 'px';
+  impView.baseW = w; impView.baseH = h;
+  impView.scale = 1;
+  impView.x = (stageW - w) / 2;
+  impView.y = (stageH - h) / 2;
+  impViewApply();
+}
+
+function impViewZoomAt(cx, cy, factor){
+  const next = Math.min(8, Math.max(.2, impView.scale * factor));
+  if (next === impView.scale) return;
+  const k = next / impView.scale;
+  impView.x = cx - (cx - impView.x) * k;
+  impView.y = cy - (cy - impView.y) * k;
+  impView.scale = next;
+  impViewApply();
+}
+
+function impViewZoomCenter(factor){
+  const els = impViewEls();
+  if (!els.stage) return;
+  impViewZoomAt(els.stage.clientWidth / 2, els.stage.clientHeight / 2, factor);
+}
+
+function impViewPointers(){
+  const [a, b] = [...impView.pointers.values()];
+  if (!a || !b) return null;
+  return {dist:Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mid:{x:(a.x + b.x) / 2, y:(a.y + b.y) / 2}};
+}
+
+function impViewPinchStart(){
+  const span = impViewPointers();
+  impView.pinch = span ? {...span, scale:impView.scale, x:impView.x, y:impView.y} : null;
+}
+
+function impViewPinchMove(){
+  const base = impView.pinch, span = impViewPointers();
+  if (!base || !span) return;
+  const next = Math.min(8, Math.max(.2, base.scale * span.dist / base.dist));
+  const k = next / base.scale;
+  impView.x = span.mid.x - (base.mid.x - base.x) * k;
+  impView.y = span.mid.y - (base.mid.y - base.y) * k;
+  impView.scale = next;
+  impViewApply();
+}
+
+function impViewRender(){
+  const els = impViewEls();
+  if (!impView.open || !impState.result) return;
+  const {variant, fixed, shown} = impReviewShown();
+  const data = impState.review;
+  const viewBox = impReviewViewBox([impState.result.plan, fixed?.plan]);
+  impView.vb = viewBox.split(/\s+/).map(Number);
+  const changed = variant === 'fixed' ? data?.delta?.changedRooms : [];
+  els.canvas.innerHTML = impReviewMap(shown.plan, shown.furniture, changed, viewBox);
+  // 悬浮切换：与卡片共用状态，镜像到当前的识别 / 修正两版
+  const projectMode = impState.reviewMode === 'project';
+  const segLabel = projectMode ? tr('当前项目', 'Current project') : tr('识别结果', 'Recognized');
+  const segButton = (label, value) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.setAttribute('aria-pressed', String(variant === value));
+    if (value === 'fixed' && !fixed) b.disabled = true;
+    b.onclick = () => impReviewSetVariant(value);
+    return b;
+  };
+  els.seg.replaceChildren(segButton(segLabel, 'recognized'), segButton(tr('修正后', 'Corrected'), 'fixed'));
+  els.title.textContent = tr('户型对比', 'Plan comparison');
+  els.note.textContent = data?.issues?.length ? tr(`${data.issues.length} 处差异`, `${data.issues.length} differences`) : '';
+  const deltaText = impReviewDelta(data?.delta);
+  els.delta.textContent = deltaText;
+  els.delta.hidden = !deltaText;
+  els.hint.textContent = tr('滚轮缩放 · 拖动平移 · 双击适应', 'Scroll to zoom · Drag to pan · Double-click to fit');
+}
+
+function impViewOpen(){
+  if (!impState.result) return;
+  const els = impViewEls();
+  if (!els.wrap) return;
+  impView.open = true;
+  els.wrap.classList.add('on');
+  els.wrap.setAttribute('aria-hidden', 'false');
+  impViewRender();
+  impViewFit();
+  $('#impViewClose')?.focus?.({preventScroll:true});
+}
+
+function impViewClose(){
+  const els = impViewEls();
+  impView.open = false;
+  impView.pointers.clear();
+  impView.pinch = null;
+  if (!els.wrap) return;
+  els.wrap.classList.remove('on');
+  els.wrap.setAttribute('aria-hidden', 'true');
+  els.wrap.querySelector('#impViewStage')?.classList.remove('grabbing');
+}
+
+function impReviewRender(){
+  const box = impEls.review, note = impEls.reviewNote;
+  if (!box) return;
+  const data = impState.review;
+  const now = data?.state || impState.reviewState;
+  const projectMode = impState.reviewMode === 'project';
+  if (note){
+    const match = !projectMode && now === 'match' && impState.result;
+    note.hidden = !match;
+    note.textContent = match ? tr('已对照原图复核，未发现明显差异。', 'Auto review found no obvious differences from the source drawing.') : '';
+  }
+  box.replaceChildren();
+  if (!impState.reviewJobId || !now || now === 'match' || now === 'unavailable'){
+    box.hidden = true;
+    impViewClose();
+    return;
+  }
+  box.hidden = false;
+  // differ 的任务在首次拉取回来前先按「复核中」显示，避免闪一张 0 处差异的空卡
+  const waiting = now === 'pending' || now === 'running' || (now === 'differ' && !data);
+  if (waiting){
+    const row = document.createElement('div');
+    row.className = 'imp-review-pending';
+    row.textContent = tr('正在对照原图复核…', 'Comparing with the source drawing…');
+    box.append(row);
+    return;
+  }
+  if (impState.reviewApplied && !projectMode){
+    const row = document.createElement('div');
+    row.className = 'imp-review-applied';
+    const text = document.createElement('span');
+    text.textContent = tr('已应用自动修正', 'Corrections applied');
+    row.append(text, impReviewButton(tr('撤销', 'Undo'), false, impReviewUndo));
+    box.append(row);
+    return;
+  }
+  const fixed = impReviewFixedData();
+  const issues = Array.isArray(data?.issues) ? data.issues : [];
+  const head = document.createElement('div');
+  head.className = 'imp-review-head';
+  // differ 但模型没列出条目（只给了修正图纸）时，不能显示「发现 0 处差异」。
+  head.textContent = issues.length
+    ? tr(`自动复核发现 ${issues.length} 处与原图不一致`,
+      issues.length === 1 ? 'Auto review found 1 difference from the source drawing'
+        : `Auto review found ${issues.length} differences from the source drawing`)
+    : tr('自动复核发现差异，详见修正后的图纸', 'Auto review found differences. See the corrected drawing.');
+  // 项目模式左侧是当前项目（可能已被编辑过），不是原始识别结果。
+  const segLabel = projectMode ? tr('当前项目', 'Current project') : tr('识别结果', 'Recognized');
+  const variant = fixed && impState.reviewVariant === 'fixed' ? 'fixed' : 'recognized';
+  const seg = document.createElement('div');
+  seg.className = 'imp-review-seg';
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', tr('对比视图', 'Comparison view'));
+  const segButton = (label, value) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.setAttribute('aria-pressed', String(variant === value));
+    if (value === 'fixed' && !fixed) b.disabled = true;
+    b.onclick = () => impReviewSetVariant(value);
+    return b;
+  };
+  seg.append(segButton(segLabel, 'recognized'), segButton(tr('修正后', 'Corrected'), 'fixed'));
+  const shown = variant === 'fixed' ? fixed : {plan:impState.result.plan, furniture:impState.result.furniture};
+  const viewBox = impReviewViewBox([impState.result?.plan, fixed?.plan]);
+  const map = document.createElement('div');
+  map.className = 'imp-review-map';
+  map.tabIndex = 0;
+  map.setAttribute('role', 'button');
+  map.setAttribute('aria-label', tr('打开大图查看户型对比', 'Open the large plan comparison'));
+  map.innerHTML = impReviewMap(shown.plan, shown.furniture, variant === 'fixed' ? data?.delta?.changedRooms : [], viewBox);
+  map.onclick = () => impViewOpen();
+  map.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); impViewOpen(); } };
+  const expand = document.createElement('button');
+  expand.type = 'button';
+  expand.className = 'imp-review-expand';
+  expand.textContent = tr('看大图', 'Large view');
+  expand.onclick = e => { e.stopPropagation(); impViewOpen(); };
+  map.append(expand);
+  const deltaText = impReviewDelta(data?.delta);
+  const deltaEl = document.createElement('div');
+  deltaEl.className = 'imp-review-delta';
+  deltaEl.textContent = deltaText;
+  deltaEl.hidden = !deltaText;
+  const summary = typeof data?.summary === 'string' ? data.summary.trim() : '';
+  const summaryEl = document.createElement('p');
+  summaryEl.className = 'imp-review-summary';
+  summaryEl.textContent = summary;
+  summaryEl.hidden = !summary;
+  // 服务端已把 where / detail 截断，这里只用 textContent 渲染
+  const issueList = document.createElement('ul');
+  issueList.className = 'imp-review-issues';
+  issueList.hidden = issues.length === 0;
+  for (const issue of issues){
+    const item = document.createElement('li');
+    const where = typeof issue?.where === 'string' ? issue.where.trim() : '';
+    const detail = typeof issue?.detail === 'string' ? issue.detail.trim() : '';
+    item.textContent = where && detail ? `${where}：${detail}` : (detail || where);
+    if (!item.textContent) continue;
+    issueList.append(item);
+  }
+  const foot = document.createElement('div');
+  foot.className = 'imp-review-foot';
+  const hint = document.createElement('div');
+  hint.className = 'imp-review-hint';
+  if (projectMode){
+    const apply = impReviewButton(tr('应用到当前项目', 'Apply to this project'), true, async () => {
+      apply.disabled = true;
+      try { await impReviewApplyProject(); }
+      catch(e){ toast(e?.message || tr('应用失败，请重试。', 'Could not apply the corrections. Try again.')); }
+      finally { apply.disabled = false; }
+    });
+    apply.disabled = !fixed;
+    foot.append(apply);
+    hint.textContent = tr('将替换当前户型与家具，可用 Ctrl+Z 撤销', 'This replaces the current plan and furniture. Press Ctrl+Z to undo.');
+  } else {
+    const keep = impReviewButton(tr('保留原识别', 'Keep recognized'), false, () => {
+      impReviewStop();
+      impState.review = null;
+      impState.reviewState = 'unavailable';
+      impReviewRender();
+    });
+    const apply = impReviewButton(tr('应用修正', 'Apply corrections'), true, () => {
+      apply.disabled = true;
+      impReviewApply();
+    });
+    apply.disabled = !fixed;
+    foot.append(keep, apply);
+  }
+  box.append(head, seg, map);
+  if (deltaText) box.append(deltaEl);
+  if (summary) box.append(summaryEl);
+  if (issues.length) box.append(issueList);
+  box.append(foot);
+  if (projectMode) box.append(hint);
+  // 工作目录已清理（公网任务或服务重启）时服务端无法重跑，隐藏按钮而不是留一个死按钮。
+  if (impState.reviewRerun !== false){
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'imp-review-retry';
+    retry.textContent = tr('重新复核', 'Re-run review');
+    retry.onclick = () => void impReviewRetry();
+    box.append(retry);
+  }
+}
+
+function impRenderRoomReview(plan, furniture){
+  const select = $('#impRoomReview'), drawing = $('#impRoomDrawing');
+  const previous = select.value;
+  select.replaceChildren(...plan.rooms.map(room => new Option(nm(room.name), room.id)));
+  if (plan.rooms.some(room => room.id === previous)) select.value = previous;
+  $('#impRoomReviewLabel').textContent = tr('对照原图复核房间布置', 'Compare room layout with the source drawing');
+  select.onchange = () => {
+    const room = plan.rooms.find(r => r.id === select.value);
+    const outline = roomOutline(room), [x0,y0,x1,y1] = bbox(outline);
+    const margin = Math.max(120, Math.max(x1-x0, y1-y0)*.06);
+    drawing.setAttribute('viewBox', `${x0-margin} ${y0-margin} ${x1-x0+2*margin} ${y1-y0+2*margin}`);
+    const floor = roomShape(room, 'fill="#fffdf9" stroke="#b5a491" stroke-width="1" vector-effect="non-scaling-stroke"');
+    const layout = furniture.filter(f => pointInPoly(f.cx, f.cy, outline)).map(normalizeFurn).filter(Boolean);
+    const paint = f => `<g transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})"><title>${esc(nm(f.name))}</title>${furnitureShape(f)}</g>`;
+    drawing.innerHTML = floor + layout.filter(f => f.type === 'rug').map(paint).join('') +
+      layout.filter(f => f.type !== 'rug').map(paint).join('');
+  };
+  select.onchange();
 }
 
 function impRenderPreview(){
   const {plan:p, furniture, explanation} = impState.result;
   impEls.planName.textContent = p.name;
   impEls.planSrc.textContent = tr('来自图纸', 'From drawing');
-  const total = p.rooms.filter(r => r.counted !== false).reduce((a, r) => a + area(r.poly), 0);
+  const total = p.rooms.filter(r => r.counted !== false).reduce((a, r) => a + roomArea(r), 0);
   const components = componentCount(furniture);
   impEls.stats.innerHTML = '';
   const cell = (label, value) => {
@@ -3110,16 +4042,18 @@ function impRenderPreview(){
     cell(tr('识别到的家具', 'Recognized furniture'), String(furniture.length - components)),
   );
   if (components) impEls.stats.append(cell(tr('识别到的构件', 'Recognized components'), String(components)));
+  impRenderRoomReview(p, furniture);
   impEls.rooms.innerHTML = '';
   p.rooms.forEach(r => {
     const li = document.createElement('li');
     const nmEl = document.createElement('span'); nmEl.textContent = nm(r.name);
-    const ar = document.createElement('small'); ar.textContent = fmt(area(r.poly)) + ' m²';
+    const ar = document.createElement('small'); ar.textContent = fmt(roomArea(r)) + ' m²';
     li.append(nmEl, ar);
     impEls.rooms.appendChild(li);
   });
   impEls.exp.textContent = explanation;
   impEls.exp.hidden = !explanation;
+  impReviewRender();
 }
 
 async function impApplyPlan(){
@@ -3161,6 +4095,10 @@ function impRelang(){
   impEls.apply.textContent = tr('打开新项目', 'Open new project');
   impEls.resultHint.textContent = tr('打开后会切换到这份新方案，当前项目会保存在「项目」列表中。',
     'Opening this design switches projects. Your current project stays in Projects.');
+  // 已打开项目的对比模式：主按钮在复核卡里（应用到当前项目），不显示「打开新项目」
+  const compareMode = impState.reviewMode === 'project' && impState.result && typeof impState.onApply !== 'function';
+  impEls.apply.hidden = Boolean(compareMode);
+  impEls.resultHint.hidden = Boolean(compareMode);
   impUpdateStart();
   if (impState.result) impRenderPreview();
 }
@@ -3173,6 +4111,7 @@ function impInit(){
     pickCancel: $('#impPickCancel'), start: $('#impStart'), pickHint: $('#impPickHint'),
     prog: $('#impProg'), bar: $('#impBar'), st: $('#impSt'), cancel: $('#impCancel'),
     body: $('#impBody'), planName: $('#impPlanName'), planSrc: $('#impPlanSrc'), stats: $('#impStats'),
+    review: $('#impReview'), reviewNote: $('#impReviewNote'),
     rooms: $('#impRooms'), exp: $('#impExp'), resultHint: $('#impResultHint'),
     cancelApply: $('#impCancelApply'), apply: $('#impApply'), err: $('#impErr'),
   });
@@ -3186,6 +4125,56 @@ function impInit(){
   impEls.close.onclick = impClose;
   impEls.apply.onclick = impApplyPlan;
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && impEls.wrap.classList.contains('on')) impClose(); });
+  // 复核大图：关闭 / 缩放控件 / 滚轮 / 拖动 / 双指 / 双击适应
+  const viewStage = $('#impViewStage');
+  $('#impViewClose').onclick = impViewClose;
+  $('#impViewIn').onclick = () => impViewZoomCenter(1.25);
+  $('#impViewOut').onclick = () => impViewZoomCenter(1 / 1.25);
+  $('#impViewFit').onclick = () => impViewFit();
+  $('#impViewPct').onclick = () => impViewFit();
+  $('#impView').onclick = e => { if (e.target === $('#impView')) impViewClose(); };
+  viewStage.addEventListener('wheel', e => {
+    if (!impView.open) return;
+    e.preventDefault();
+    const rect = viewStage.getBoundingClientRect();
+    impViewZoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * .0015));
+  }, {passive:false});
+  const stagePoint = e => {
+    const rect = viewStage.getBoundingClientRect();
+    return {x:e.clientX - rect.left, y:e.clientY - rect.top};
+  };
+  viewStage.addEventListener('pointerdown', e => {
+    if (!impView.open || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    viewStage.setPointerCapture?.(e.pointerId);
+    impView.pointers.set(e.pointerId, stagePoint(e));
+    if (impView.pointers.size >= 2) impViewPinchStart();
+    else viewStage.classList.add('grabbing');
+  });
+  viewStage.addEventListener('pointermove', e => {
+    if (!impView.open || !impView.pointers.has(e.pointerId)) return;
+    const last = impView.pointers.get(e.pointerId), point = stagePoint(e);
+    impView.pointers.set(e.pointerId, point);
+    if (impView.pointers.size >= 2){ impViewPinchMove(); return; }
+    impView.x += point.x - last.x;
+    impView.y += point.y - last.y;
+    impViewApply();
+  });
+  const endPointer = e => {
+    impView.pointers.delete(e.pointerId);
+    if (impView.pointers.size < 2) impView.pinch = null;
+    if (!impView.pointers.size) viewStage.classList.remove('grabbing');
+  };
+  viewStage.addEventListener('pointerup', endPointer);
+  viewStage.addEventListener('pointercancel', endPointer);
+  viewStage.addEventListener('dblclick', () => impViewFit());
+  addEventListener('resize', () => { if (impView.open) impViewFit(); });
+  document.addEventListener('keydown', e => {
+    if (!impView.open) return;
+    if (e.key === 'Escape'){ e.preventDefault(); e.stopImmediatePropagation(); impViewClose(); }
+    else if (e.key === '+' || e.key === '='){ e.preventDefault(); impViewZoomCenter(1.2); }
+    else if (e.key === '-' || e.key === '_'){ e.preventDefault(); impViewZoomCenter(1 / 1.2); }
+    else if (e.key === '0'){ e.preventDefault(); impViewFit(); }
+  }, true);
   $('#importPlanFile').onclick = () => impOpen();
   impRelang();
 }
@@ -3608,7 +4597,7 @@ function renderPickRoom(){
     } catch(e){}
   }
   let best = null, big = -1;
-  ROOMS.forEach(r => { const a = area(r.poly); if (a > big){ big = a; best = r.id; } });
+  ROOMS.forEach(r => { const a = roomArea(r); if (a > big){ big = a; best = r.id; } });
   return best;
 }
 
@@ -4198,6 +5187,45 @@ function projectFormatTime(value){
   return new Intl.DateTimeFormat(LANG === 'en' ? 'en' : LANG === 'zht' ? 'zh-TW' : 'zh-CN',
     {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}).format(value);
 }
+// 自动复核：job.review 由任务列表 / 复核接口同步；旧行可能没有这个字段
+const projectReview = row => row?.review && typeof row.review === 'object' ? row.review : null;
+// 应用修正时记录的现场指纹：户型的可比较投影（渲染记录等无关字段不参与）。
+function sceneSignature(snapshot){
+  return JSON.stringify({
+    plan:snapshot?.plan ?? null,
+    furniture:snapshot?.state?.furniture ?? [],
+    demolished:snapshot?.state?.demolished ?? [],
+  });
+}
+// 「已应用」只在场景与复核版本都还是应用时那一份时有效；撤销、编辑或复核重跑后自动失效。
+function projectReviewApplied(row){
+  if (!row?.reviewApplied) return false;
+  // 复核重跑出新结果（updatedAt 变化）后，应重新提供对比入口。
+  if (Number.isFinite(+row.reviewAppliedReview) &&
+      +row.reviewAppliedReview !== (+projectReview(row)?.updatedAt || 0)) return false;
+  if (!row.reviewAppliedSig) return true;   // 旧数据：没有指纹时沿用原行为
+  return Boolean(row.snapshot) && row.reviewAppliedSig === sceneSignature(row.snapshot);
+}
+const sameReview = (a, b) => (a?.state || '') === (b?.state || '') &&
+  (+a?.count || 0) === (+b?.count || 0) && (+a?.updatedAt || 0) === (+b?.updatedAt || 0);
+function projectReviewMessage(row){
+  const review = projectReview(row);
+  if (!review) return '';
+  const count = Number.isFinite(+review.count) ? +review.count : 0;
+  const differ = tr(`自动复核发现 ${count} 处与原图不一致，建议先查看修正。`,
+    count === 1 ? 'Auto review found 1 difference from the source drawing. Review the corrections first.'
+      : `Auto review found ${count} differences from the source drawing. Review the corrections first.`);
+  if (review.state === 'differ'){
+    if (row.phase === 'done') return differ;
+    if (row.phase === 'saved' && row.jobId && !projectReviewApplied(row)) return differ;
+  }
+  if ((review.state === 'pending' || review.state === 'running') &&
+      (row.phase === 'done' || (row.phase === 'saved' && row.jobId)))
+    return row.phase === 'done'
+      ? tr('识别完成，正在对照原图复核…', 'Recognition finished. Comparing with the source drawing…')
+      : tr('正在对照原图复核，完成后会提示是否有差异。', 'Comparing with the source drawing. You will be told if anything differs.');
+  return '';
+}
 function projectStatus(row){
   if (row.id === activeProjectId) return [tr('当前项目', 'Current'), 'is-ready'];
   if (projectOpening.has(row.id)) return [tr('打开中', 'Opening'), 'is-running'];
@@ -4228,13 +5256,16 @@ function projectDetails(row){
 function projectActions(row){
   const button = (action, label, primary = false) =>
     `<button type="button" class="btn${primary ? ' primary' : ''}" data-project-action="${action}" ${projectOpening.has(row.id) ? 'disabled' : ''}>${esc(label)}</button>`;
-  if (row.id === activeProjectId) return '';
+  const review = projectReview(row);
+  const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
+    ? button('review', tr('查看对比', 'Compare')) : '';
+  if (row.id === activeProjectId) return reviewButton;
   if (projectPending(row)) return button('cancel', tr('取消识别', 'Cancel analysis'));
   if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true);
   if (row.phase === 'failed' || row.phase === 'canceled'){
     return button('retry', tr('重新导入', 'Import again'), true) + button('hide', tr('移除记录', 'Remove entry'));
   }
-  return button('open', tr('打开项目', 'Open project'), true);
+  return button('open', tr('打开项目', 'Open project'), true) + reviewButton;
 }
 function renderProjects(){
   const rows = [...projectRows.values()].filter(row => !row.hidden).sort((a, b) =>
@@ -4254,13 +5285,21 @@ function renderProjects(){
   const focus = document.activeElement, focusRow = focus?.closest('[data-project-id]')?.dataset.projectId;
   const scroll = projectList.scrollTop;
   projectList.innerHTML = rows.map(row => {
-    const [status, tone] = projectStatus(row), detail = projectDetails(row);
+    const [status, tone] = projectStatus(row), detail = projectDetails(row), note = projectReviewMessage(row);
+    const review = projectReview(row);
+    const chip = row.jobId && review?.state === 'differ' && !projectReviewApplied(row) &&
+      (row.phase === 'done' || row.phase === 'saved')
+      ? `<span class="project-chip is-diff">${esc(tr('有差异', 'Differences'))}</span>`
+      : row.jobId && (review?.state === 'pending' || review?.state === 'running') &&
+        (row.phase === 'done' || row.phase === 'saved')
+        ? `<span class="project-chip is-review">${esc(tr('复核中', 'Reviewing'))}</span>` : '';
     const icon = projectPending(row) || projectOpening.has(row.id) ? 'project-spinner' : 'project-folder';
     return `<details class="project-row" data-project-id="${esc(row.id)}" ${expanded.has(row.id) ? 'open' : ''}>
       <summary class="project-row-head"><span class="project-row-icon" aria-hidden="true"><i class="${icon}"></i></span>
         <span class="project-row-title"><b title="${esc(row.name)}">${esc(row.name)}</b><span class="project-row-meta">${esc(projectFormatTime(row.createdAt || row.updatedAt))}</span></span>
-        <span class="project-status ${tone}">${esc(status)}</span></summary>
+        <span class="project-status ${tone}">${esc(status)}</span>${chip}</summary>
       <div class="project-row-body">${detail ? `<p class="project-row-message">${esc(detail)}</p>` : ''}
+        ${note ? `<p class="project-row-message">${esc(note)}</p>` : ''}
         <div class="project-row-actions">${projectActions(row) || ''}</div></div></details>`;
   }).join('');
   projectList.scrollTop = scroll;
@@ -4307,9 +5346,17 @@ async function syncProjectJobs(){
       seen.add(job.id);
       if ([...projectRows.values()].some(row => row.oldJobs?.includes(job.id))) continue;
       const prev = [...projectRows.values()].find(row => row.jobId === job.id);
-      if (prev?.snapshot || prev?.hidden) continue;
+      if (prev?.hidden) continue;
+      const review = job.review && typeof job.review === 'object' ? job.review : null;
+      // 已打开的项目保留本地快照，只按 jobId 合并最新的复核状态
+      if (prev?.snapshot){
+        const latest = job.review === undefined ? (prev.review ?? null) : review;
+        if (!sameReview(prev.review, latest)) await putProject({...prev, review:latest});
+        continue;
+      }
       const row = {...job, ...prev, id:prev?.id || job.id, jobId:job.id,
-        phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt};
+        phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt,
+        review:job.review === undefined ? (prev?.review ?? null) : review};
       if ((job.phase === 'done' && !row.result) || (job.phase === 'failed' && !row.error)){
         try { row.result = await projectResult(row); row.name = row.result.plan.name || row.name; }
         catch(e){ if (job.phase === 'failed') row.error = e.message; }
@@ -4317,7 +5364,7 @@ async function syncProjectJobs(){
       const latest = projectRows.get(row.id);
       if (latest && (latest.jobId !== row.jobId || latest.hidden || latest.snapshot)) continue;
       if (!prev || prev.phase !== row.phase || row.result !== prev.result || row.error !== prev.error ||
-          prev.updatedAt !== row.updatedAt) await putProject(row);
+          prev.updatedAt !== row.updatedAt || !sameReview(prev.review, row.review)) await putProject(row);
     }
     for (const row of projectRows.values()){
       const waiting = projectPending(row) || (row.phase === 'done' && !row.result);
@@ -4353,7 +5400,7 @@ async function projectClick(e){
   if (!button) return;
   const row = projectRows.get(button.closest('[data-project-id]').dataset.projectId);
   if (!row || button.disabled || projectOpening.has(row.id)) return;
-  const action = button.dataset.projectAction, opening = action === 'open' || action === 'preview';
+  const action = button.dataset.projectAction, opening = action === 'open' || action === 'preview' || action === 'review';
   button.disabled = true;
   if (opening){ projectOpening.add(row.id); renderProjects(); }
   try {
@@ -4366,10 +5413,23 @@ async function projectClick(e){
       const current = projectRows.get(row.id);
       if (!current || current.snapshot || current.jobId !== row.jobId) break;
       closeProjects();
-      impOpenResult(result, ({plan,furniture}) => switchProject(row, () => {
-        state = {...defaultState(), renders:[]};
-        return applyPlan(plan, {furniture, clearFurniture:true, freshState:true, history:false});
-      }));
+      impOpenResult(result, ({plan,furniture}) => switchProject(
+        {...row, reviewApplied:Boolean(impState.reviewApplied)}, () => {
+          state = {...defaultState(), renders:[]};
+          return applyPlan(plan, {furniture, clearFurniture:true, freshState:true, history:false});
+        }), {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'preview'});
+      break;
+    }
+    case 'review': {
+      if (!row.jobId || !row.snapshot) break;
+      // 对比和「应用到当前项目」都针对当前打开的方案：不是当前项目时先切换过去
+      if (row.id !== activeProjectId){
+        const result = await switchProject(row, () => loadProjectScene(row.snapshot));
+        if (!result.ok) break;
+      }
+      closeProjects();
+      impOpenResult({plan:row.snapshot.plan, furniture:row.snapshot.state?.furniture || []}, null,
+        {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'project', rowId:row.id});
       break;
     }
     case 'cancel': {
@@ -4891,6 +5951,21 @@ function tableLamp(g, x, y, z, s = 1){
 }
 const plate = (g, r, x, y, z) => g.add(lathe([[0, 0], [r*.6, 0], [r*.72, .008], [r, .02]], ceramic({side:THREE.DoubleSide}), x, y, z, 32));
 
+function buildShapedTable(group, item, w, d, color){
+  const tabletop = mat(color, {roughness:.35}), support = woodM('#3a3027');
+  const height = M(tableHeight(item)), thickness = Math.min(.035, height / 5), underside = height - thickness;
+  if (tableTopShape(item) === 'rect'){
+    legs(group, w, d, underside, support, Math.min(.075, w/5, d/5), Math.min(.024, w/12, d/12));
+    group.add(rbox(w, thickness, d, tabletop, 0, underside, 0, .012));
+    return;
+  }
+  const top = cyl(1, 1, thickness, tabletop, 0, underside, 0, 64);
+  top.scale.set(w / 2, 1, d / 2);
+  const radius = Math.min(w, d) / 2;
+  group.add(top, cyl(Math.min(.04, radius*.24), Math.min(.05, radius*.28), underside, support),
+    cyl(radius*.32, radius*.36, Math.min(.025, height / 5), support));
+}
+
 /* ======================= 家具模型（局部坐标：背面朝 -z） ======================= */
 function buildFurniture(f){
   const g = new THREE.Group(), w = M(f.w), d = M(f.d), c = f.color || '#ddd', bz = -d/2, R = rng(Math.round(f.w*7 + f.d*13 + f.cx + f.cy));
@@ -4974,6 +6049,7 @@ function buildFurniture(f){
       const L = d - .2 - b - .18, nl = Math.max(1, Math.round(L/.75));
       for (let i = 0; i < nl; i++) g.add(rot(rbox(.16, .42, L/nl - .03, fab, -w/2 + b + .07, lh + .3, bz + b + .18 + L/nl*(i + .5), .07), 0, 0, .16));
       g.add(rot(rbox(.42, .42, .12, fabric('#ece5d8'), -w/2 + b + .3, lh + .34, bz + b + .24, .06), -.35, .6), rot(rbox(.4, .4, .12, fabric(darker(c, .7)), w/2 - .5, lh + .34, bz + b + .2, .06), -.3, -.25));
+      if (f.handedness === 'right') g.scale.x = -1;
       break;
     }
     case 'nightstand': {
@@ -5086,6 +6162,7 @@ function buildFurniture(f){
       g.add(rbox(w*.8, .04, .3, fabric(darker(c, .7)), 0, .53, d*.12, .02), rbox(.28, .015, .2, woodM('#8d7258'), 0, .53, -d*.15, .006), cyl(.035, .03, .06, ceramic(), 0, .545, -d*.15, 20));
       break;
     case 'coffeetable': {
+      if (f.topShape || f.height !== undefined){ buildShapedTable(g, f, w, d, c); break; }
       const tm = mat(c, {roughness:.35}), lw = woodM('#3a3027');
       [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a, b]) => g.add(rod([a*(w/2 - .05), 0, b*(d/2 - .05)], [a*(w/2 - .07), .365, b*(d/2 - .07)], .012, lw, .02)));
       g.add(rbox(w, .035, d, tm, 0, .365, 0, .015), rbox(w - .12, .02, d - .12, woodM(darker(c, .85)), 0, .12, 0, .006));
@@ -5274,6 +6351,7 @@ function buildFurniture(f){
       break;
     }
     case 'sidetable': {
+      if (f.topShape || f.height !== undefined){ buildShapedTable(g, f, w, d, c); break; }
       const r = Math.min(w, d)/2, bm = blackMetal();
       g.add(lathe([[r*.55, 0], [r*.55, .012], [.03, .035], [.018, .3], [.025, .5], [.08, .52]], bm, 0, 0, 0, 40), cyl(r, r*.98, .025, mat(c, {roughness:.35}), 0, .52, 0, 48));
       g.add(box(.16, .02, .12, '#4f6b8a', -r*.25, .545, 0));
@@ -5432,11 +6510,52 @@ function wallBox([x0, y0, x1, y1], yb, yt, m){
 const edgeMat = new THREE.LineBasicMaterial({color:0x6f675b}), skirtMat = new THREE.MeshStandardMaterial({color:'#8b7f6e', roughness:.6});
 function shapeOf(poly, flip){ const s = new THREE.Shape(); poly.forEach(([x, y], i) => s[i ? 'lineTo' : 'moveTo'](wx(x), flip ? wz(y) : -wz(y))); return s; }
 
+function curvedSolid(curve, width, bottom, top, material){
+  const outline = curveOutline(curve, Math.min(width, curve.radius * 1.999));
+  const geometry = new THREE.ExtrudeGeometry(shapeOf(outline), {depth:top-bottom, bevelEnabled:false});
+  geometry.rotateX(-Math.PI/2);
+  const solid = new THREE.Mesh(geometry, material);
+  solid.position.y = bottom;
+  archUp.add(solid);
+  return solid;
+}
+function curvedWall(curve, bottom, top){
+  if (top <= bottom) return;
+  const solid = curvedSolid(curve, curve.thickness, bottom, top, [capMat, wallMat]);
+  solid.castShadow = solid.receiveShadow = true;
+  // 圆弧采样之间的细小折线不作为漫游时的墙体棱线。
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(solid.geometry, 30), edgeMat);
+  edges.position.copy(solid.position);
+  edges.userData.walkOnly = true; edges.visible = opt.mode === 'walk';
+  archUp.add(edges);
+  if (bottom <= .001){
+    const skirt = curvedSolid(curve, curve.thickness + 20, 0, Math.min(.12, top), skirtMat);
+    skirt.userData.walkOnly = true; skirt.visible = opt.mode === 'walk';
+  }
+}
+function curvedWindow(curve, sill, head, top){
+  curvedWall(curve, 0, Math.min(sill, top));
+  curvedWall(curve, head, top);
+  const glassTop = Math.min(head, top), height = glassTop - sill;
+  if (height <= 0) return;
+  curvedSolid(curve, Math.min(10, curve.thickness), sill, glassTop, glassMat);
+  const frameWidth = Math.min(60, curve.thickness), frameHeight = Math.min(.04, height / 2);
+  curvedSolid(curve, frameWidth, sill, sill + frameHeight, frameMat).castShadow = true;
+  curvedSolid(curve, frameWidth, glassTop - frameHeight, glassTop, frameMat).castShadow = true;
+  const segments = Math.min(96, Math.max(1, Math.round(M(curve.radius * Math.abs(curve.sweep)) / .9)));
+  for (let i = 0; i <= segments; i++){
+    const t = i / segments, [x, y] = curvePoint(curve, t);
+    const mullion = box(.04, height, M(frameWidth), frameMat, wx(x), sill, wz(y));
+    mullion.rotation.y = -(curve.start + curve.sweep * t + Math.PI/2);
+    archUp.add(mullion);
+  }
+}
+
 // 飘窗（counted:false）的短边即它与室内之间的洞口，洞口上方补一道过梁
 function bayLintels(){
   const out = [];
   ROOMS.filter(r => r.counted === false).forEach(r => {
-    const P = r.poly, ends = [];
+    const P = r.vertices || r.poly, ends = [];
     for (let i = 0; i < P.length; i++){
       const a = P[i], b = P[(i + 1) % P.length];
       if (Math.hypot(b[0] - a[0], b[1] - a[1]) <= 400) ends.push(a, b);
@@ -5456,9 +6575,51 @@ function visibleWallHeight(wall, cut){
 function openingTop(rect, walls, cut){
   // 洞口与相邻墙段的端点相接。有实测高度时，过梁与较低的一侧对齐。
   const along = rect[2] - rect[0] >= rect[3] - rect[1] ? 0 : 1, across = 1 - along;
-  const adjacent = walls.filter(w => (w[along + 2] === rect[along] || w[along] === rect[along + 2])
+  const adjacent = walls.filter(w => !w[6] && (w[along + 2] === rect[along] || w[along] === rect[along + 2])
     && w[across] < rect[across + 2] && w[across + 2] > rect[across]);
   return adjacent.some(w => w[5] !== undefined) ? Math.min(...adjacent.map(w => visibleWallHeight(w, cut))) : cut;
+}
+
+function windowSills(windows, bayAreas, topY){
+  // 相接且绕过圆角的同一排窗应有连续的下沿，留出图纸测量误差。
+  const sills = windows.map(r => bayAreas.some(b => overlaps(r, b)) ? .45 : (Math.abs(r[1] - topY) < 60 ? 1.4 : .9));
+  if (!windows.some(r => r[4])) return sills;
+
+  const tolerance = 20, buckets = new Map();
+  const bucketKey = (x, y) => `${x}:${y}`;
+  const ends = windows.map(([x0, y0, x1, y1, curve], index) => {
+    const points = curve ? [curvePoint(curve, 0), curvePoint(curve, 1)]
+      : (x1-x0 >= y1-y0 ? [[x0, (y0+y1)/2], [x1, (y0+y1)/2]]
+        : [[(x0+x1)/2, y0], [(x0+x1)/2, y1]]);
+    return points.map(([x,y]) => {
+      const col = Math.floor(x / tolerance), row = Math.floor(y / tolerance);
+      const point = {x, y, col, row, index}, key = bucketKey(col, row);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(point);
+      return point;
+    });
+  });
+
+  const visited = new Set();
+  windows.forEach((window, index) => {
+    if (!window[4] || visited.has(index)) return;
+    const run = [index];
+    visited.add(index);
+    for (let queue = 0; queue < run.length; queue++){
+      for (const {x,y,col,row} of ends[run[queue]]){
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++){
+          for (const point of buckets.get(bucketKey(col + dx, row + dy)) || []){
+            if (visited.has(point.index) || Math.hypot(x - point.x, y - point.y) > tolerance) continue;
+            visited.add(point.index);
+            run.push(point.index);
+          }
+        }
+      }
+    }
+    const sill = run.reduce((height, i) => Math.min(height, sills[i]), Infinity);
+    run.forEach(i => { sills[i] = sill; });
+  });
+  return sills;
 }
 
 function labelDoor(door){
@@ -5522,18 +6683,22 @@ function buildArch(){
   });
   [...DOORS, ...SLIDES].forEach(d => { const [x0, y0, x1, y1] = d.rect; const s = box(M(x1-x0), .012, M(y1-y0), mat('#d8d0c0', {roughness:.3}), wx((x0+x1)/2), 0, wz((y0+y1)/2)); s.castShadow = false; archFloor.add(s); });
   walls.forEach(w => {
-    wallBox(w, 0, visibleWallHeight(w, top));
-    colliders.push([wx(w[0]), wz(w[1]), wx(w[2]), wz(w[3])]);
+    const height = visibleWallHeight(w, top), curve = w[6];
+    if (curve) curvedWall(curve, 0, height);
+    else wallBox(w, 0, height);
+    colliders.push([wx(w[0]), wz(w[1]), wx(w[2]), wz(w[3]), curve]);
   });
   // 飘窗洞口上方过梁（洞口由房间轮廓短边推导）
   bayRuns.forEach(([r, h]) => wallBox(r, h, top));
   const topY = Math.min(...WALLS.map(w => w[1]), ...WINS.map(w => w[1]));
-  WINS.forEach(r => {
-    // 窗台高度：飘窗 0.45m，顶部外墙的高窗 1.4m，其余 0.9m（与 125-C 原图一致）
-    const sill = bayAreas.some(b => overlaps(r, b)) ? .45 : (Math.abs(r[1] - topY) < 60 ? 1.4 : .9), head = 2.4;
+  const sills = windowSills(WINS, bayAreas, topY);
+  WINS.forEach((r, i) => {
+    const sill = sills[i], head = 2.4;
+    const curve = r[4];
+    colliders.push([wx(r[0]), wz(r[1]), wx(r[2]), wz(r[3]), curve]);
+    if (curve){ curvedWindow(curve, sill, head, top); return; }
     const windowTop = openingTop(r, walls, top);
     wallBox(r, 0, Math.min(sill, windowTop)); wallBox(r, head, windowTop);
-    colliders.push([wx(r[0]), wz(r[1]), wx(r[2]), wz(r[3])]);
     const gTop = Math.min(head, windowTop); if (gTop <= sill) return;
     const [x0, y0, x1, y1] = r, hz = (x1-x0) >= (y1-y0), L = M(hz ? x1-x0 : y1-y0), gh = gTop - sill, cx = wx((x0+x1)/2), cz = wz((y0+y1)/2);
     const pane = new THREE.Mesh(new THREE.BoxGeometry(hz ? L : .01, gh, hz ? .01 : L), glassMat); pane.position.set(cx, sill + gh/2, cz); archUp.add(pane);
@@ -5612,14 +6777,14 @@ function buildLabels(){
   labelG.children.slice().forEach(o => { o.element.remove(); labelG.remove(o); });
   ROOMS.filter(r => r.at).forEach(r => {
     const el = document.createElement('div'); el.className = 'rlabel';
-    el.innerHTML = `${esc(nm(roomState(r.id).name))}<small>${area(r.poly).toFixed(1)}m²</small>`;
+    el.innerHTML = `${esc(nm(roomState(r.id).name))}<small>${roomArea(r).toFixed(1)}m²</small>`;
     const o = new CSS2DObject(el); o.position.set(wx(r.at[0]), opt.cut + .15, wz(r.at[1])); o.visible = labelG.visible; labelG.add(o);
   });
   const counted = ROOMS.filter(r => r.counted !== false);
   $('#roomList').innerHTML = counted.map(r => `<div class="rrow">
-      <button data-room="${esc(r.id)}"><span>${esc(nm(roomState(r.id).name))}</span><small>${area(r.poly).toFixed(2)} m²</small></button>
+      <button data-room="${esc(r.id)}"><span>${esc(nm(roomState(r.id).name))}</span><small>${roomArea(r).toFixed(2)} m²</small></button>
       <button class="rent" data-enter="${esc(r.id)}" title="${esc(tr('进入房间，从室内查看','Enter the room and look around from inside'))}">${tr('进入房间','Enter room')}</button></div>`).join('')
-    + `<div class="rrow"><button data-room="__all"><span>${tr('全屋', 'Whole home')}</span><small>${counted.reduce((a, r) => a + area(r.poly), 0).toFixed(2)} m²</small></button></div>`;
+    + `<div class="rrow"><button data-room="__all"><span>${tr('全屋', 'Whole home')}</span><small>${counted.reduce((a, r) => a + roomArea(r), 0).toFixed(2)} m²</small></button></div>`;
   document.querySelectorAll('#roomList button').forEach(b => b.classList.remove('on'));
   // 室内视角下保持当前房间高亮（换语言 / 换方案重建列表后也不丢）
   syncRoomListSel(roomView.id);
@@ -5831,7 +6996,7 @@ function renderRoomBar(){
   const st = roomState(id), m = matInfo(st.mat);
   bar.hidden = false;
   $('#rbName').textContent = nm(st.name);
-  $('#rbMeta').innerHTML = `<i class="sw" style="background:${esc(m.sw)}"></i><span>${fmt(area(def.poly))} m² · ${esc(nm(m.name))}</span>`;
+  $('#rbMeta').innerHTML = `<i class="sw" style="background:${esc(m.sw)}"></i><span>${fmt(roomArea(def))} m² · ${esc(nm(m.name))}</span>`;
   const btn = $('#rbRender');
   if (btn) btn.disabled = !!(renderState && renderState.busy);
 }
@@ -6084,7 +7249,10 @@ function setMode(m){
   archUp.traverse(o => { if (o.userData.walkOnly) o.visible = m === 'walk'; });
 }
 function blocked(x, z, r = .22){
-  for (const [x0, z0, x1, z1] of colliders) if (x > x0 - r && x < x1 + r && z > z0 - r && z < z1 + r) return true;
+  for (const [x0, z0, x1, z1, curve] of colliders){
+    if (x <= x0 - r || x >= x1 + r || z <= z0 - r || z >= z1 + r) continue;
+    if (!curve || curveDistance(curve, x*1000 + PC().x, z*1000 + PC().y) < curve.thickness/2 + r*1000) return true;
+  }
   return doors.some(door => door.blocks(x, z, r));
 }
 function stepWalk(dt){

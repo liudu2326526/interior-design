@@ -30,21 +30,28 @@ workdir/            codex 临时工作目录（图纸解析）
 ## 1. 方案 Plan
 
 ```ts
+type Point = [x:number, y:number]
+type Rect = [x0:number, y0:number, x1:number, y1:number]
+type ArcBand = { from:Point, to:Point, sweep:number, thickness:number }
+type WallKind = 'e' | 'b' | 'n' | 'low'
+
 type Plan = {
   version: 1,
   name: string,
-  bounds: { x, y, w, h },                 // mm，2D 世界范围
-  walls: [x0, y0, x1, y1, kind, height?][], // 轴对齐矩形（已含厚度），kind: 'e'外墙 | 'b'承重 | 'n'非承重 | 'low'矮墙
-  wins:  [x0, y0, x1, y1][],
-  doors: { name, rect:[x0,y0,x1,y1], h:[x,y], c:[dx,dy], o:[dx,dy], len, entry? }[],
-  slides:{ rect:[x0,y0,x1,y1], v:boolean }[],
-  rooms: { id, name, poly:[[x,y],...], mat, at?:[x,y], counted?:boolean }[],
-  materials: Record<string, { name, price, sw }>
+  bounds: { x:number, y:number, w:number, h:number },
+  walls: ([...Rect, kind:WallKind, height?:number] | (ArcBand & {kind:WallKind, height?:number}))[],
+  wins: (Rect | ArcBand)[],
+  doors: { name:string, rect:Rect, h:Point, c:Point, o:Point, len:number, entry?:boolean }[],
+  slides: { rect:Rect, v:boolean }[],
+  rooms: { id:string, name:string, poly:Point[], arcs?:{edge:number,sweep:number}[], mat:string, at?:Point, counted?:boolean }[],
+  materials: Record<string, { name:string, price:number, sw:string }>
 }
 ```
 
 - 单位 mm，2D 的 y 轴向下；3D 用现有 `wx()/wz()` 转换。
+- 直墙和直窗的矩形坐标已包含厚度。圆弧墙窗的 `from`、`to` 为中心线起止点，`thickness` 为总厚度（小于直径）。`sweep` 为有符号角度，顺时针为正，逆时针为负，绝对值为 0.5–180 度。同一墙体的编号始终使用其在 `walls` 中的下标。
 - 墙体可单独指定 `height`（mm）。省略时，矮墙默认 1000 mm，其他墙默认 2800 mm。剖切视图按显示高度裁切。
+- `rooms[].arcs` 中的 `edge` 从零开始，指 `poly[i]` 与 `poly[(i+1)%poly.length]` 之间的边，`sweep` 与墙窗的角度规则相同。每条边至多一个弧段，折线和圆弧端点只记一次。面积包含圆弧边围出的面积。
 - `at` 是房间标签位置；`counted:false` 表示不计面积（飘窗）。
 - 现有 `index.html` 里的 `WALLS/WINS/DOORS/SLIDES/ROOMS/MATS` 是这套结构的来源，运行时统一由 `PLAN` 驱动。
 - 125-C 户型作为“示例方案”保留为 `data/125c-plan.json`（由任务 1 生成），默认加载 `data/empty-plan.json`。
@@ -55,7 +62,7 @@ type Plan = {
 
 ```ts
 type State = {
-  furniture: { id, type, name, cx, cy, w, d, rot, color }[],
+  furniture: (ImportedFurniture & { id: string })[],
   rooms: Record<roomId, { name, mat }>,
   demolished: string[],        // 'w'+index
   measures: any[],
@@ -191,10 +198,57 @@ SSE 事件（`data: <json>\n\n`）：
 ### `/api/jobs/plan-import` → 后台图纸识别
 
 - `POST /api/jobs/plan-import` 接收同样的文件 JSON，可附 `projectName`，入队后返回 `202` 和任务 `id`。模型回合最长 30 分钟。
-- `GET /api/jobs/plan-import` 返回当前访问范围的 `jobs`，含 `id`、`name`、`phase` 和毫秒时间戳。
+- `GET /api/jobs/plan-import` 返回当前访问范围的 `jobs`，含 `id`、`name`、`phase`、`review` 和毫秒时间戳。
 - `GET /api/jobs/<id>?cursor=0` 返回 `phase`、`done`、`status`、`chunks` 和下一游标。完成时 `chunks` 中是识别结果 JSON，失败时 `error` 提供失败信息。
 - `DELETE /api/jobs/<id>` 取消任务。公网通过已认证网关访问，项目成果按本机与公网访问范围隔离。
-- 任务和结果保存在 `~/.interior-design-studio/import-jobs`，可设置 `STUDIO_IMPORT_JOBS_DIR`。队列随服务重启恢复，结束后清理上传文件，结果最多保留 7 天或各范围最近 32 条。打开和编辑后的项目由浏览器保存。
+
+识别成功后服务端会自动复核一次识别结果（默认开启），结果记录在任务的 `review` 字段：
+
+```ts
+type ReviewState = "pending" | "running" | "match" | "differ" | "unavailable"
+
+type JobReview = {
+  state: ReviewState
+  count: number        // 复核发现的问题条数；只有 differ 时可能非 0
+  updatedAt: number    // 毫秒时间戳
+}
+
+type ReviewIssue = { where: string, detail: string }   // where ≤ 60 字，detail ≤ 200 字
+
+type ReviewDelta = {
+  rooms: { before: number, after: number },       // 房间数量
+  area: { before: number, after: number },        // 计入面积的房间总面积，㎡，保留 1 位小数
+  walls: { before: number, after: number },
+  wins: { before: number, after: number },
+  doors: { before: number, after: number },
+  furniture: { before: number, after: number },
+  changedRooms: string[]                          // 名称或面积（变化 > 5%）有变的房间 id
+}
+
+type JobReviewDetail = {
+  state: "match" | "differ",
+  summary: string,                                // ≤ 120 字
+  issues: ReviewIssue[],                          // 最多 8 条；match 时为 []
+  fixed: { plan: Plan, furniture: ImportedFurniture[] } | null,   // match 时为 null
+  delta: ReviewDelta,                             // fixed 相对原识别结果的变化
+  updatedAt: number,
+  rerun: boolean                                  // 工作目录是否还在、能否重新复核
+}
+```
+
+复核状态机：
+
+```
+null                  // 复核未开启，或任务不是正常识别完成
+ └─ 识别成功 → pending → running → match | differ
+                            └─ 失败、超时、中止 → unavailable
+pending / running 期间服务重启 → unavailable（同时删除 review.json）
+```
+
+- `GET /api/jobs/<id>/review`：无请求体。`match` 或 `differ` 时返回 `200` 和 `JobReviewDetail`；`pending`、`running`、`unavailable`、任务不存在或不属于当前访问范围时返回 `404`（`{error}`），前端据此轮询。
+- `POST /api/jobs/<id>/review`：无请求体（沿用识别时保存的用户备注），重新复核并立即返回 `202 {ok:true}`，结果通过上面的 `GET` 轮询。任务不存在或已过期、识别未完成、复核进行中返回 `409`；工作目录已清理（公网任务复核结束后会删除上传文件，服务重启也会清空）返回 `404`；codex 不可用返回 `503`。
+- 复核失败一律静默：任务 `review.state` 变为 `unavailable`，`GET` 返回 `404`，界面不提示。`STUDIO_PLAN_REVIEW=off` 时不再启动自动复核（任务的 `review` 保持 `null`），`POST` 返回 `404`，已存在的复核结果仍可读取。
+- 任务和结果保存在 `~/.interior-design-studio/import-jobs`，可设置 `STUDIO_IMPORT_JOBS_DIR`。队列随服务重启恢复；结果最多保留 7 天或各范围最近 32 条，复核进行中（`pending` / `running`）的任务不参与清理。本机任务的工作目录（原图、`plan.json`、`review-plan.png`、`review-note.json`）保留到过期清理或服务重启，以支持重新复核；公网任务在复核结束后立即删除上传文件。打开和编辑后的项目由浏览器保存。
 
 ```ts
 type ImportedFurniture = {
@@ -206,6 +260,9 @@ type ImportedFurniture = {
   d: number
   rot: number
   color?: string
+  handedness?: "left" | "right" // cornersofa 在旋转前的短段方向
+  topShape?: "rect" | "round" | "oval" // coffeetable 或 sidetable 的台面轮廓
+  height?: number             // coffeetable 或 sidetable 的台面离地高度（mm）
   parts?: ComponentPart[]     // type === "component" 时至少有一个部件
 }
 
@@ -234,11 +291,13 @@ type PlanImportResponse = {
 
 `cx`、`cy` 为家具中心，与 Plan 使用同一个毫米坐标系。 `w`、`d` 为家具沿自身轴向的尺度。 `rot` 为平面顺时针角度，`0 <= rot < 360`，支持小数。没有识别到家具时，`furniture` 为空数组。
 
+`cornersofa` 的 `handedness` 在 `rot: 0` 时表示靠背在局部上方，短段沿 `-x` 一侧（`left`）或 `+x` 一侧（`right`）向下延伸。省略时使用原有的左侧造型。`coffeetable` 和 `sidetable` 的 `topShape` 可指定矩形、圆形或椭圆，圆形和椭圆的两条全轴为 `w`、`d`。台面 `height` 范围为 200–800 mm。省略台面字段的家具沿用各类型原有造型和高度。
+
 家具库未覆盖的物体可以作为 `component` 导入。部件的 `x,z` 范围为 `[-0.5,0.5]`，`w,d` 范围为 `(0,1]`，`y >= 0`，`h > 0` 且 `y + h <= 10000` mm。每件最多 48 个部件。构件和部件分别旋转，调整构件宽深时内部的水平比例随之缩放。
 
 直梯段 `stairs` 沿局部 `-z` 到 `+z` 上升，`steps` 为 1–32。扇形梯段 `winder` 的 `steps` 为 2–32，`pivot` 和 `edges` 都使用部件各轴 `[-0.5,0.5]` 的坐标，端点数为 `steps + 1`。内角与相邻两端点构成一块踏步，三角形方向需一致且面积大于零。
 
-页面预览家具及构件数量。应用后，识别结果进入 `state.furniture`，并和户型一起保存为一次撤销操作。「保留现有家具」会一并带入画布原有布置。
+页面预览家具及构件数量，并展示中文摘要供用户核对估算的尺寸、轮廓和布置关系。应用后，识别结果进入 `state.furniture`，并和户型一起保存为一次撤销操作。「保留现有家具」会一并带入画布原有布置。
 
 失败返回 `{ "error": "..." }`（HTTP 4xx/5xx）。
 

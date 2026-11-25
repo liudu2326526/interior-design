@@ -7,6 +7,7 @@ import { createPublicJobRelay } from './public-jobs.mjs';
 import { isImportJobPath } from '../lib/import-jobs.mjs';
 
 const accessKeyPath = process.env.STUDIO_PUBLIC_ACCESS_KEY_FILE;
+const accessKeyHashPath = process.env.STUDIO_PUBLIC_ACCESS_KEY_HASH_FILE;
 const bridgeTokenPath = process.env.STUDIO_PUBLIC_BRIDGE_TOKEN_FILE;
 const port = Number(process.env.STUDIO_PUBLIC_PORT || 4174);
 const origin = 'http://127.0.0.1:4173';
@@ -58,8 +59,14 @@ async function readSecret(file) {
   return value;
 }
 
-const [accessKey, bridgeToken] = await Promise.all([readSecret(accessKeyPath), readSecret(bridgeTokenPath)]);
-const expectedKey = encoder(accessKey);
+async function loadAccessKeyHash() {
+  if (!accessKeyHashPath) return encoder(await readSecret(accessKeyPath));
+  const hash = (await readFile(accessKeyHashPath, 'utf8')).trim();
+  if (!/^[a-f0-9]{64}$/i.test(hash)) throw new Error('Invalid public access key hash');
+  return Buffer.from(hash, 'hex');
+}
+
+const [expectedKey, bridgeToken] = await Promise.all([loadAccessKeyHash(), readSecret(bridgeTokenPath)]);
 const relay = createPublicJobRelay({ origin, bridgeToken });
 const bridgeHeaders = {
   'x-studio-public-owner': publicOwner,
