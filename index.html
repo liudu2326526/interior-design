@@ -680,7 +680,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <button class="btn chip" id="tgLib" data-en="◧ Library">◧ 家具库</button>
       <button class="btn chip" id="tgPanel" data-en="Properties ◨">属性 ◨</button>
     </div>
-    <div class="brand"><b id="brandName" tabindex="0" role="button" title="点击重命名方案" data-en-title="Click to rename the plan">三室两厅两卫 · 装修设计</b><input id="brandEdit" hidden maxlength="60" spellcheck="false" aria-label="方案名称"><span id="subtitle">原始户型 1:60 · 尺寸单位 mm</span><span id="checkStatus" role="status" hidden></span><button class="btn" id="checkDone" hidden data-en="Finish check">完成校核</button></div>
+    <div class="brand"><b id="brandName" tabindex="0" role="button" title="点击重命名方案" data-en-title="Click to rename the plan">三室两厅两卫 · 装修设计</b><input id="brandEdit" hidden maxlength="60" spellcheck="false" aria-label="方案名称"><span id="subtitle">原始户型 1:60 · 尺寸单位 mm</span><span id="checkStatus" role="status" hidden></span><button class="btn" id="checkReview" hidden>查看模型差异</button><button class="btn" id="checkRerun" hidden>重新复核</button><button class="btn" id="checkDone" hidden data-en="Finish check">完成校核</button></div>
     <div class="grp seg" id="viewSeg" title="切换 2D / 3D (T)" data-en-title="Switch 2D / 3D (T)">
       <span class="pill"></span>
       <button class="btn" data-view="2d" data-en="2D Plan">2D 平面</button>
@@ -2194,6 +2194,35 @@ function dimGeometry(dim){
   return {x1:a[0], y1:y, x2:b[0], y2:y, horiz:true};
 }
 function dimLabelOf(dim){ return (dim.estimated ? '≈' : '') + Math.round(dimValueOf(dim)); }
+// 把由几何推出的 ≈ 总尺寸转成真正的 Plan.dims 条目：锚在外墙外沿，可编辑、可校验。
+function makeTotalDim(axis){
+  const b = planExtent();
+  if (!b) return null;
+  const lo = axis === 'x' ? b[0] : b[1], hi = axis === 'x' ? b[2] : b[3];
+  const across = axis === 'x' ? b[1] : b[0];
+  const wallAt = value => PLAN.walls.find(wall => {
+    const r = wall.rect || (curvedSpan(wall) && curveBounds(curvedSpan(wall)));
+    if (!r) return false;
+    const a = axis === 'x' ? r[0] : r[1], c = axis === 'x' ? r[2] : r[3];
+    return Math.abs(a - value) <= 1 || Math.abs(c - value) <= 1;
+  });
+  const wLo = wallAt(lo), wHi = wallAt(hi);
+  if (!wLo || !wHi) return toast(tr('总尺寸两端不在墙体上，请先对齐外墙', 'The overall extents are not on walls — align the outer walls first'));
+  const point = v => axis === 'x' ? [v, across] : [across, v];
+  const off = axis === 'x'
+    ? -Math.max(160, Math.min(700, (b[1] - BOUNDS.y) * .55))
+    : -Math.max(160, Math.min(700, (b[0] - BOUNDS.x) * .55));
+  const dim = {
+    id: 'dim-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+    axis, source:'user', locked:'from', offset: off,
+    from: {kind:'wall', id:wLo.id, face:'outer', point: point(lo)},
+    to:   {kind:'wall', id:wHi.id, face:'outer', point: point(hi)},
+  };
+  mutate(() => { PLAN.dims = [...(PLAN.dims || []), dim]; });
+  select({kind:'dim', id:dim.id});
+  toast(tr('已生成可编辑总尺寸：改数值会移动对应外墙', 'Editable overall dimension added — editing it moves the wall'));
+  return dim;
+}
 function dimSourceName(dim){
   return dim.source === 'user' ? tr('用户', 'User') : dim.source === 'drawing' ? tr('图纸', 'Drawing') : tr('AI', 'AI');
 }
@@ -2257,23 +2286,87 @@ function syncDimAnchors(previous){
 
 function renderDims(){
   const DC = '#7d7160', LS = `stroke="${DC}" stroke-width="1" vector-effect="non-scaling-stroke"`, TK = `stroke="${DC}" stroke-width="2" vector-effect="non-scaling-stroke"`;
-  const txt = (x,y,v,rot) => `<text x="${x}" y="${y}" font-size="${v<400?140:200}" text-anchor="middle" fill="${DC}" ${rot?`transform="rotate(-90 ${x} ${y})"`:''}>${v}</text>`;
-  const chain = (horiz, at, start, segs) => {
-    const pts = [start]; segs.forEach(v => pts.push(pts[pts.length-1]+v));
-    let s = horiz ? `<line x1="${pts[0]}" y1="${at}" x2="${pts.at(-1)}" y2="${at}" ${LS}/>` : `<line x1="${at}" y1="${pts[0]}" x2="${at}" y2="${pts.at(-1)}" ${LS}/>`;
-    pts.forEach(p => s += horiz
-      ? `<line x1="${p}" y1="${at-170}" x2="${p}" y2="${at+170}" ${LS}/><line x1="${p-80}" y1="${at+80}" x2="${p+80}" y2="${at-80}" ${TK}/>`
-      : `<line x1="${at-170}" y1="${p}" x2="${at+170}" y2="${p}" ${LS}/><line x1="${at-80}" y1="${p+80}" x2="${at+80}" y2="${p-80}" ${TK}/>`);
-    segs.forEach((v,i) => { const mid = (pts[i]+pts[i+1])/2; s += horiz ? txt(mid, at-70, v) : txt(at-70, mid, v, true); });
-    return s;
-  };
-  // 总尺寸从方案外接矩形推出来（顶边标总宽、左边标总高）；标注线贴着 BOUNDS 留白放，避免被裁掉
+  const k = 1/view.s;
+  // 建筑制图风格：文字带底色描边，避免压在墙线或家具上看不清
+  const txt = (x, y, label, rot) => `<text x="${x}" y="${y}" font-size="${11 * k}" text-anchor="middle" fill="${DC}" stroke="#fbf9f4" stroke-width="${4 * k}" paint-order="stroke" ${rot ? `transform="rotate(-90 ${x} ${y})"` : ''}>${label}</text>`;
   const g = $('#gDims'), b = planExtent();
   if (!b){ g.innerHTML = ''; g.setAttribute('display', 'none'); return; }
+
+  /* 四边尺寸线：每边两排——内排分段、外排总尺寸；尺寸界线从建筑外沿引出，交点打 45° 斜杠。
+   * 站点取墙体矩形在对应轴上的边，60mm 以内合并，避免把重复墙面画成 0 段。 */
+  const stationsOf = axis => {
+    const set = new Set();
+    for (const wall of PLAN.walls){
+      const r = wall.rect || (wall.from ? curveBounds(wallCurve(wall)) : null);
+      if (!r) continue;
+      if (axis === 'x'){ set.add(Math.round(r[0])); set.add(Math.round(r[2])); }
+      else { set.add(Math.round(r[1])); set.add(Math.round(r[3])); }
+    }
+    const all = [...set].sort((a, c) => a - c), out = [];
+    for (const v of all) if (!out.length || v - out[out.length - 1] >= 60 ) out.push(v);
+    return out;
+  };
+  const xs = stationsOf('x'), ys = stationsOf('y');
+  const nearOff = 46 * k, rowGap = 34 * k, tick = 6 * k;
+
+  const sideChain = (side, stations, est) => {
+    if (stations.length < 2) return '';
+    const horiz = side === 'top' || side === 'bottom';
+    const dir = side === 'top' || side === 'left' ? -1 : 1;
+    const base = horiz ? (side === 'top' ? b[1] : b[3]) : (side === 'left' ? b[0] : b[2]);
+    const lo = stations[0], hi = stations[stations.length - 1];
+    if (hi - lo <= 0) return '';
+    const near = base + dir * nearOff, far = base + dir * (nearOff + rowGap);
+    const tip = base + dir * (nearOff + rowGap + 14 * k);
+    let s = '';
+    // 尺寸界线
+    for (const p of stations){
+      s += horiz ? `<line x1="${p}" y1="${base}" x2="${p}" y2="${tip}" ${LS}/>`
+        : `<line x1="${base}" y1="${p}" x2="${tip}" y2="${p}" ${LS}/>`;
+    }
+    // 内排：分段 + 斜杠
+    s += horiz ? `<line x1="${lo}" y1="${near}" x2="${hi}" y2="${near}" ${LS}/>`
+      : `<line x1="${near}" y1="${lo}" x2="${near}" y2="${hi}" ${LS}/>`;
+    for (const p of stations){
+      s += horiz ? `<line x1="${p - tick}" y1="${near + tick}" x2="${p + tick}" y2="${near - tick}" ${TK}/>`
+        : `<line x1="${near - tick}" y1="${p + tick}" x2="${near + tick}" y2="${p - tick}" ${TK}/>`;
+    }
+    const textOff = (dir < 0 ? -9 : 20) * k;   // 文字放在线的外侧
+    for (let i = 1; i < stations.length; i++){
+      const a = stations[i - 1], c = stations[i], v = Math.round(c - a);
+      if (v <= 0) continue;
+      const mid = (a + c) / 2;
+      s += horiz ? txt(mid, near + textOff, v) : txt(near + textOff, mid, v, true);
+    }
+    // 外排：总尺寸（带 ≈ 表示由模型外接推出，可点开转成可编辑标注）
+    const total = Math.round(hi - lo);
+    const label = (est ? '≈' : '') + total;
+    const body = (horiz
+      ? `<line x1="${lo}" y1="${far}" x2="${hi}" y2="${far}" ${LS}/>` +
+        `<line x1="${lo - tick}" y1="${far + tick}" x2="${lo + tick}" y2="${far - tick}" ${TK}/>` +
+        `<line x1="${hi - tick}" y1="${far + tick}" x2="${hi + tick}" y2="${far - tick}" ${TK}/>` +
+        txt((lo + hi) / 2, far + textOff, label)
+      : `<line x1="${far}" y1="${lo}" x2="${far}" y2="${hi}" ${LS}/>` +
+        `<line x1="${far - tick}" y1="${lo + tick}" x2="${far + tick}" y2="${lo - tick}" ${TK}/>` +
+        `<line x1="${far - tick}" y1="${hi + tick}" x2="${far + tick}" y2="${hi - tick}" ${TK}/>` +
+        txt(far + textOff, (lo + hi) / 2, label, true));
+    return est ? `<g class="dim-total" data-dim-total="${horiz ? 'x' : 'y'}">${body}</g>` : body;
+  };
+
+  const widestDim = axis => {
+    let best = 0;
+    for (const d of PLAN.dims || []){
+      if (d?.axis !== axis || !d?.from?.point || !d?.to?.point) continue;
+      const i = axis === 'x' ? 0 : 1;
+      best = Math.max(best, Math.abs(d.to.point[i] - d.from.point[i]));
+    }
+    return best;
+  };
   const W = Math.round(b[2] - b[0]), Hh = Math.round(b[3] - b[1]);
-  const oT = Math.max(160, Math.min(700, (b[1] - BOUNDS.y) * .55));
-  const oL = Math.max(160, Math.min(700, (b[0] - BOUNDS.x) * .55));
-  let s = chain(true, b[1] - oT, b[0], [W]) + chain(false, b[0] - oL, b[1], [Hh]);
+  const stale = {x: widestDim('x') < W * .92, y: widestDim('y') < Hh * .92};
+  let s = '';
+  s += sideChain('top', xs, stale.x) + sideChain('bottom', xs, stale.x);
+  s += sideChain('left', ys, stale.y) + sideChain('right', ys, stale.y);
   // plan.dims：图纸 / AI 来源为中性灰，用户新增为深色，估算项带 ≈（设计 §5.2）。
   const k = 1/view.s, r = 9*k;
   for (const dim of PLAN.dims || []){
@@ -2636,6 +2729,38 @@ function checkDimChains(plan, add){
   }
 }
 
+// 总尺寸必须来自图纸。只由模型外接推出的总尺寸会把包围盒（含外挑平台）当成图上读数，
+// 这里明确报一条，并让用户在校核里点 ≈ 值转为可编辑标注。
+function checkDimTotals(plan, add){
+  const dims = (plan.dims || []).filter(d => d?.from?.point && d?.to?.point);
+  const drawing = dims.filter(d => Number.isFinite(d.drawingValue) && d.source !== 'user');
+  if (!drawing.length) return;
+  const ext = planExtentOf(plan);
+  if (!ext) return;
+  const widest = axis => drawing.reduce((best, d) => {
+    const i = axis === 'x' ? 0 : 1;
+    return Math.max(best, Math.abs(d.to.point[i] - d.from.point[i]));
+  }, 0);
+  const walls = plan.walls || [];
+  for (const axis of ['x', 'y']){
+    const size = axis === 'x' ? ext.w : ext.h;
+    if (widest(axis) >= size * .92) continue;
+    const edge = axis === 'x' ? ext.x : ext.y;
+    const target = walls.find(wall => {
+      if (!wall.rect) return false;
+      const r = wall.rect;
+      return Math.abs((axis === 'x' ? r[0] : r[1]) - edge) <= 1;
+    }) || walls[0];
+    if (!target) continue;
+    add('dim-total', 'warn', [['wall', target.id]],
+      axis === 'x'
+        ? tr('总宽不是图纸读数：当前由模型外接推出（≈）。请按原图添加总尺寸，或在校核里点它转为可编辑标注。',
+             'Overall width is not from the drawing — it is derived from the model extents (≈). Add the source total dimension, or click it in the check layer to make it editable.')
+        : tr('总高不是图纸读数：当前由模型外接推出（≈）。请按原图添加总尺寸，或在校核里点它转为可编辑标注。',
+             'Overall height is not from the drawing — it is derived from the model extents (≈). Add the source total dimension, or click it in the check layer to make it editable.'));
+  }
+}
+
 function checkArcs(walls, add){
   for (const wall of walls){
     if (wall.rect) continue;
@@ -2692,8 +2817,7 @@ function checkBays(plan, add){
 }
 
 /** 纯几何检查：不读全局状态，返回全部问题（忽略集合由调用方过滤）。 */
-function checkPlan(plan){
-  const issues = [], seen = new Set();
+function checkPlan(plan){  const issues = [], seen = new Set();
   const add = (code, severity, refs, message) => {
     const objects = refs.filter(Boolean).map(([kind, id]) => ({kind, id:String(id)}));
     if (!objects.length) return;
@@ -2708,6 +2832,7 @@ function checkPlan(plan){
   checkOpeningOverlap(plan, add);
   checkRoomFaces(plan, walls, add);
   checkDimChains(plan, add);
+  checkDimTotals(plan, add);
   checkArcs(walls, add);
   checkBays(plan, add);
   return issues;
@@ -2757,11 +2882,16 @@ const estimateDims = () => (PLAN.dims || []).filter(dim => dim.estimated);
 function updateCheckStatus(){
   const el = $('#checkStatus'); if (!el) return;
   const count = checkState.active.length, est = estimateDims().length;
-  el.hidden = !count && !est && !checkMode;
+  // 模型复核与几何检查合并成一个口径：先报总数，再说是哪一类（设计修订：合并入口）
+  const row = projectRows.get(activeProjectId);
+  const review = row ? projectReview(row) : null;
+  const model = review?.state === 'differ' ? (review.count || 0) : 0;
+  el.hidden = !count && !est && !model && !checkMode;
   el.textContent = [
     count ? tr(`${count} 处待确认`, `${count} to review`) : '',
+    model ? tr(`模型 ${model} 处`, `${model} from model`) : '',
     est ? tr(`${est} 处估算`, `${est} estimated`) : '',
-    (count || est || checkMode) ? tr('下一步 →', 'Next →') : '',
+    (count || est || model || checkMode) ? tr('下一步 →', 'Next →') : '',
   ].filter(Boolean).join(' · ');
   el.title = checkState.active.slice(0, 3).map(issue => issue.message).join('\n');
 }
@@ -2937,9 +3067,39 @@ function calibrateDrawing(original, model, knownLength, key){
   }, {syncAnchors:false});
 }
 
+// 复核入口收进校核图层：项目卡片只保留「校核」，模型差异与重新复核放在校核顶栏。
+function syncCheckReviewButtons(){
+  const row = projectRows.get(activeProjectId);
+  const review = row ? projectReview(row) : null;
+  const busy = review?.state === 'pending' || review?.state === 'running';
+  const differ = !!row?.jobId && row.phase === 'saved' && review?.state === 'differ';
+  const canReview = !!row?.jobId && (row.phase === 'done' || row.phase === 'saved') && !busy;
+  const view = $('#checkReview'), rerun = $('#checkRerun');
+  if (view){
+    view.hidden = !differ;
+    view.textContent = differ ? tr(`查看模型差异（${review.count || 0}）`, `Model differences (${review.count || 0})`) : '';
+  }
+  if (rerun){
+    const attach = canReview && row.sourceAvailable === false;
+    rerun.hidden = !canReview;
+    rerun.textContent = attach ? tr('补传原图', 'Attach original drawing') : tr('重新复核', 'Run review again');
+    rerun.dataset.action = attach ? 'attach-source' : 'rerun';
+  }
+}
+// 复用项目卡片的动作分发，避免在校核图层里重写一套复核逻辑。
+function dispatchActiveProjectAction(action){
+  const row = projectRows.get(activeProjectId);
+  if (!row) return;
+  const el = document.createElement('button');
+  el.dataset.projectAction = action;
+  const host = document.createElement('div');
+  host.dataset.projectId = row.id;
+  host.appendChild(el);
+  projectClick({ target: el });
+}
+
 function enterCheck(){
-  if (is3D()) setView('2d');
-  checkMode = true;
+  if (is3D()) setView('2d');  checkMode = true;
   document.body.classList.add('check-mode');
   ui.layers.dims = true;
   document.querySelector('[data-layer="dims"]')?.classList.add('on');
@@ -2948,6 +3108,7 @@ function enterCheck(){
   if (done) done.hidden = false;
   if (add) add.hidden = false;
   if (cancel) cancel.hidden = false;
+  syncCheckReviewButtons();
   refreshChecks();
   renderDims(); renderChecks(); renderDrawingCheck(); renderAll();
   toast(tr('校核图层已打开：点选墙体 / 门窗 / 尺寸可直接修改', 'Check layer on — select walls, openings or dimensions to edit'));
@@ -2966,6 +3127,8 @@ function exitCheck(force){
   if (done) done.hidden = true;
   if (add) add.hidden = true;
   if (cancel) cancel.hidden = true;
+  $('#checkReview').hidden = true;
+  $('#checkRerun').hidden = true;
   ui.dimDraft = null;
   clearDrawingCheck();
   renderDims(); renderChecks(); renderAll();
@@ -3269,6 +3432,8 @@ $('#brandEdit').onkeydown = e => {
 };
 $('#brandEdit').onblur = () => endRename(true);
 $('#checkStatus').onclick = () => cycleCheckIssue();
+$('#checkReview').onclick = () => dispatchActiveProjectAction('review');
+$('#checkRerun').onclick = e => dispatchActiveProjectAction(e.currentTarget.dataset.action || 'rerun');
 $('#checkDone').onclick = () => exitCheck();
 $('#sourceCompare').onclick = () => {
   if (drawingImage){
@@ -4296,6 +4461,11 @@ svg.addEventListener('pointerdown', e => {
   }
   if (pinch) return;
   const p = toMM(e), t = e.target;
+  // 校核里点「≈ 总尺寸」→ 转成锚在外墙外沿的可编辑标注，之后可改数值、可参与校验
+  if (checkMode && t.closest('[data-dim-total]')){
+    makeTotalDim(t.closest('[data-dim-total]').dataset.dimTotal);
+    return;
+  }
   if (checkMode && drawingCalibration?.original.length === 2 && drawingCalibration.model.length < 2){
     const anchor = nearestAnchor(p, Math.max(20, 10/view.s));
     collectDrawingPoint(anchor?.point || [p.x,p.y], false);
@@ -7941,21 +8111,25 @@ function projectActions(row){
   const review = projectReview(row);
   const reviewBusy = review?.state === 'pending' || review?.state === 'running';
   const canReview = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy;
-  let rerunButton = '';
-  if (canReview && row.sourceAvailable === false) rerunButton = button('attach-source', tr('补传原图', 'Attach original drawing'));
-  else if (canReview && row.reviewEnabled !== false) rerunButton = button('rerun', tr('重新复核', 'Run review again'));
-  const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
-    ? button('review', tr('查看复核差异', 'View review differences')) : '';
-  const checkButton = button('check', tr('校核', 'Check'), row.phase === 'saved');
+  // 复核入口收进校核：项目卡片只留一个「校核」，模型差异数写在按钮上。
+  // 查看模型差异 / 重新复核 / 补传原图 移到校核图层顶部，避免同一件事出现三个并列按钮。
+  void canReview;
+  // 「补传原图」不是重复入口：原图缺失时复核根本跑不起来，属于必须补的前置动作，保留在卡片上。
+  const attachButton = canReview && row.sourceAvailable === false
+    ? button('attach-source', tr('补传原图', 'Attach original drawing')) : '';
+  const modelCount = review?.state === 'differ' ? (review.count || 0) : 0;
+  const checkButton = button('check', modelCount
+    ? tr(`校核 · 模型 ${modelCount} 处`, `Check · ${modelCount} from model`)
+    : tr('校核', 'Check'), row.phase === 'saved');
   if (projectPending(row)) return button('cancel', tr('取消识别', 'Cancel analysis'));
-  if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true) + rerunButton;
+  if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true) + attachButton;
   if (row.phase === 'failed' || row.phase === 'canceled'){
     return button('retry', tr('重新导入', 'Import again'), true) + button('hide', tr('移除记录', 'Remove entry'));
   }
   const manage = button('rename', tr('重命名项目', 'Rename project')) +
     button('export', tr('导出项目', 'Export project')) + button('delete', tr('删除项目', 'Delete project'));
   const open = row.id === activeProjectId ? '' : button('open', tr('打开项目', 'Open project'), true);
-  return open + checkButton + reviewButton + rerunButton + manage;
+  return open + checkButton + attachButton + manage;
 }
 function projectRenameForm(row, schemeId){
   if (projectEditing?.projectId !== row.id || projectEditing.schemeId !== schemeId) return '';
