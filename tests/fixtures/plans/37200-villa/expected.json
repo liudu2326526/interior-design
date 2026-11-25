@@ -15,8 +15,7 @@
     "stairs": { "min": 1 },
     "elevators": { "min": 2 },
     "bayWindows": { "min": 2, "note": "右侧卧室，弧形飘窗" },
-    "arcWalls": { "min": 2 },
-    "arcWins": { "min": 1 },
+    "arcWins": { "min": 5, "note": "原图五处连续细平行线，与相邻直窗同类" },
     "rooms": { "min": 8 }
   },
   "tolerances": { "bounds": 300, "chain": 50, "roomWidth": 60 }

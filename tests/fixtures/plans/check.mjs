@@ -31,7 +31,9 @@ const walls = (plan.walls || []).filter(Boolean);
 const wins = (plan.wins || []).filter(Boolean);
 const arcs = list => list.filter(w => !Array.isArray(w) && w.from && w.to && typeof w.sweep === 'number');
 const arcWalls = arcs(walls), arcWins = arcs(wins);
-ok(`弧墙 ≥ ${expected.features.arcWalls.min}`, arcWalls.length >= expected.features.arcWalls.min, `实际 ${arcWalls.length}`);
+if (expected.features.arcWalls){
+  ok(`弧墙 ≥ ${expected.features.arcWalls.min}`, arcWalls.length >= expected.features.arcWalls.min, `实际 ${arcWalls.length}`);
+}
 ok(`弧窗 ≥ ${expected.features.arcWins.min}`, arcWins.length >= expected.features.arcWins.min, `实际 ${arcWins.length}`);
 
 const rooms = plan.rooms || [];
