@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { request } from 'node:http';
 import { StringDecoder } from 'node:string_decoder';
 
@@ -143,7 +143,12 @@ export function createPublicJobRelay({
   }
   setInterval(sweep, 15_000).unref();
 
-  async function start(req, res, ownerId, target) {
+  function jobSummary(id, job) {
+    const phase = job.finishedAt === null ? 'running' : job.error || job.status >= 300 ? 'failed' : 'done';
+    return { id, kind: job.kind, phase, createdAt: job.startedAt, ownership: job.ownership };
+  }
+
+  async function start(req, res, ownerId, target, kind) {
     const slot = reserve(ownerId, () => req.destroy());
     if (!slot) {
       return sendJson(res, 429, { error: '正在处理的 AI 任务过多，请等当前任务结束后重试。' }, { 'Retry-After': '5' });
@@ -164,6 +169,29 @@ export function createPublicJobRelay({
       return;
     }
 
+    let ownership = null;
+    let requestKey = null;
+    if (kind === 'chat' || kind === 'render') {
+      try {
+        const source = JSON.parse(body).ownership;
+        if (source && typeof source === 'object' && !Array.isArray(source)) {
+          ownership = {};
+          for (const key of ['projectId', 'schemeId', 'baseRevision']) {
+            const value = source[key];
+            if (typeof value === 'string') ownership[key] = value.slice(0, 200);
+            else if (typeof value === 'number') ownership[key] = value;
+          }
+          requestKey = createHash('sha256').update(kind).update(body).digest('hex');
+        }
+      } catch { /* Let the local endpoint validate legacy API bodies. */ }
+    }
+    if (requestKey) {
+      for (const [id, job] of jobs) {
+        if (job.ownerId !== ownerId || job.requestKey !== requestKey || job.finishedAt !== null) continue;
+        slot.release();
+        return sendJson(res, 202, { ...jobSummary(id, job), reused: true });
+      }
+    }
     if (jobs.size >= MAX_JOBS) {
       for (const [id, job] of jobs) {
         if (job.finishedAt === null) continue;
@@ -175,13 +203,13 @@ export function createPublicJobRelay({
     const id = randomUUID();
     const now = Date.now();
     const job = {
-      ownerId, startedAt: now, lastPolledAt: now, finishedAt: null,
+      ownerId, kind, ownership, requestKey, startedAt: now, lastPolledAt: now, finishedAt: null,
       chunks: [], status: null, mediaType: null, upstream: null, release: slot.release,
     };
     jobs.set(id, job);
     slot.cancel = () => finish(job, { status: 410, message: '任务已取消。' });
     res.once('close', () => {
-      if (res.writableFinished) return;
+      if (res.writableFinished || requestKey) return;
       finish(job, { status: 410, message: '任务提交已取消。' });
       jobs.delete(id);
     });
@@ -202,7 +230,7 @@ export function createPublicJobRelay({
     } catch {
       finish(job, { status: 502, message: '无法连接本机 AI 服务，请重试。' });
     }
-    return sendJson(res, 202, { id });
+    return sendJson(res, 202, requestKey ? jobSummary(id, job) : { id });
   }
 
   async function handleJob(req, res, url, ownerId) {
@@ -212,10 +240,18 @@ export function createPublicJobRelay({
       return true;
     }
     sweep();
-    const key = url.pathname.slice(JOB_PATH.length);
+    const route = url.pathname.slice(JOB_PATH.length);
+    if (route === 'task' || route === 'task/') {
+      if (req.method !== 'GET') sendJson(res, 405, { error: '不支持该请求方法。' }, { Allow: 'GET' });
+      else sendJson(res, 200, { jobs: [...jobs].reverse()
+        .filter(([, job]) => job.ownerId === ownerId && job.ownership)
+        .map(([id, job]) => jobSummary(id, job)) });
+      return true;
+    }
+    const key = route.startsWith('task/') ? route.slice('task/'.length) : route;
     const target = ROUTES.get(key);
-    if (target) {
-      if (req.method === 'POST') await start(req, res, ownerId, target);
+    if (target && key === route) {
+      if (req.method === 'POST') await start(req, res, ownerId, target, key);
       else sendJson(res, 405, { error: '不支持该请求方法。' }, { Allow: 'POST' });
       return true;
     }

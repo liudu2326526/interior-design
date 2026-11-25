@@ -74,10 +74,29 @@ aside.right{border-right:0;border-left:1px solid var(--line)}
 .hint{padding:10px 14px 16px;color:var(--muted);font-size:12px}
 main{position:relative;overflow:hidden;background:var(--paper)}
 #plan{width:100%;height:100%;display:block;touch-action:none;cursor:default}
+#sourcePane{position:absolute;inset:0 50% 0 0;background:#faf8f4;border-right:1px solid var(--line);width:50%;height:100%;touch-action:none;cursor:grab}
+#sourcePane[hidden],body.m3d #sourcePane{display:none}
+#stage.source-compare #plan{width:50%;margin-left:50%}
+#stage.source-overlay #gRooms{opacity:.45}
+#stage.source-wall-lines :is(#gRooms,#gFurn,#gLabels,#gDims,#gMeasure){display:none}
+#stage.source-pick-original #sourcePane,#stage.source-pick-model #plan{cursor:crosshair}
+#sourceTools{position:absolute;z-index:4;top:8px;left:8px;right:8px;pointer-events:none;display:flex;align-items:flex-start;gap:5px;flex-wrap:wrap}
+#sourceTools[hidden],body.m3d #sourceTools{display:none}
+#sourceTools>div,#sourceScaleForm{display:flex;align-items:center;gap:3px;flex-wrap:wrap;padding:3px 5px;border:1px solid var(--line);border-radius:8px;background:var(--panel);pointer-events:auto}
+#sourceTools [hidden]{display:none}
+#sourceScaleForm input{width:86px}
+#sourceGuide{padding:4px 6px;font-size:12px;color:var(--muted);background:var(--panel);border-radius:5px}
+@media (max-width:720px){
+  #sourcePane{inset:0 0 50%;width:100%;height:50%;border-right:0;border-bottom:1px solid var(--line)}
+  #stage.source-compare #plan{width:100%;height:50%;margin:0;position:absolute;bottom:0}
+}
 #plan.panning{cursor:grabbing}
 #plan.tool-measure{cursor:crosshair}
 #plan .wall{pointer-events:none}
 #plan.tool-demolish .wall{pointer-events:all;cursor:pointer}
+.check-mode #plan.tool-select .wall{pointer-events:all;cursor:pointer}
+#plan .opening{pointer-events:none}
+.check-mode #plan.tool-select .opening{pointer-events:all;cursor:move}
 #plan.tool-demolish .wall:hover{fill:#d9894f}
 #plan.tool-select .room:hover{opacity:.82}
 #plan .furn{cursor:move}
@@ -227,6 +246,10 @@ main.animating #roomBar{opacity:.85}
 .menu-pop{position:absolute;right:0;top:calc(100% + 6px);display:flex;flex-direction:column;min-width:150px;background:#fff;
   border:1px solid var(--line);border-radius:10px;padding:4px;box-shadow:0 10px 30px rgba(40,30,20,.14);z-index:20;animation:fadeIn .2s ease}
 .menu-pop .btn{text-align:left}
+#walkTools .menu-pop{left:0;right:auto;min-width:205px;padding:6px}
+#walkTools .menu-pop select{margin:4px 0;width:100%}
+#walkTools .menu-pop label{padding:3px 8px}
+#stage.pick-walk #view3d canvas{cursor:crosshair!important}
 .app > header{position:relative;padding-inline-end:104px}
 html:lang(en) .app > header{padding-inline-end:126px}
 #projectShelf{position:absolute;inset:8px 14px auto auto;z-index:24}
@@ -251,6 +274,7 @@ html:lang(en) .app > header{padding-inline-end:126px}
 .project-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px 8px 14px;
   border-bottom:1px solid #eee8de}
 .project-heading h2{margin:0;font-size:14px;line-height:1.3;font-weight:650}
+#projectSort{margin-inline-start:auto;margin-inline-end:7px;padding:3px 5px;background:#fff;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:11px;color:var(--ink)}
 #projectClose{min-width:30px;min-height:30px;padding:0;font-size:19px;line-height:1;color:#776b5e}
 #projectShelf :is(button,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #projectList{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:8px}
@@ -286,6 +310,25 @@ html:lang(en) .app > header{padding-inline-end:126px}
 .project-row-note{color:#776b5e}
 .project-row-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .project-row-actions .btn:not(.primary){border:1px solid var(--line)}
+.project-schemes{display:grid;gap:6px;margin-top:9px;padding-top:8px;border-top:1px solid #ebe4d9}
+.project-scheme{display:grid;gap:3px;padding:6px;border:1px solid #ebe4d9;border-radius:7px}
+.project-scheme.is-current{border-color:#b58d73;background:#faf6ef}
+.project-scheme-label{display:flex;align-items:baseline;justify-content:space-between;gap:7px}
+.project-scheme-label strong{color:var(--ink)}
+.project-scheme-label small{color:#776b5e}
+.project-scheme .project-row-actions{margin-top:2px}
+.project-inline{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.project-inline input{min-width:80px;flex:1;padding:4px 6px;border:1px solid var(--line);border-radius:5px;font:inherit}
+.project-handle{cursor:grab}
+.project-row.drag-over{outline:2px solid var(--accent);outline-offset:-1px}
+.project-comparison{margin-top:9px;padding-top:8px;border-top:1px solid #ebe4d9}
+.project-compare-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:5px}
+.project-compare-grid figure{margin:0;min-width:0}
+.project-compare-grid figcaption{font-weight:650;color:var(--ink)}
+.project-compare-grid svg{display:block;width:100%;aspect-ratio:4/3;background:#faf6ef;border:1px solid #ebe4d9;border-radius:6px}
+.project-compare-grid dl{margin:4px 0 0}
+.project-compare-grid dl>div{display:flex;justify-content:space-between;gap:4px}
+.project-compare-grid dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}
 @media (pointer:coarse){
   #projectToggle,#projectClose{min-height:44px}
   #projectClose{min-width:44px}
@@ -394,6 +437,7 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
 .chips .btn{border:1px solid var(--line);background:#fff;font-size:12px;padding:3px 9px;border-radius:20px;color:var(--muted)}
 .chips .btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+#render .chips .btn.on{border-color:var(--ink);background:var(--ink);color:#fff}
 .chat-off{display:none;margin:0 0 7px;font-size:12px;color:#8e2f22;background:#fbeae7;border:1px solid #f0c9c2;border-radius:8px;padding:6px 8px;line-height:1.45}
 .chat-off.warn{color:#7a5a16;background:#fbf3e0;border-color:#eddcb6}
 @media (max-height:680px){
@@ -411,6 +455,7 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .rsel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .rnote{width:100%;min-height:48px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;font:inherit;line-height:1.5}
 .rnote:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.rprompt pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:12px}
 .rbar{display:flex;align-items:center;gap:6px}
 .rbar .st{flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rbar .st.spin:before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;
@@ -657,6 +702,17 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <button class="btn on" data-mode="orbit" data-en="Orbit">鸟瞰</button>
       <button class="btn" data-mode="walk" data-en="Walk">漫游</button>
     </div>
+    <details class="menu only3d" id="walkTools">
+      <summary class="btn" data-en="Viewpoints ▾">视角 ▾</summary>
+      <div class="menu-pop">
+        <button class="btn" id="walkChoose" type="button" data-en="Choose a standing point">选择站立点</button>
+        <button class="btn" id="walkSave" type="button" data-en="Save current walk view">保存当前漫游视角</button>
+        <select id="walkViews" aria-label="保存的视角"></select>
+        <button class="btn" id="walkGo" type="button" data-en="Go to selected viewpoint">前往选中视角</button>
+        <button class="btn" id="walkDelete" type="button" data-en="Remove a saved view">删除保存的视角</button>
+        <label><input type="checkbox" id="walkSmooth" checked> <span data-en="Smooth turning">平滑转向</span></label>
+      </div>
+    </details>
     <div class="grp only3d">
       <button class="btn" id="vIso" data-en="Iso">斜视</button>
       <button class="btn" id="vTop" data-en="Top">俯视</button>
@@ -712,6 +768,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <section id="projectPanel" aria-labelledby="projectTitle" hidden>
         <div class="project-heading">
           <h2 id="projectTitle" data-en="Projects">项目</h2>
+          <select id="projectSort" aria-label="项目排序"></select>
           <button class="btn" id="projectClose" type="button" title="关闭项目列表" data-en-title="Close projects"><span aria-hidden="true">×</span></button>
         </div>
         <p id="projectWarning" role="status" hidden></p>
@@ -736,9 +793,13 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
   </aside>
 
   <main id="stage">
+    <svg id="sourcePane" role="img" aria-label="原图" data-en-aria-label="Original drawing" hidden>
+      <image id="sourceImage" pointer-events="none"></image><g id="sourceOriginalPoints" pointer-events="none"></g>
+    </svg>
     <svg id="plan" class="tool-select" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
       <defs id="defs"></defs>
       <g id="gGrid"></g>
+      <image id="gDrawingOverlay" opacity=".3" pointer-events="none" display="none"></image>
       <g id="gRooms"></g>
       <g id="gFurn"></g>
       <g id="gWalls"></g>
@@ -748,7 +809,24 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <g id="gDims" pointer-events="none"></g>
       <g id="gMeasure" pointer-events="none"></g>
       <g id="gSel"></g>
+      <g id="gDrawingPoints" pointer-events="none"></g>
     </svg>
+    <div id="sourceTools" hidden>
+      <div>
+        <button class="btn" id="sourceCompare" type="button" data-en="Compare original">原图对照</button>
+        <button class="btn" id="sourcePick" type="button" data-en="Choose image">选取原图</button>
+        <input id="sourceFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+        <button class="btn" id="sourceOverlay" type="button" data-en="Overlay" hidden>叠加</button>
+        <button class="btn" id="sourceWalls" type="button" data-en="Wall lines only" hidden>仅墙线</button>
+        <button class="btn" id="sourceScale" type="button" data-en="Calibrate" hidden>标定尺寸</button>
+        <button class="btn" id="sourceScaleCancel" type="button" data-en="Cancel calibration" hidden>取消标定</button>
+      </div>
+      <form id="sourceScaleForm" hidden>
+        <label><span data-en="Drawing length (mm)">图纸长度（mm）</span> <input id="sourceKnownLength" type="number" min="0.1" step="any" required></label>
+        <button class="btn primary" type="submit" data-en="Apply calibration">应用标定</button>
+      </form>
+      <span id="sourceGuide" role="status" hidden></span>
+    </div>
     <div id="view3d">
       <div id="walkOverlay"><div><h3 data-en="Walk mode">漫游模式</h3>
         <p id="wo1"></p>
@@ -782,6 +860,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
     <div id="panel"></div>
     <div id="render" hidden>
       <div class="chat-off" id="renderOff"></div>
+      <div class="muted" id="renderTaskInbox" hidden></div>
       <section class="rsec">
         <div class="rbar">
           <h4 class="spacer" data-en="Camera">机位</h4>
@@ -794,6 +873,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
         <h4 data-en="Style">风格</h4>
         <div class="chips" id="rStyles"></div>
         <textarea class="rnote" id="rNote" rows="2" spellcheck="false"></textarea>
+        <details class="rprompt" id="rPromptBox" hidden><summary data-en="Render instructions">本次生成描述</summary><pre id="rPrompt"></pre></details>
       </section>
       <div class="rbar">
         <span class="st" id="rSt"></span>
@@ -825,6 +905,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <div class="msgs" id="chatMsgs" role="log" aria-live="polite"></div>
       <div class="chatbar">
         <div class="chat-off" id="chatOff"></div>
+        <div class="muted" id="chatTaskInbox" hidden></div>
         <div class="chips" id="chatChips"></div>
         <textarea id="chatIn" rows="2" spellcheck="false"></textarea>
         <div class="chatrow">
@@ -1489,6 +1570,35 @@ function readStoredPlan(){
 const validWallId = id => typeof id === 'string' && WALLS.some(w => w.id === id);
 const matKey = k => (MATS && MATS[k]) ? k : (Object.keys(MATS || {})[0] || DEFAULT_ROOM_MAT);
 const matInfo = k => (MATS && MATS[k]) || {name: String(k || '—'), price: 0, sw: '#e5e0d6'};
+const validPrice = value => Number.isFinite(value) && value >= 0 && value <= 1e9;
+function normalizePrices(prices){
+  return Object.fromEntries(Object.entries(prices && typeof prices === 'object' ? prices : {})
+    .filter(([key, value]) => key && validPrice(value)));
+}
+function normalizeWalkPose(pose){
+  if (!pose || ![pose.x, pose.y, pose.height, pose.yaw, pose.pitch].every(Number.isFinite) ||
+      pose.height < .3 || pose.height > 3 || Math.abs(pose.pitch) > Math.PI / 2) return null;
+  return {x:pose.x, y:pose.y, height:pose.height, yaw:Math.atan2(Math.sin(pose.yaw), Math.cos(pose.yaw)), pitch:pose.pitch,
+    roomId:typeof pose.roomId === 'string' ? pose.roomId.slice(0, 120) : null,
+    structure:typeof pose.structure === 'string' ? pose.structure.slice(0, 32) : ''};
+}
+function normalizeWalkView(view){
+  const viewpoints = [];
+  const saved = Array.isArray(view?.viewpoints) ? view.viewpoints.slice(0, 30) : [];
+  for (const item of saved){
+    const pose = normalizeWalkPose(item?.pose);
+    if (pose && typeof item.name === 'string' && item.name.trim() && typeof item.id === 'string'){
+      viewpoints.push({id:item.id.slice(0, 120), name:item.name.trim().slice(0, 60), pose});
+    }
+  }
+  return {lastWalk:normalizeWalkPose(view?.lastWalk), viewpoints};
+}
+function materialPrice(key, materials, projectPrices, schemePrices){
+  const options = [schemePrices?.[key], projectPrices?.[key], materials?.[key]?.price];
+  return options.find(validPrice) ?? 0;
+}
+const flooringCost = (area, price) => area * price * 1.05;
+const activeMaterialPrice = key => materialPrice(key, MATS, projectPriceDefaults(), state.prices);
 const roomDef = id => ROOMS.find(r => r.id === id) || null;
 const wallOf = id => validWallId(id) ? WALLS.find(w => w.id === id) : null;
 const wallCurve = wall => wall && !wall.rect ? curvedSpan(wall) : null;
@@ -1556,7 +1666,8 @@ const uid = () => 'f' + Date.now().toString(36) + (_n++);
 const F = (type,name,cx,cy,w,d,rot=0,color) => ({id:uid(),type,name,cx,cy,w,d,rot,color:color||typeColor(type)});
 
 function defaultState(){
-  return {furniture:[], rooms:reconcileRooms({}), demolished:[], measures:[], checkIgnores:[]};
+  return {furniture:[], rooms:reconcileRooms({}), demolished:[], measures:[], checkIgnores:[], prices:{},
+    view:{lastWalk:null, viewpoints:[]}, renderOptions:{style:'现代简约', cam:'current', corner:0, note:''}};
 }
 function wrapRotation(angle){
   const rot = Number.isFinite(angle) ? angle % 360 : 0;
@@ -1642,6 +1753,15 @@ function fixState(s){
   s.demolished = [...new Set((Array.isArray(s.demolished) ? s.demolished : []).map(wallIdFromLegacy).filter(Boolean))];
   s.measures = (Array.isArray(s.measures) ? s.measures : []).filter(m => m && m.a && m.b && [m.a.x, m.a.y, m.b.x, m.b.y].every(Number.isFinite));
   s.checkIgnores = [...new Set((Array.isArray(s.checkIgnores) ? s.checkIgnores : []).filter(x => typeof x === 'string' && x))].slice(0, 500);
+  s.prices = normalizePrices(s.prices);
+  s.view = normalizeWalkView(s.view);
+  const r = s.renderOptions;
+  s.renderOptions = {
+    style: typeof r?.style === 'string' ? r.style.slice(0, 80) : '现代简约',
+    cam: ['current', 'iso', 'top', 'corner'].includes(r?.cam) ? r.cam : 'current',
+    corner: Number.isInteger(r?.corner) && r.corner >= 0 && r.corner < 4 ? r.corner : 0,
+    note: typeof r?.note === 'string' ? r.note.slice(0, 1000) : '',
+  };
   s.renders = (Array.isArray(s.renders) ? s.renders : readRenders()).filter(r => r && typeof r.url === 'string').slice(-30);
   return s;
 }
@@ -1668,11 +1788,11 @@ const ui = {tool:'select', sel:null, mA:null, mCur:null,
   layers:{dims:true, labels:true, furn:true, grid:false, bearing:false, wallSnap:true}};
 let view = {x0:0, y0:0, s:.06};
 const undoStack = [], redoStack = [];
-let onProjectSave = () => {};
+let onProjectSave = () => {}, keepLegacyProjectCache = true;
 
 // 方案与状态一起存：撤销一步也能连户型一起回退
 function save(){
-  try {
+  if (keepLegacyProjectCache) try {
     localStorage.setItem(PLAN_KEY, JSON.stringify(PLAN));
     const {renders, ...rest} = state;            // 效果图记录单独存，撤销不连带回退
     localStorage.setItem(STATE_KEY, JSON.stringify(rest));
@@ -1680,17 +1800,18 @@ function save(){
   } catch(e) {}
   onProjectSave();
 }
-if (storedPlan?.migrated) save();          // 旧本地方案迁移后立即写回 V2
 const snap = () => JSON.stringify({plan: PLAN, state: {...state, renders: undefined}});
 function restore(snapshot){
   let o; try { o = JSON.parse(snapshot); } catch(e){ return; }
-  if (o && o.plan && o.state){ const r = sanitizePlan(o.plan); if (r.ok) installPlan(r.plan); state = fixState({...o.state, renders: state.renders}); }
-  else if (o && Array.isArray(o.furniture)) state = fixState({...o, renders: state.renders});   // 兼容旧格式快照
+  const {renders, renderOptions, view:walkView} = state;
+  const preserved = {renders, renderOptions, view:walkView};
+  if (o && o.plan && o.state){ const r = sanitizePlan(o.plan); if (r.ok) installPlan(r.plan); state = fixState({...o.state, ...preserved}); }
+  else if (o && Array.isArray(o.furniture)) state = fixState({...o, ...preserved});
 }
 function commit(before){ undoStack.push(before); if (undoStack.length > 150) undoStack.shift(); redoStack.length = 0; save(); }
 function mutate(fn){ const b = snap(); fn(); commit(b); renderAll(); }
 // 撤销 / 重做 / 换方案后：除状态外，材质图案、尺寸标注、门窗也都可能变
-function afterHistory(){ validateSel(); buildDefs(); renderDims(); renderOpenings(); save(); renderAll(); }
+function afterHistory(){ validateSel(); buildDefs(); renderDims(); renderOpenings(); save(); renderAll(); if (checkMode) renderDrawingCheck(); }
 function undo(){ if (!undoStack.length) return toast(tr('没有可撤销的操作', 'Nothing to undo')); redoStack.push(snap()); restore(undoStack.pop()); afterHistory(); }
 function redo(){ if (!redoStack.length) return; undoStack.push(snap()); restore(redoStack.pop()); afterHistory(); }
 function selOk(sel){
@@ -1991,17 +2112,21 @@ function renderWalls(){
 function renderOpenings(){
   const WS = 'stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"';
   let s = '';
+  const start = (kind, id) => `<g class="opening" data-opening="${kind}" data-opening-id="${esc(id)}">`;
+  const hitbox = ([x0,y0,x1,y1]) => `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="transparent"/>`;
   WINS.forEach(win => {
+    s += start('win', win.id);
     const curve = windowCurve(win);
     if (curve){
       s += `<path d="${curveBandPath(curve)}" fill="#f7fbfd" ${WS}/>`;
       for (const t of [-1/6, 1/6]) s += `<path d="${curveLinePath(curve, curve.thickness * t)}" fill="none" ${WS}/>`;
-      return;
+    } else {
+      const [x0, y0, x1, y1] = win.rect, w = x1-x0, h = y1-y0;
+      s += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#f7fbfd" ${WS}/>`;
+      if (w >= h) [1/3,2/3].forEach(t => s += `<line x1="${x0}" y1="${y0+h*t}" x2="${x1}" y2="${y0+h*t}" ${WS}/>`);
+      else [1/3,2/3].forEach(t => s += `<line x1="${x0+w*t}" y1="${y0}" x2="${x0+w*t}" y2="${y1}" ${WS}/>`);
     }
-    const [x0, y0, x1, y1] = win.rect, w = x1-x0, h = y1-y0;
-    s += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#f7fbfd" ${WS}/>`;
-    if (w >= h) [1/3,2/3].forEach(t => s += `<line x1="${x0}" y1="${y0+h*t}" x2="${x1}" y2="${y0+h*t}" ${WS}/>`);
-    else [1/3,2/3].forEach(t => s += `<line x1="${x0+w*t}" y1="${y0}" x2="${x0+w*t}" y2="${y1}" ${WS}/>`);
+    s += '</g>';
   });
   const DS = 'stroke="#3d3a34" stroke-width="1" vector-effect="non-scaling-stroke"';
   DOORS.forEach(d => {
@@ -2009,12 +2134,16 @@ function renderOpenings(){
     const ox = hx + d.o[0]*L, oy = hy + d.o[1]*L, cx = hx + d.c[0]*L, cy = hy + d.c[1]*L;
     const sweep = d.o[0]*d.c[1] - d.o[1]*d.c[0] > 0 ? 1 : 0;
     const col = d.entry ? '#b5653a' : '#3d3a34';
+    s += start('door', d.id) + hitbox(d.rect);
     s += `<polygon points="${hx},${hy} ${ox},${oy} ${ox+d.c[0]*T},${oy+d.c[1]*T} ${hx+d.c[0]*T},${hy+d.c[1]*T}" fill="#fff" stroke="${col}" stroke-width="${d.entry?1.8:1}" vector-effect="non-scaling-stroke"/>`;
-    s += `<path d="M${ox} ${oy}A${L} ${L} 0 0 ${sweep} ${cx} ${cy}" fill="none" ${DS} stroke-dasharray="5 3" opacity=".7"/>`;
+    s += `<path d="M${ox} ${oy}A${L} ${L} 0 0 ${sweep} ${cx} ${cy}" fill="none" ${DS} stroke-dasharray="5 3" opacity=".7"/></g>`;
   });
-  SLIDES.forEach(({rect:[x0,y0,x1,y1],v}) => {
+  SLIDES.forEach(({id,rect,v}) => {
+    const [x0,y0,x1,y1] = rect;
+    s += start('slide', id) + hitbox(rect);
     if (v){ const L = y1-y0, m = (x0+x1)/2; s += `<rect x="${m-45}" y="${y0}" width="40" height="${L*.55}" fill="#fff" ${DS}/><rect x="${m+5}" y="${y1-L*.55}" width="40" height="${L*.55}" fill="#fff" ${DS}/>`; }
     else { const L = x1-x0, m = (y0+y1)/2; s += `<rect x="${x0}" y="${m-45}" width="${L*.55}" height="40" fill="#fff" ${DS}/><rect x="${x1-L*.55}" y="${m+5}" width="${L*.55}" height="40" fill="#fff" ${DS}/>`; }
+    s += '</g>';
   });
   // 入户标识：由带 entry 标记的门推导（门外 900mm 处画箭头与文字）
   const entry = DOORS.find(d => d.entry);
@@ -2068,28 +2197,61 @@ function dimLabelOf(dim){ return (dim.estimated ? '≈' : '') + Math.round(dimVa
 function dimSourceName(dim){
   return dim.source === 'user' ? tr('用户', 'User') : dim.source === 'drawing' ? tr('图纸', 'Drawing') : tr('AI', 'AI');
 }
-// 按锚点定义重算量测点（墙移动、房间边更新后保持尺寸贴在同一量测面上）。
-function syncDimAnchors(){
-  const used = new Set();
+// 结构移动后保留所选的量测面和沿线位置。
+function rebaseDimPoint([x,y], a, b, nextA, nextB, curve, nextCurve){
+  let fraction;
+  if (curve){
+    fraction = curveFraction(curve, Math.atan2(y-curve.cy, x-curve.cx));
+    if (fraction === null) fraction = Math.hypot(x-a[0],y-a[1]) <= Math.hypot(x-b[0],y-b[1]) ? 0 : 1;
+  } else {
+    const dx = b[0]-a[0], dy = b[1]-a[1], len2 = dx*dx + dy*dy;
+    fraction = len2 ? Math.max(0, Math.min(1, ((x-a[0])*dx + (y-a[1])*dy) / len2)) : 0;
+  }
+  if (nextCurve){
+    const offset = curve?.thickness ? (Math.hypot(x-curve.cx, y-curve.cy)-curve.radius) * nextCurve.thickness/curve.thickness : 0;
+    return curvePoint(nextCurve, fraction, offset);
+  }
+  return [nextA[0]+(nextB[0]-nextA[0])*fraction, nextA[1]+(nextB[1]-nextA[1])*fraction];
+}
+
+function syncDimAnchors(previous){
+  if (!PLAN.dims.length) return;
+  const wallMap = plan => new Map(plan.walls.map(item => [item.id, item]));
+  const roomMap = plan => new Map(plan.rooms.map(item => [item.id, item]));
+  const beforeWalls = wallMap(previous), afterWalls = wallMap(PLAN);
+  const beforeRooms = roomMap(previous), afterRooms = roomMap(PLAN);
+  const sameValues = (a,b) => a.every((value,index) => value === b[index]);
   for (const dim of PLAN.dims || []){
     for (const key of ['from', 'to']){
       const anchor = dim[key];
-      if (!anchor) continue;
-      let point = null;
+      if (!anchor?.point) continue;
       if (anchor.kind === 'wall'){
-        const wall = wallOf(anchor.id);
-        if (wall) point = wall.rect && anchor.face !== 'left' && anchor.face !== 'right'
-          ? wallAnchorPoint(wall, anchor.face)
-          : wall.rect ? wallAnchorPoint(wall, anchor.face) : curvePoint(wallCurve(wall), 0);
+        const was = beforeWalls.get(anchor.id), wall = afterWalls.get(anchor.id);
+        if (!was || !wall) continue;
+        if (was.rect && wall.rect){
+          if (sameValues(was.rect, wall.rect)) continue;
+          anchor.point = anchor.point.map((value, i) => {
+            const length = was.rect[i+2]-was.rect[i];
+            const fraction = length ? (value-was.rect[i])/length : .5;
+            return wall.rect[i] + (wall.rect[i+2]-wall.rect[i])*fraction;
+          });
+        } else if (!was.rect && !wall.rect){
+          if (was.sweep === wall.sweep && was.thickness === wall.thickness &&
+              sameValues(was.from, wall.from) && sameValues(was.to, wall.to)) continue;
+          anchor.point = rebaseDimPoint(anchor.point, was.from, was.to, wall.from, wall.to, wallCurve(was), wallCurve(wall));
+        } else {
+          anchor.point = wallAnchorPoint(wall, anchor.face);
+        }
       } else if (anchor.kind === 'room'){
-        const room = roomDef(anchor.id);
-        if (room && room.poly[anchor.edge]) point = edgeMidpoint(room.poly, anchor.edge);
+        const was = beforeRooms.get(anchor.id), room = afterRooms.get(anchor.id), edge = anchor.edge;
+        if (!was?.poly[edge] || !room?.poly[edge]) continue;
+        const a = was.poly[edge], b = was.poly[(edge+1)%was.poly.length];
+        const nextA = room.poly[edge], nextB = room.poly[(edge+1)%room.poly.length];
+        const curve = roomCurves(was).get(edge), nextCurve = roomCurves(room).get(edge);
+        if (curve?.sweep === nextCurve?.sweep && sameValues(a,nextA) && sameValues(b,nextB)) continue;
+        anchor.point = rebaseDimPoint(anchor.point, a, b, nextA, nextB, curve, nextCurve);
       }
-      if (point) anchor.point = point;
     }
-    dim.axis = dim.from?.point && dim.to?.point &&
-      Math.abs(dim.to.point[1] - dim.from.point[1]) > Math.abs(dim.to.point[0] - dim.from.point[0]) ? 'y' : 'x';
-    used.add(dim.id);
   }
 }
 
@@ -2233,6 +2395,7 @@ const CHECK_JOIN = 1;        // 洞口 / 弧段端点衔接，mm
 const CHECK_FACE = 2;        // 房间贴边，mm
 const CHECK_CHAIN = 5;       // 尺寸链求和，mm
 const CHECK_OVERLAP = 1;     // 洞口重叠，mm
+const CHECK_DRAWING_DIM = 10; // 位图图纸的标注与几何容差，mm
 
 function rectSpanOf(rect){
   const [x0, y0, x1, y1] = rect;
@@ -2385,8 +2548,40 @@ function checkRoomFaces(plan, walls, add){
   }
 }
 
+function dimensionPointFits(anchor, walls, rooms){
+  const p = anchor.point;
+  const onSegment = (a, b) => samePoint(p, rebaseDimPoint(p, a, b, a, b), CHECK_DRAWING_DIM);
+  const onCurve = (curve, offsets) => {
+    const angle = Math.atan2(p[1] - curve.cy, p[0] - curve.cx);
+    const t = curveFraction(curve, angle);
+    return (t === null ? [0, 1] : [t])
+      .some(fraction => offsets.some(offset => samePoint(p, curvePoint(curve, fraction, offset), CHECK_DRAWING_DIM)));
+  };
+  if (anchor.kind === 'room'){
+    const room = rooms.get(anchor.id), a = room?.poly[anchor.edge];
+    if (!a) return false;
+    const b = room.poly[(anchor.edge + 1) % room.poly.length], curve = roomCurves(room).get(anchor.edge);
+    return curve ? onCurve(curve, [0]) : onSegment(a, b);
+  }
+  const wall = walls.get(anchor.id);
+  if (!wall) return false;
+  if (!wall.rect){
+    const curve = wallCurve(wall), half = wall.thickness / 2;
+    return !!curve && onCurve(curve, anchor.face === 'axis' ? [0] : [-half, half]);
+  }
+  const [x0, y0, x1, y1] = wall.rect;
+  if (anchor.face === 'axis'){
+    const x = (x0+x1)/2, y = (y0+y1)/2;
+    return x1-x0 >= y1-y0 ? onSegment([x0,y], [x1,y]) : onSegment([x,y0], [x,y1]);
+  }
+  const corners = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+  return corners.some((a, i) => onSegment(a, corners[(i + 1) % 4]));
+}
+
 function checkDimChains(plan, add){
   const groups = new Map();
+  const walls = new Map((plan.walls || []).map(wall => [wall.id, wall]));
+  const rooms = new Map((plan.rooms || []).map(room => [room.id, room]));
   for (const dim of Array.isArray(plan.dims) ? plan.dims : []){
     if (!dim?.from?.point || !dim?.to?.point) continue;
     const axis = dim.axis === 'y' ? 'y' : 'x';
@@ -2397,6 +2592,20 @@ function checkDimChains(plan, add){
       : (Math.abs(pa - pb) <= CHECK_CHAIN ? `a:${axis}:${Math.round(((pa + pb) / 2) / CHECK_CHAIN) * CHECK_CHAIN}` : `d:${dim.id}`);
     const start = Math.min(along(dim.from.point), along(dim.to.point));
     const end = Math.max(along(dim.from.point), along(dim.to.point));
+    if (Number.isFinite(dim.drawingValue) && dim.source !== 'user'){
+      const places = [['起点', 'Start', dim.from], ['终点', 'End', dim.to]];
+      for (const [zh, en, anchor] of places){
+        if (!dimensionPointFits(anchor, walls, rooms)){
+          add('dim-chain', 'warn', [['dim', dim.id], [anchor.kind, anchor.id]],
+            tr(`尺寸${zh}与引用的量测面不一致，请核对原图。`, `${en} anchor misses its measurement face. Check the source drawing.`));
+        }
+      }
+      const difference = Math.round(end - start - dim.drawingValue);
+      if (Math.abs(difference) > CHECK_DRAWING_DIM){
+        add('dim-chain', 'warn', [['dim', dim.id]],
+          tr(`模型尺寸与原图读数相差 ${difference} mm。`, `Model measurement differs from the drawing by ${difference} mm.`));
+      }
+    }
     if (!groups.has(chain)) groups.set(chain, {explicit:!!dim.chain, dims:[]});
     groups.get(chain).dims.push({dim, start, end, value:end - start});
   }
@@ -2579,6 +2788,154 @@ function cycleCheckIssue(){
 /* ======================= 校核图层（设计 §5：画布图层 + 选中态 + 属性面板分区） ======================= */
 let checkMode = false;
 const inCheck = () => checkMode;
+let drawingImage = null, drawingMode = '', drawingWallsOnly = false, drawingCalibration = null;
+let drawingRequest = 0, drawingGuide = '', drawingPan = null;
+
+function drawingPlacement(){
+  if (!drawingImage) return null;
+  const saved = state.drawingRegistration;
+  if (saved?.key === drawingImage.key && normPoint(saved.origin) &&
+      Number.isFinite(saved.scale) && saved.scale > 0 && Number.isFinite(saved.angle)) return saved;
+  const scale = Math.min(BOUNDS.w / drawingImage.width, BOUNDS.h / drawingImage.height);
+  return {origin:[BOUNDS.x + (BOUNDS.w - drawingImage.width * scale) / 2,
+    BOUNDS.y + (BOUNDS.h - drawingImage.height * scale) / 2], scale, angle:0};
+}
+
+function drawingToWorld([x, y], placement){
+  const angle = placement.angle * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
+  return [placement.origin[0] + placement.scale * (x*c - y*s), placement.origin[1] + placement.scale * (x*s + y*c)];
+}
+
+function renderDrawingCheck(){
+  const stage = $('#stage'), compare = checkMode && drawingImage && drawingMode === 'compare';
+  const overlay = checkMode && drawingImage && drawingMode === 'overlay';
+  stage.classList.toggle('source-compare', !!compare);
+  stage.classList.toggle('source-overlay', !!overlay);
+  stage.classList.toggle('source-wall-lines', !!(overlay && drawingWallsOnly));
+  stage.classList.toggle('source-pick-original', !!(drawingCalibration && drawingCalibration.original.length < 2));
+  stage.classList.toggle('source-pick-model', !!(drawingCalibration && drawingCalibration.original.length === 2 && drawingCalibration.model.length < 2));
+  $('#sourceTools').hidden = !checkMode;
+  $('#sourcePane').hidden = !compare;
+  $('#sourceCompare').classList.toggle('on', !!compare);
+  $('#sourceCompare').setAttribute('aria-pressed', String(!!compare));
+  $('#sourceOverlay').classList.toggle('on', !!overlay);
+  $('#sourceOverlay').setAttribute('aria-pressed', String(!!overlay));
+  for (const id of ['sourceOverlay', 'sourceScale']) $('#' + id).hidden = !drawingImage;
+  $('#sourceWalls').hidden = !overlay;
+  $('#sourceWalls').classList.toggle('on', drawingWallsOnly);
+  $('#sourceWalls').setAttribute('aria-pressed', String(drawingWallsOnly));
+  $('#sourceScaleCancel').hidden = !drawingCalibration;
+  $('#sourceScaleForm').hidden = drawingCalibration?.model.length !== 2;
+  $('#sourceGuide').hidden = !drawingGuide;
+  $('#sourceGuide').textContent = drawingGuide;
+  $('#gDrawingOverlay').setAttribute('display', overlay ? 'inline' : 'none');
+  const bounds = svg.getAttribute('viewBox');
+  if (bounds) $('#sourcePane').setAttribute('viewBox', bounds);
+  if (!drawingImage){
+    $('#sourceImage').removeAttribute('href'); $('#gDrawingOverlay').removeAttribute('href');
+    $('#sourceOriginalPoints').replaceChildren(); $('#gDrawingPoints').replaceChildren();
+    return;
+  }
+  const placement = drawingPlacement();
+  for (const image of [$('#sourceImage'), $('#gDrawingOverlay')]){
+    if (image.getAttribute('href') !== drawingImage.url) image.setAttribute('href', drawingImage.url);
+    image.setAttribute('width', drawingImage.width);
+    image.setAttribute('height', drawingImage.height);
+    image.setAttribute('transform', `translate(${placement.origin.join(' ')}) rotate(${placement.angle}) scale(${placement.scale})`);
+  }
+  const markers = points => points.map(([x,y], i) =>
+    `<circle cx="${x}" cy="${y}" r="${6/view.s}" stroke="white" fill="${i ? '#b5653a' : '#2f5d62'}" stroke-width="2" vector-effect="non-scaling-stroke"/>`).join('');
+  $('#sourceOriginalPoints').innerHTML = markers((drawingCalibration?.original || []).map(point => drawingToWorld(point, placement)));
+  $('#gDrawingPoints').innerHTML = markers(drawingCalibration?.model || []);
+}
+
+function clearDrawingCheck(){
+  drawingRequest++;
+  if (drawingImage?.owned) URL.revokeObjectURL(drawingImage.url);
+  drawingImage = null; drawingMode = ''; drawingWallsOnly = false; drawingCalibration = null;
+  drawingGuide = ''; drawingPan = null;
+  renderDrawingCheck();
+}
+
+async function showDrawingImage(url, key, owned = false){
+  const request = ++drawingRequest;
+  const image = new Image(); image.src = url;
+  try {
+    await image.decode();
+    if (!checkMode || request !== drawingRequest) return false;
+    if (drawingImage?.owned) URL.revokeObjectURL(drawingImage.url);
+    drawingImage = {url, key, width:image.naturalWidth, height:image.naturalHeight, owned};
+    drawingMode = 'compare'; drawingCalibration = null; drawingWallsOnly = false; drawingGuide = '';
+    renderDrawingCheck();
+    return true;
+  } catch (e) {
+    if (request === drawingRequest){
+      drawingGuide = tr('原图无法显示，请选取 PNG、JPEG 或 WebP 图纸。', 'Could not display the drawing. Choose a PNG, JPEG or WebP.');
+      renderDrawingCheck();
+    }
+    return false;
+  } finally {
+    if (owned && drawingImage?.url !== url) URL.revokeObjectURL(url);
+  }
+}
+
+function collectDrawingPoint(point, original){
+  const draft = drawingCalibration;
+  if (!draft || (original ? draft.original.length >= 2 : draft.original.length < 2 || draft.model.length >= 2)) return;
+  const points = original ? draft.original : draft.model;
+  if (points.length && Math.hypot(point[0]-points[0][0], point[1]-points[0][1]) <= 0.001){
+    return toast(tr('请选择两个不同的点', 'Choose two distinct points'));
+  }
+  points.push(point);
+  drawingGuide = draft.original.length === 1 ? tr('在原图上点第二个尺寸端点', 'Pick the second endpoint on the original')
+    : draft.model.length === 0 ? tr('在模型上点与原图对应的第一个端点', 'Pick the matching first point on the model')
+      : draft.model.length === 1 ? tr('在模型上点与原图对应的第二个端点', 'Pick the matching second point on the model')
+        : tr('输入图纸标注的实际长度', 'Enter the real length from the drawing');
+  renderDrawingCheck();
+  if (draft.model.length === 2) $('#sourceKnownLength').focus();
+}
+
+function calibrateDrawing(original, model, knownLength, key){
+  const bad = () => ({ok:false, error:tr('标定需要两组不同的坐标和有效的图纸长度。', 'Calibration needs two distinct points in each view and a valid drawing length.')});
+  if (!Array.isArray(original) || original.length !== 2 || !original.every(normPoint) ||
+      !Array.isArray(model) || model.length !== 2 || !model.every(normPoint) ||
+      !Number.isFinite(knownLength) || knownLength <= 0 || typeof key !== 'string' || !key) return bad();
+  const [a,b] = original, [p,q] = model, vx = b[0]-a[0], vy = b[1]-a[1], dx = q[0]-p[0], dy = q[1]-p[1];
+  const factor = knownLength / Math.hypot(dx, dy), scale = knownLength / Math.hypot(vx, vy);
+  if (![factor, scale].every(v => Number.isFinite(v) && v > 0)) return bad();
+  const angle = (Math.atan2(dy, dx) - Math.atan2(vy, vx)) * 180 / Math.PI;
+  const [ox,oy] = drawingToWorld(a, {origin:[0,0], scale, angle});
+  const origin = [p[0]-ox, p[1]-oy];
+  const point = ([x,y]) => [p[0] + (x-p[0])*factor, p[1] + (y-p[1])*factor];
+  const rect = ([x0,y0,x1,y1]) => [...point([x0,y0]), ...point([x1,y1])];
+  const sized = value => {
+    const scaled = value * factor;
+    if (!Number.isFinite(scaled)) throw new Error(bad().error);
+    return scaled;
+  };
+  const next = deepCopy(PLAN), [x,y] = point([next.bounds.x,next.bounds.y]);
+  if (![x,y,...origin,next.bounds.w*factor,next.bounds.h*factor].every(Number.isFinite)) return bad();
+  return editStructure(() => {
+    next.bounds = {x, y, w:sized(next.bounds.w), h:sized(next.bounds.h)};
+    for (const item of [...next.walls, ...next.wins, ...next.doors, ...next.slides]){
+      if (item.rect) item.rect = rect(item.rect);
+      else { item.from = point(item.from); item.to = point(item.to); item.thickness = sized(item.thickness); }
+    }
+    for (const door of next.doors){ door.h = point(door.h); door.len = sized(door.len); }
+    for (const room of next.rooms){
+      room.poly = room.poly.map(point);
+      if (room.at) room.at = point(room.at);
+      for (const drop of room.ceiling?.drops || []) drop.rect = rect(drop.rect);
+    }
+    for (const dim of next.dims){
+      dim.from.point = point(dim.from.point); dim.to.point = point(dim.to.point); dim.offset = sized(dim.offset);
+    }
+    for (const item of state.furniture) [item.cx,item.cy] = point([item.cx,item.cy]);
+    for (const measure of state.measures) for (const end of ['a','b']) [measure[end].x,measure[end].y] = point([measure[end].x,measure[end].y]);
+    state.drawingRegistration = {key, origin, scale, angle};
+    installPlan(next);
+  }, {syncAnchors:false});
+}
 
 function enterCheck(){
   if (is3D()) setView('2d');
@@ -2592,7 +2949,7 @@ function enterCheck(){
   if (add) add.hidden = false;
   if (cancel) cancel.hidden = false;
   refreshChecks();
-  renderDims(); renderChecks(); renderAll();
+  renderDims(); renderChecks(); renderDrawingCheck(); renderAll();
   toast(tr('校核图层已打开：点选墙体 / 门窗 / 尺寸可直接修改', 'Check layer on — select walls, openings or dimensions to edit'));
 }
 
@@ -2610,7 +2967,9 @@ function exitCheck(force){
   if (add) add.hidden = true;
   if (cancel) cancel.hidden = true;
   ui.dimDraft = null;
+  clearDrawingCheck();
   renderDims(); renderChecks(); renderAll();
+  if (!force && !count && !est) void projectConfirmScheme();
   toast(tr('已退出校核，修改已保存', 'Check layer closed — edits are saved'));
   return true;
 }
@@ -2627,18 +2986,28 @@ function degeneratePlan(plan){
       if (wall.thickness >= curve.radius * 2) return tr('弧墙厚度不能大于等于直径', 'Arc wall thickness must be less than its diameter');
     }
   }
+  if (plan.wins.some(win => !win.rect && !windowCurve(win))) return tr('弧窗几何无效', 'Invalid curved window geometry');
   for (const door of plan.doors || []) if (!(door.len > 0)) return tr('门扇长度为 0', 'A door leaf has zero length');
   return null;
 }
 
 // 结构编辑统一走这里：非法几何整体回退；合法则进入撤销栈并保存。
-function editStructure(fn){
+function editStructure(fn, {syncAnchors = true, checkResult} = {}){
   const before = snap();
+  const revision = planRev;
   let result;
-  try { result = fn(); } catch(e){ restore(before); renderDims(); renderOpenings(); renderAll(); return {ok:false, error:e.message || String(e)}; }
-  const bad = degeneratePlan(PLAN);
-  if (bad){ restore(before); renderDims(); renderOpenings(); renderAll(); toast(bad); return {ok:false, error:bad}; }
-  syncDimAnchors();
+  try {
+    result = fn();
+    const bad = degeneratePlan(PLAN);
+    if (bad){ toast(bad); throw new Error(bad); }
+    if (revision === planRev) installPlan(PLAN);
+    if (syncAnchors) syncDimAnchors(JSON.parse(before).plan);
+    const invalid = checkResult?.();
+    if (invalid) throw new Error(invalid);
+  } catch(e){
+    restore(before); renderDims(); renderOpenings(); renderAll();
+    return {ok:false, error:e.message || String(e)};
+  }
   commit(before); buildDefs(); renderDims(); renderOpenings(); renderAll();
   return {ok:true, result};
 }
@@ -2731,7 +3100,7 @@ function moveWallSegment(wall, axis, delta){
     }
   }
   // 落在该墙面上的房间边同步更新。
-  for (const room of ROOMS){
+  for (const room of PLAN.rooms){
     for (const point of room.poly){
       const across = axis === 'x' ? point[1] : point[0];
       const spanA = axis === 'x' ? old[1] : old[0], spanB = axis === 'x' ? old[3] : old[2];
@@ -2758,40 +3127,40 @@ function setDimValue(dimId, value, opts = {}){
   const dim = (PLAN.dims || []).find(d => d.id === dimId);
   if (!dim) return {ok:false, error:tr('尺寸不存在', 'Dimension not found')};
   const target = Math.round(+value);
-  if (!(target > 0)) return {ok:false, error:tr('尺寸必须大于 0', 'The dimension must be greater than 0')};
+  if (!Number.isFinite(target) || target <= 0) return {ok:false, error:tr('尺寸必须大于 0', 'The dimension must be greater than 0')};
   const current = dimValueOf(dim);
   if (Math.abs(current - target) < .5){
     if (dim.source !== 'user' && opts.confirm !== false) return confirmDim(dimId);
     return {ok:true, unchanged:true};
   }
-  let end = opts.end;
-  if (!['from', 'to'].includes(end)) end = dim.locked === 'from' ? 'to' : dim.locked === 'to' ? 'from' : null;
+  const end = dim.locked === 'from' ? 'to' : dim.locked === 'to' ? 'from' : ['from', 'to'].includes(opts.end) ? opts.end : null;
   if (!end){
     return {ok:false, needChoice:true,
       error:tr('两端都可移动，请先选择移动哪一面墙', 'Both ends can move — choose which side to move')};
   }
   const anchor = dim[end];
   if (!anchor || !['wall', 'room'].includes(anchor.kind)) return {ok:false, error:tr('这一端没有可移动的墙', 'This end has no movable wall')};
+  if (dim.from.kind === 'wall' && dim.to.kind === 'wall' && dim.from.id === dim.to.id){
+    return {ok:false, error:tr('两端位于同一面墙，请在墙体属性中调整厚度或长度', 'Both ends are on one wall. Use the wall properties to adjust its thickness or length.')};
+  }
   const axis = dim.axis === 'y' ? 'y' : 'x';
   const fromC = dim.from.point[axis === 'x' ? 0 : 1], toC = dim.to.point[axis === 'x' ? 0 : 1];
   const sign = toC >= fromC ? 1 : -1;
   const delta = (end === 'to' ? 1 : -1) * (target - current) * sign;
-  const keepDrawing = dim.drawingValue;
-  const wasUser = dim.source === 'user';
   const edited = editStructure(() => {
     if (anchor.kind === 'wall'){
       const wall = wallOf(anchor.id);
       if (!wall) throw new Error(tr('尺寸引用的墙不存在', 'The referenced wall is missing'));
       moveWallSegment(wall, axis, delta);
     } else {
-      const room = roomDef(anchor.id);
+      const room = PLAN.rooms.find(item => item.id === anchor.id);
       if (!room) throw new Error(tr('尺寸引用的房间不存在', 'The referenced room is missing'));
       moveRoomEdge(room, anchor.edge, axis, delta);
     }
     dim.source = 'user';
     delete dim.estimated;
-    if (!wasUser && keepDrawing === undefined) dim.drawingValue = Math.round(current);
-  });
+  }, {checkResult:() => Math.abs(dimValueOf(dim)-target) > .5
+    ? tr('这次移动无法得到目标尺寸，请核对两端引用的墙或房间边。', 'This move does not produce the requested length. Check the walls or room edges at both ends.') : ''});
   return edited.ok ? {ok:true, value:target} : edited;
 }
 
@@ -2901,6 +3270,55 @@ $('#brandEdit').onkeydown = e => {
 $('#brandEdit').onblur = () => endRename(true);
 $('#checkStatus').onclick = () => cycleCheckIssue();
 $('#checkDone').onclick = () => exitCheck();
+$('#sourceCompare').onclick = () => {
+  if (drawingImage){
+    drawingMode = drawingMode === 'compare' ? '' : 'compare';
+    drawingCalibration = null; drawingGuide = '';
+    renderDrawingCheck();
+    return;
+  }
+  const jobId = projectRows.get(activeProjectId)?.jobId;
+  if (jobId){
+    drawingGuide = tr('正在读取原图…', 'Loading original drawing…'); renderDrawingCheck();
+    void showDrawingImage(projectSourceURL(jobId) + '?preview=1', 'job:' + jobId);
+  } else {
+    $('#sourceFile').click();
+  }
+};
+$('#sourcePick').onclick = () => $('#sourceFile').click();
+$('#sourceFile').onchange = e => {
+  const file = e.target.files[0]; e.target.value = '';
+  if (!file) return;
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 24 * 1024 * 1024){
+    drawingGuide = tr('请选择 24 MiB 内的 PNG、JPEG 或 WebP。', 'Choose a PNG, JPEG or WebP of 24 MiB or less.');
+    renderDrawingCheck(); return;
+  }
+  void showDrawingImage(URL.createObjectURL(file), `file:${file.name}:${file.size}:${file.lastModified}`, true);
+};
+$('#sourceOverlay').onclick = () => {
+  drawingMode = drawingMode === 'overlay' ? '' : 'overlay';
+  drawingCalibration = null; drawingGuide = ''; renderDrawingCheck();
+};
+$('#sourceWalls').onclick = () => { drawingWallsOnly = !drawingWallsOnly; renderDrawingCheck(); };
+$('#sourceScale').onclick = () => {
+  if (!drawingImage) return;
+  drawingMode = 'compare'; ui.dimDraft = null;
+  drawingCalibration = {original:[], model:[]};
+  $('#sourceKnownLength').value = '';
+  drawingGuide = tr('在原图上点一个已知尺寸的起点', 'Pick the first endpoint of a known length on the original');
+  renderDrawingCheck();
+};
+$('#sourceScaleCancel').onclick = () => { drawingCalibration = null; drawingGuide = ''; renderDrawingCheck(); };
+$('#sourceScaleForm').onsubmit = e => {
+  e.preventDefault();
+  if (!drawingCalibration || !drawingImage) return;
+  const result = calibrateDrawing(drawingCalibration.original, drawingCalibration.model,
+    $('#sourceKnownLength').valueAsNumber, drawingImage.key);
+  if (!result.ok) return toast(result.error);
+  drawingCalibration = null;
+  drawingGuide = tr('图纸比例已标定，可一步撤销。', 'Drawing scale calibrated. Undo to revert.');
+  renderDrawingCheck(); refit();
+};
 $('#dimAdd').onclick = () => {
   if (!checkMode) enterCheck();
   ui.dimDraft = {from:null};
@@ -3107,6 +3525,7 @@ function winPanel(win){
     <div class="form">
       <label>${tr('位置','Position')} (mm)<input type="number" id="winPos" value="${Math.round(winMid)}" step="10"></label>
       <label>${tr('宽度','Width')} (mm)<input type="number" id="winWidth" value="${Math.round(arc ? Math.hypot(win.to[0]-win.from[0], win.to[1]-win.from[1]) : Math.max(x1-x0, y1-y0))}" min="100" step="10"></label>
+      ${arc ? `<label>${tr('圆心角','Sweep angle')} (°)<input type="number" id="winSweep" value="${win.sweep}" min="-180" max="180" step="any"></label>` : ''}
       <label>${tr('窗台高','Sill')} (mm)<input type="number" id="winSill" value="${win.sill ?? ''}" placeholder="—" min="0" max="3000" step="10"></label>
       <label>${tr('窗高','Height')} (mm)<input type="number" id="winH" value="${win.h ?? ''}" placeholder="—" min="200" max="6000" step="10"></label>
       <label class="full">${tr('样式','Style')}<select id="winStyle"><option value="">${tr('未指定','Unspecified')}</option>${styles}</select></label>
@@ -3122,7 +3541,7 @@ function bindWinPanel(win){
   $('#winPos').onchange = e => {
     const v = e.target.valueAsNumber; if (!Number.isFinite(v)) return;
     upd(w => {
-      if (!w.rect) return;
+      if (!w.rect){ const offset = v-w.from[0]; w.from[0] += offset; w.to[0] += offset; return; }
       const vertical = (w.rect[2]-w.rect[0]) < (w.rect[3]-w.rect[1]);
       const length = vertical ? w.rect[3]-w.rect[1] : w.rect[2]-w.rect[0], offset = v - (vertical ? (w.rect[1]+w.rect[3])/2 : (w.rect[0]+w.rect[2])/2);
       if (vertical){ w.rect[1] += offset; w.rect[3] += offset; } else { w.rect[0] += offset; w.rect[2] += offset; }
@@ -3132,10 +3551,18 @@ function bindWinPanel(win){
   $('#winWidth').onchange = e => {
     const v = e.target.valueAsNumber; if (!(v > 0)) return;
     upd(w => {
-      if (!w.rect) return;
+      if (!w.rect){
+        const factor = v / Math.hypot(w.to[0]-w.from[0], w.to[1]-w.from[1]);
+        const midpoint = w.from.map((value, i) => (value+w.to[i])/2);
+        const resize = point => point.map((value,i) => midpoint[i] + (value-midpoint[i])*factor);
+        w.from = resize(w.from); w.to = resize(w.to); return;
+      }
       const vertical = (w.rect[2]-w.rect[0]) < (w.rect[3]-w.rect[1]), mid = vertical ? (w.rect[1]+w.rect[3])/2 : (w.rect[0]+w.rect[2])/2;
       if (vertical){ w.rect[1] = mid - v/2; w.rect[3] = mid + v/2; } else { w.rect[0] = mid - v/2; w.rect[2] = mid + v/2; }
     });
+  };
+  if ($('#winSweep')) $('#winSweep').onchange = e => {
+    if (Number.isFinite(e.target.valueAsNumber)) upd(w => { w.sweep = e.target.valueAsNumber; });
   };
   $('#winSill').onchange = e => { const v = e.target.valueAsNumber; upd(w => { if (Number.isFinite(v)) w.sill = Math.max(0, Math.min(3000, v)); else delete w.sill; }); };
   $('#winH').onchange = e => { const v = e.target.valueAsNumber; upd(w => { if (Number.isFinite(v)) w.h = Math.max(200, Math.min(6000, v)); else delete w.h; }); };
@@ -3144,7 +3571,9 @@ function bindWinPanel(win){
     const hostId = win.id, target = WINS.find(v => v.id === hostId); if (!target) return;
     editStructure(() => {
       WINS.splice(WINS.indexOf(target), 1);
-      if (target.rect) WALLS.push({id:uniqueObjectId('w', id => WALLS.some(v => v.id === id)), rect:target.rect.slice(), kind:'n', source:'user'});
+      const shape = target.rect ? {rect:target.rect.slice()}
+        : {from:target.from.slice(), to:target.to.slice(), sweep:target.sweep, thickness:target.thickness};
+      WALLS.push({id:uniqueObjectId('w', id => WALLS.some(v => v.id === id)), ...shape, kind:'n', source:'user'});
       ui.sel = null;
     });
     toast(tr('窗已转为实墙', 'Window converted to a solid wall'));
@@ -3266,37 +3695,63 @@ function dimPanel(dim){
 }
 function bindDimPanel(dim){
   let pending = null;
-  const applyValue = (end) => {
-    const v = $('#dimValue').valueAsNumber;
-    if (!Number.isFinite(v)) return;
-    const res = setDimValue(dim.id, v, end ? {end} : {});
+  const applyValue = (value, end) => {
+    if (!Number.isFinite(value)) return;
+    const res = setDimValue(dim.id, value, end ? {end} : {});
     if (!res.ok && res.needChoice){
-      pending = v; $('#dimChoice').hidden = false;
+      pending = value; $('#dimChoice').hidden = false;
       return toast(res.error);
     }
     if (!res.ok) return toast(res.error);
     $('#dimChoice').hidden = true; pending = null;
-    renderAll();
   };
-  $('#dimApply').onclick = () => applyValue();
+  $('#dimApply').onclick = () => applyValue($('#dimValue').valueAsNumber);
   $('#dimLocked').onchange = e => { const v = e.target.value; editStructure(() => { const d = (PLAN.dims || []).find(x => x.id === dim.id); if (d) d.locked = v; }); };
   $('#dimOffset').onchange = e => { const v = e.target.valueAsNumber; editStructure(() => { const d = (PLAN.dims || []).find(x => x.id === dim.id); if (d && Number.isFinite(v)) d.offset = v; }); };
   $('#dimAxis').onchange = e => editStructure(() => { const d = (PLAN.dims || []).find(x => x.id === dim.id); if (d) d.axis = e.target.value; });
-  if ($('#dimRestore')) $('#dimRestore').onclick = () => {
-    const v = dim.drawingValue;
-    if (!Number.isFinite(v)) return;
-    const res = setDimValue(dim.id, v, {});
-    if (!res.ok && res.needChoice){ pending = v; $('#dimChoice').hidden = false; }
-    renderAll();
-  };
+  if ($('#dimRestore')) $('#dimRestore').onclick = () => applyValue(dim.drawingValue);
   if ($('#dimConfirm')) $('#dimConfirm').onclick = () => { confirmDim(dim.id); renderAll(); };
   $('#dimDel').onclick = () => { deleteDim(dim.id); select(null); };
-  document.querySelectorAll('#panel [data-dim-move]').forEach(b => b.onclick = () => applyValue(b.dataset.dimMove));
+  document.querySelectorAll('#panel [data-dim-move]').forEach(b => b.onclick = () => applyValue(pending, b.dataset.dimMove));
   bindCheckIssues();
   $('#back').onclick = () => select(null);
-  void pending;
 }
 
+function priceControls(key){
+  const defaults = projectPriceDefaults();
+  const native = materialPrice(key, MATS);
+  const fallback = materialPrice(key, MATS, defaults);
+  return `<div class="form">
+    <label>${tr('项目默认','Project default')} ¥/m²<input type="number" min="0" max="1000000000" step="any" data-price-project="${esc(key)}" value="${defaults[key] ?? ''}" placeholder="${native}"></label>
+    <label>${tr('方案覆盖','Scheme override')} ¥/m²<input type="number" min="0" max="1000000000" step="any" data-price-scheme="${esc(key)}" value="${state.prices[key] ?? ''}" placeholder="${fallback}"></label>
+  </div>`;
+}
+function bindPrices(){
+  document.querySelectorAll('#panel [data-price-project], #panel [data-price-scheme]').forEach(input => {
+    input.onchange = async () => {
+      const projectKey = input.dataset.priceProject;
+      const key = projectKey || input.dataset.priceScheme;
+      const target = projectKey ? projectPriceDefaults() : state.prices;
+      const value = input.valueAsNumber;
+      const reset = input.value === '' && !input.validity.badInput;
+      if (!reset && !validPrice(value)){
+        input.value = target[key] ?? '';
+        toast(tr('请输入有效的非负单价。', 'Enter a valid non-negative unit price.'));
+        return;
+      }
+      const prices = {...target, [key]:value};
+      if (reset) delete prices[key];
+      if (!projectKey){ mutate(() => { state.prices = prices; }); return; }
+      try {
+        if (!await setProjectPriceDefaults(prices)) throw new Error('price save failed');
+        renderPanel();
+      } catch {
+        input.value = target[key] ?? '';
+        toast(tr('项目默认单价未保存。', 'The project default price could not be saved.'));
+      }
+    };
+  });
+}
 function overviewPanel(){
   const rows = ROOMS.map(r => {
     const st = roomState(r.id), m = matInfo(st.mat);
@@ -3304,11 +3759,11 @@ function overviewPanel(){
       <td class="r">${fmt(roomArea(r))} m²</td></tr>`;
   }).join('');
   const tot = ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + roomArea(r), 0);
-  const byMat = {};
-  ROOMS.forEach(r => { const m = roomState(r.id).mat; byMat[m] = (byMat[m]||0) + roomArea(r); });
+  const byMat = new Map();
+  ROOMS.forEach(r => { const m = roomState(r.id).mat; byMat.set(m, (byMat.get(m) || 0) + roomArea(r)); });
   let cost = 0;
-  const matRows = Object.entries(byMat).map(([m,a]) => { const info = matInfo(m), c = a*info.price*1.05; cost += c;
-    return `<tr><td><span class="sw" style="background:${info.sw}"></span>${esc(nm(info.name))}</td><td class="r">${fmt(a,1)} m²</td><td class="r">¥${Math.round(c).toLocaleString()}</td></tr>`; }).join('');
+  const matRows = [...byMat].map(([m,a]) => { const info = matInfo(m), c = flooringCost(a, activeMaterialPrice(m)); cost += c;
+    return `<tr><td><span class="sw" style="background:${info.sw}"></span>${esc(nm(info.name))}</td><td class="r">${fmt(a,1)} m²</td><td class="r">¥${Math.round(c).toLocaleString()}</td></tr><tr><td colspan="3">${priceControls(m)}</td></tr>`; }).join('');
   const dem = state.demolished.map(wallOf).filter(Boolean);
   const demLen = dem.reduce((a,w) => a + wallLength(w), 0) / 1000;
   const components = componentCount(state.furniture);
@@ -3317,7 +3772,7 @@ function overviewPanel(){
     <table>${rows}</table>
     <div class="total"><span>${tr('套内使用面积','Net floor area')}</span><b>${fmt(tot)} m²</b></div>
     <div class="muted" style="font-size:11px;margin-top:4px">${tr('* 飘窗不计入使用面积；面积按墙体内净尺寸计算','* Bay windows are excluded; areas use net inner wall dimensions')}</div></section>
-  <section><h3>${tr('地面材料估算','Flooring Estimate')} <small>${tr('含 5% 损耗','incl. 5% waste')}</small></h3>
+  <section><h3>${tr('地面材料估算','Flooring Estimate')} <small>${tr('按当前单价估算，含 5% 损耗','Current prices, incl. 5% waste')}</small></h3>
     <table>${matRows}</table>
     <div class="total"><span>${tr('地面材料合计','Flooring total')}</span><b>¥${Math.round(cost).toLocaleString()}</b></div></section>
   <section><h3>${tr('方案统计','Plan Stats')}</h3>
@@ -3352,6 +3807,7 @@ function overviewPanel(){
   </div></section>`)}`;
 }
 function bindOverview(){
+  bindPrices();
   document.querySelectorAll('#panel tr[data-room]').forEach(tr => tr.onclick = () => {
     const id = tr.dataset.room;
     select({kind:'room', id});
@@ -3421,18 +3877,20 @@ function syncPaneBtns(){
 function closeDrawers(){ if (narrow()) drawer(null); }
 
 function roomPanel(r){
-  const st = roomState(r.id), info = matInfo(st.mat);
+  const st = roomState(r.id);
   const a = roomArea(r), [x0,y0,x1,y1] = bbox(r.poly), inside = state.furniture.filter(f => f.cx>x0&&f.cx<x1&&f.cy>y0&&f.cy<y1);
-  const mats = Object.entries(MATS).map(([k,m]) => `<button class="mat ${k===st.mat?'on':''}" data-mat="${esc(k)}"><i style="background:${m.sw}"></i><span>${esc(nm(m.name))}<small>¥${m.price}/m²</small></span></button>`).join('');
+  const mats = Object.entries(MATS).map(([k,m]) => `<button class="mat ${k===st.mat?'on':''}" data-mat="${esc(k)}"><i style="background:${m.sw}"></i><span>${esc(nm(m.name))}<small>¥${activeMaterialPrice(k)}/m²</small></span></button>`).join('');
   // 房间效果图：显示该房间最近一张（标题条 / 效果图页签生成的都算）
   const latest = roomLatestRender(r.id);
   const shotHtml = latest
     ? `<button class="roomshot" id="roomThumb" title="${esc(tr('点击放大','Click to enlarge'))}"><img src="${esc(renderAssetUrl(latest.url))}" alt=""><span>${esc(rRecTitle(latest))}</span></button>`
     : `<div class="muted" style="font-size:12px">${tr('进入房间后可在顶部标题条生成房间效果图','Enter the room, then generate a room render from the top bar')}</div>`;
   // 结构 / 飘窗（校核 §5.3）：飘窗作为房间编辑，面积即时更新。
-  const bay = r.bay || {}, isBay = r.counted === false;
-  const edgeOptions = r.poly.map((p, i) => {
-    const q = r.poly[(i + 1) % r.poly.length];
+  const bay = r.bay || {}, isBay = r.counted === false || !!r.bay;
+  const vertices = r.vertices || r.poly;
+  const edgeOptions = vertices.map((p, i) => {
+    if (r.arcs?.some(arc => arc.edge === i)) return '';
+    const q = vertices[(i + 1) % vertices.length];
     const horiz = Math.abs(p[1] - q[1]) <= .5, vert = Math.abs(p[0] - q[0]) <= .5;
     if (!horiz && !vert) return '';
     const length = Math.round(Math.hypot(q[0]-p[0], q[1]-p[1]));
@@ -3451,48 +3909,69 @@ function roomPanel(r){
     <div class="actions"><button class="btn primary" id="enterRoomBtn">${tr('进入房间','Enter room')}</button></div></section>
   <section><h3>${isBay ? tr('飘窗结构','Bay window') : tr('结构','Structure')}</h3>
     <div class="form">
-      <label class="full"><span><input type="checkbox" id="roomCounted" ${isBay ? '' : 'checked'} style="width:auto"> ${tr('计入使用面积','Count in floor area')}</span></label>
-      <label>${tr('窗台高','Sill height')} (mm)<input type="number" id="baySill" value="${bay.sill ?? ''}" placeholder="—" min="0" max="3000" step="10"></label>
-      <label class="full"><span><input type="checkbox" id="bayCushion" ${bay.cushion ? 'checked' : ''} style="width:auto"> ${tr('带飘窗垫','With cushion')}</span></label>
+      <label class="full"><span><input type="checkbox" id="roomCounted" ${r.counted === false ? '' : 'checked'} style="width:auto"> ${tr('计入使用面积','Count in floor area')}</span></label>
+      ${isBay ? `<label>${tr('窗台高','Sill height')} (mm)<input type="number" id="baySill" value="${bay.sill ?? ''}" placeholder="—" min="0" max="3000" step="10"></label>
+      <label class="full"><span><input type="checkbox" id="bayCushion" ${bay.cushion ? 'checked' : ''} style="width:auto"> ${tr('带飘窗垫','With cushion')}</span></label>` : ''}
       <label class="full">${tr('轮廓顶点（每行 x,y）','Outline vertices (x,y per line)')}
-        <textarea id="roomPoly" rows="4" spellcheck="false">${r.poly.map(p => `${Math.round(p[0])},${Math.round(p[1])}`).join('\n')}</textarea></label>
+        <textarea id="roomPoly" rows="4" spellcheck="false">${vertices.map(p => `${Math.round(p[0])},${Math.round(p[1])}`).join('\n')}</textarea></label>
+      ${isBay || r.arcs?.length ? `<label class="full">${tr('弧形边（每行 边序号,角度）','Curved edges (edge number, angle per line)')}
+        <textarea id="roomArcs" rows="2" spellcheck="false">${(r.arcs || []).map(arc => `${arc.edge+1},${arc.sweep}`).join('\n')}</textarea></label>` : ''}
     </div>
     ${isBay ? '' : `<div class="form" style="margin-top:8px">
       <label>${tr('外沿','Outer edge')}<select id="bayEdge">${edgeOptions || `<option value="">${tr('暂无可用直边','No straight edges')}</option>`}</select></label>
       <label>${tr('进深','Depth')} (mm)<input type="number" id="bayDepth" value="600" min="200" max="2000" step="50"></label>
+      <label>${tr('窗面','Front shape')}<select id="bayShape"><option value="straight">${tr('直边','Straight')}</option><option value="arc">${tr('弧形','Curved')}</option></select></label>
     </div><div class="actions"><button class="btn" id="bayAdd">${tr('新增飘窗模块','Add bay window')}</button></div>`}
   </section>
   <section><h3>${tr('地面材料','Flooring')}</h3><div class="mats">${mats}</div>
-    <div class="total"><span>${tr('材料估价','Estimated cost')}</span><b>¥${Math.round(a*info.price*1.05).toLocaleString()}</b></div></section>
+    ${priceControls(st.mat)}
+    <div class="total"><span>${tr('按当前单价估算','Estimated at current price')}</span><b>¥${Math.round(flooringCost(a, activeMaterialPrice(st.mat))).toLocaleString()}</b></div></section>
   <section><h3>${tr('房间效果图','Room render')} ${latest ? `<small>${tr('最近一张','Latest')}</small>` : ''}</h3>${shotHtml}</section>
   <section><h3>${componentCount(inside) ? tr('房间内家具和构件','Furniture and components in room') : tr('房间内家具','Furniture in room')} <small>${tr(`${inside.length} 件`, `${inside.length} items`)}</small></h3>
     <table>${inside.map(f => `<tr class="click" data-fid="${esc(f.id)}"><td>${esc(nm(f.name))}</td><td class="r muted">${f.w}×${f.d}</td></tr>`).join('') || `<tr><td class="muted">${tr('暂无','None')}</td></tr>`}</table>
     <div class="actions"><button class="btn" id="back">${tr('← 返回总览','← Back to overview')}</button></div></section>`;
 }
 function bindRoomPanel(){
+  bindPrices();
   const id = ui.sel.id;
+  const editableRoom = () => PLAN.rooms.find(room => room.id === id);
   $('#rName').onchange = e => mutate(() => roomState(id).name = e.target.value.trim() || roomState(id).name);
   document.querySelectorAll('#panel [data-mat]').forEach(b => b.onclick = () => mutate(() => roomState(id).mat = matKey(b.dataset.mat)));
   document.querySelectorAll('#panel tr[data-fid]').forEach(tr => tr.onclick = () => select({kind:'furn', id:tr.dataset.fid}));
   if ($('#enterRoomBtn')) $('#enterRoomBtn').onclick = () => { closeDrawers(); studioEnterRoom(id); };
   if ($('#roomThumb')) $('#roomThumb').onclick = () => { const rec = roomLatestRender(id); if (rec) openLightbox(rec.url, rRecTitle(rec), rec); };
   $('#roomCounted').onchange = e => editStructure(() => {
-    const room = roomDef(id); if (!room) return;
+    const room = editableRoom(); if (!room) return;
     if (e.target.checked) delete room.counted; else room.counted = false;
   });
-  const bayEdit = fn => editStructure(() => { const room = roomDef(id); if (!room) return; const bay = room.bay || (room.bay = {}); fn(room, bay); });
-  $('#baySill').onchange = e => { const v = e.target.valueAsNumber; bayEdit((room, bay) => { if (Number.isFinite(v)) bay.sill = Math.max(0, Math.min(3000, v)); else delete bay.sill; }); };
-  $('#bayCushion').onchange = e => bayEdit((room, bay) => { bay.cushion = e.target.checked; });
+  const bayEdit = fn => editStructure(() => { const room = editableRoom(); if (!room) return; const bay = room.bay || (room.bay = {}); fn(room, bay); });
+  if ($('#baySill')) $('#baySill').onchange = e => { const v = e.target.valueAsNumber; bayEdit((room, bay) => { if (Number.isFinite(v)) bay.sill = Math.max(0, Math.min(3000, v)); else delete bay.sill; }); };
+  if ($('#bayCushion')) $('#bayCushion').onchange = e => bayEdit((room, bay) => { bay.cushion = e.target.checked; });
   $('#roomPoly').onchange = e => {
     const points = e.target.value.split(/\n+/).map(line => line.split(/[,\s]+/).map(Number).slice(0, 2))
       .filter(p => p.length === 2 && p.every(Number.isFinite));
     if (points.length < 3) return toast(tr('至少需要 3 个顶点', 'At least 3 vertices are required'));
-    editStructure(() => { const room = roomDef(id); if (room){ room.poly = points; room.at = polyCenter(points); room.arcs = []; } });
+    const room = editableRoom(); if (!room) return;
+    if (room.arcs?.length && (points.length !== room.poly.length || normalizeRoomArcs(room.arcs, points, points).length !== room.arcs.length)){
+      renderPanel(); return toast(tr('这些顶点会改变现有弧形边，请先调整弧形边。', 'These vertices would invalidate the curved edges. Adjust the curves first.'));
+    }
+    editStructure(() => { room.poly = points; room.at = polyCenter(points); });
+  };
+  if ($('#roomArcs')) $('#roomArcs').onchange = e => {
+    const room = editableRoom(); if (!room) return;
+    const lines = e.target.value.trim().split('\n').filter(line => line.trim());
+    const parsed = lines.map(line => {
+      const [edge,sweep] = line.trim().split(/[,，\s]+/).map(Number);
+      return {edge:edge-1,sweep};
+    });
+    const arcs = normalizeRoomArcs(parsed, room.poly, room.poly);
+    if (arcs.length !== lines.length){ renderPanel(); return toast(tr('弧形边的编号或角度无效。', 'A curved edge number or angle is invalid.')); }
+    editStructure(() => { if (arcs.length) room.arcs = arcs; else delete room.arcs; });
   };
   if ($('#bayAdd')) $('#bayAdd').onclick = () => {
     const edge = +$('#bayEdge').value, depth = $('#bayDepth').valueAsNumber;
     if (!Number.isInteger(edge)) return toast(tr('请选择房间外沿', 'Choose an outer edge'));
-    const res = addBayWindow(id, edge, Number.isFinite(depth) ? depth : 600);
+    const res = addBayWindow(id, edge, Number.isFinite(depth) ? depth : 600, $('#bayShape').value);
     if (!res.ok) toast(res.error);
   };
   bindCheckIssues();
@@ -3500,39 +3979,53 @@ function bindRoomPanel(){
 }
 
 // 新增飘窗模块：沿房间外沿生成「不计面积房间 + 三面窗段」（设计 §5.3）。
-function addBayWindow(roomId, edge, depth){
+function addBayWindow(roomId, edge, depth, shape){
   const room = roomDef(roomId);
   if (!room) return {ok:false, error:tr('房间不存在', 'Room not found')};
-  const p = room.poly[edge], q = room.poly[(edge + 1) % room.poly.length];
+  const vertices = room.vertices || room.poly;
+  const p = vertices[edge]?.slice(), q = vertices[(edge + 1) % vertices.length]?.slice();
   if (!p || !q) return {ok:false, error:tr('房间边无效', 'Invalid room edge')};
   const dx = q[0]-p[0], dy = q[1]-p[1];
+  const chord = Math.hypot(dx,dy);
   const horiz = Math.abs(dy) <= .5, vert = Math.abs(dx) <= .5;
-  if (!horiz && !vert) return {ok:false, error:tr('只支持水平 / 垂直外沿', 'Only horizontal or vertical edges are supported')};
+  if (chord < 300 || (!horiz && !vert) || room.arcs?.some(arc => arc.edge === edge)) return {ok:false, error:tr('请选择至少 300 mm 长的水平或垂直直边', 'Choose a horizontal or vertical straight edge at least 300 mm long')};
   depth = Math.max(200, Math.min(2000, Math.round(depth || 600)));
   const mx = (p[0]+q[0])/2, my = (p[1]+q[1])/2;
   // 找到指向房间外的法线
   const normal = horiz ? [0, 1] : [1, 0];
   const probe = [mx + normal[0]*20, my + normal[1]*20];
   const out = pointInPoly(probe[0], probe[1], room.poly) ? [-normal[0], -normal[1]] : normal;
-  const p2 = [p[0] + out[0]*depth, p[1] + out[1]*depth], q2 = [q[0] + out[0]*depth, q[1] + out[1]*depth];
+  const rise = shape === 'arc' ? Math.min(depth/2, chord/3) : 0;
+  const wing = depth-rise, wingPoint = ([x,y]) => [x+out[0]*wing, y+out[1]*wing];
+  const p2 = wingPoint(p), q2 = wingPoint(q);
+  let sweep = rise ? 4*Math.atan(2*rise/chord)*180/Math.PI : 0;
+  if (sweep){
+    const curve = arcGeometry(q2,p2,sweep,80);
+    if (!curve) return {ok:false, error:tr('无法形成有效弧面，请调整进深。', 'Adjust the depth to create a valid curve.')};
+    const mid = curvePoint(curve, .5);
+    const [cx,cy] = wingPoint([mx,my]);
+    if ((mid[0]-cx)*out[0] + (mid[1]-cy)*out[1] < 0) sweep = -sweep;
+  }
   const bay = {
     id: 'bay-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 5),
     name: tr('飘窗', 'Bay window'), poly:[p, q, q2, p2], mat: room.mat,
     at: [Math.round((p[0]+q[0]+p2[0]+q2[0])/4), Math.round((p[1]+q[1]+p2[1]+q2[1])/4)],
     counted:false, source:'user', bay:{sill:450},
   };
+  if (sweep) bay.arcs = [{edge:2,sweep}];
   const side = (a, b) => {
     const x0 = Math.min(a[0], b[0]) - 40, x1 = Math.max(a[0], b[0]) + 40;
     const y0 = Math.min(a[1], b[1]) - 40, y1 = Math.max(a[1], b[1]) + 40;
     return {id:'win-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 5),
       rect:[x0, y0, x1, y1], source:'user', style:'bay'};
   };
-  const wins = [side(p, p2), side(p2, q2), side(q2, q)];
+  const front = side(p2,q2);
+  if (sweep){ delete front.rect; Object.assign(front,{from:q2.slice(),to:p2.slice(),sweep,thickness:80}); }
+  const wins = [side(p,p2), front, side(q2,q)];
   const before = snap();
   PLAN.rooms.push(bay);
   WINS.push(...wins);
-  ROOMS = PLAN.rooms.map(r => r.arcs?.length ? {...r, vertices:r.poly, poly:roomOutline(r)} : r);
-  syncDimAnchors();
+  installPlan(PLAN);
   commit(before); save(); renderDims(); renderOpenings(); renderAll();
   return {ok:true, room:bay, wins};
 }
@@ -3668,6 +4161,7 @@ function applyView(){
   $('#sbBar').style.width = nice*view.s + 'px';
   $('#sbText').textContent = nice >= 1000 ? `${nice/1000} m` : `${nice} mm`;
   renderSel(); renderMeasure(); renderChecks();
+  if (checkMode) renderDrawingCheck();
 }
 function fitView(){
   const W = svg.clientWidth, H = svg.clientHeight;
@@ -3683,10 +4177,39 @@ function zoomAt(ns, mx, my){
 const zoomCenter = k => zoomAt(view.s*k, svg.clientWidth/2, svg.clientHeight/2);
 const setRatio = r => zoomAt(1/(r*PX_MM), svg.clientWidth/2, svg.clientHeight/2);
 
-function toMM(e){
+function toMM(e, surface = svg){
   const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-  return pt.matrixTransform(svg.getScreenCTM().inverse());
+  return pt.matrixTransform(surface.getScreenCTM().inverse());
 }
+
+const sourcePane = $('#sourcePane');
+sourcePane.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || drawingPan) return;
+  drawingPan = {id:e.pointerId, x:e.clientX, y:e.clientY, x0:view.x0, y0:view.y0, moved:false};
+  sourcePane.setPointerCapture(e.pointerId);
+});
+sourcePane.addEventListener('pointermove', e => {
+  if (drawingPan?.id !== e.pointerId) return;
+  const dx = e.clientX - drawingPan.x, dy = e.clientY - drawingPan.y;
+  if (!drawingPan.moved && Math.hypot(dx, dy) < TAP) return;
+  drawingPan.moved = true; view.x0 = drawingPan.x0 - dx/view.s; view.y0 = drawingPan.y0 - dy/view.s; applyView();
+});
+sourcePane.addEventListener('pointercancel', e => { if (drawingPan?.id === e.pointerId) drawingPan = null; });
+sourcePane.addEventListener('pointerup', e => {
+  if (drawingPan?.id !== e.pointerId) return;
+  const click = !drawingPan.moved; drawingPan = null;
+  if (!click || !drawingImage || !drawingCalibration || drawingCalibration.original.length >= 2) return;
+  const p = toMM(e, $('#sourceImage'));
+  if (p.x < 0 || p.y < 0 || p.x > drawingImage.width || p.y > drawingImage.height){
+    return toast(tr('请在原图图纸范围内选点', 'Pick a point within the original image'));
+  }
+  collectDrawingPoint([p.x,p.y], true);
+});
+sourcePane.addEventListener('wheel', e => {
+  e.preventDefault();
+  const box = sourcePane.getBoundingClientRect();
+  zoomAt(view.s * Math.exp(-e.deltaY*.0015), e.clientX - box.left, e.clientY - box.top);
+}, {passive:false});
 
 /* ======================= 吸附 ======================= */
 const grid = () => 10;
@@ -3721,6 +4244,7 @@ function snapPoint(p, shift){
 /* ======================= 指针交互 ======================= */
 let drag = null, pinch = null;
 const touches = new Map();                     // 当前按在平面图上的手指
+const openingOf = (kind, id) => (kind === 'win' ? WINS : kind === 'door' ? DOORS : SLIDES).find(item => item.id === id);
 const svgXY = (x, y) => { const r = svg.getBoundingClientRect(); return [x - r.left, y - r.top]; };
 function pinchInfo(){
   const [a, b] = [...touches.values()];
@@ -3742,10 +4266,15 @@ function endDrag(cancel){
     return;
   }
   if (d.moved){
-    if (['dim-line', 'dim-end', 'wall-end'].includes(d.kind)){
+    if (['dim-line', 'dim-end', 'wall-end', 'opening'].includes(d.kind)){
+      if (cancel){ restore(d.before); renderDims(); renderOpenings(); renderAll(); return; }
       const bad = degeneratePlan(PLAN);
       if (bad){ restore(d.before); renderAll(); toast(bad); return; }
-      syncDimAnchors();
+      if (d.kind === 'wall-end'){
+        installPlan(PLAN);
+        syncDimAnchors(JSON.parse(d.before).plan);
+      }
+      if (d.kind === 'opening') installPlan(PLAN);
       commit(d.before); buildDefs(); renderDims(); renderOpenings(); renderAll(); return;
     }
     commit(d.before); renderAll();
@@ -3767,6 +4296,11 @@ svg.addEventListener('pointerdown', e => {
   }
   if (pinch) return;
   const p = toMM(e), t = e.target;
+  if (checkMode && drawingCalibration?.original.length === 2 && drawingCalibration.model.length < 2){
+    const anchor = nearestAnchor(p, Math.max(20, 10/view.s));
+    collectDrawingPoint(anchor?.point || [p.x,p.y], false);
+    return;
+  }
   if (checkMode && ui.dimDraft){
     const anchor = nearestAnchor(p);
     if (!anchor) return toast(tr('请点在墙面或房间边上', 'Pick a point on a wall or room edge'));
@@ -3787,6 +4321,7 @@ svg.addEventListener('pointerdown', e => {
     renderMeasure(); return;
   }
   const h = t.closest('[data-handle]');
+  const openingHit = checkMode && t.closest('[data-opening]');
   if (h && ui.sel?.kind === 'furn'){
     drag = {kind:h.dataset.handle, id:ui.sel.id, sx:e.clientX, sy:e.clientY, before:snap(), moved:false};
   } else if (checkMode && t.closest('[data-dim-handle]')){
@@ -3802,6 +4337,14 @@ svg.addEventListener('pointerdown', e => {
   } else if (checkMode && t.closest('[data-wall-handle]') && ui.sel?.kind === 'wall'){
     drag = {kind:'wall-end', id:ui.sel.id, end:t.closest('[data-wall-handle]').dataset.wallHandle,
       sx:e.clientX, sy:e.clientY, before:snap(), moved:false};
+  } else if (ui.tool === 'select' && openingHit){
+    const {opening:kind, openingId:id} = openingHit.dataset, item = openingOf(kind,id);
+    if (!item) return;
+    select({kind,id});
+    drag = {kind:'opening', opening:kind, id, item:deepCopy(item), sx:e.clientX, sy:e.clientY,
+      x:p.x, y:p.y, before:snap(), moved:false};
+  } else if (checkMode && ui.tool === 'select' && t.closest('[data-wall]')){
+    select({kind:'wall', id:t.closest('[data-wall]').dataset.wall}); return;
   } else if (ui.tool === 'demolish' && t.closest('[data-wall]')){
     toggleWall(t.closest('[data-wall]').dataset.wall); return;
   } else if (ui.tool === 'select' && t.closest('[data-fid]')){
@@ -3866,6 +4409,18 @@ svg.addEventListener('pointermove', e => {
       }
     }
     return;
+  }
+  if (drag.kind === 'opening'){
+    if (!drag.moved && !far) return;
+    const item = openingOf(drag.opening, drag.id);
+    if (!item) return;
+    const original = drag.item, dx = Math.round((p.x-drag.x)/10)*10, dy = Math.round((p.y-drag.y)/10)*10;
+    const shift = ([x,y]) => [x+dx,y+dy];
+    if (original.rect) item.rect = [...shift(original.rect.slice(0,2)), ...shift(original.rect.slice(2))];
+    else { item.from = shift(original.from); item.to = shift(original.to); }
+    if (Array.isArray(original.h)) item.h = shift(original.h);
+    item.source = 'user'; drag.moved = true;
+    renderOpenings(); refreshChecks(); renderChecks(); renderSel(); return;
   }
   if (drag.kind === 'wall-end'){
     if (!drag.moved && !far) return;
@@ -4057,6 +4612,7 @@ function planSnapshotURL(opts = {}){
       const q = s => clone.querySelector(s);
       if (q('#gSel')) q('#gSel').innerHTML = '';
       if (q('#gCheck')) q('#gCheck').innerHTML = '';       // 校核角标不进入导出图
+      q('#gDrawingOverlay')?.remove(); q('#gDrawingPoints')?.remove();
       if (clean) ['#gLabels', '#gMeasure', '#gDims', '#gSel'].forEach(s => { const el = q(s); if (el) el.innerHTML = ''; });
       if (q('#gGrid')) q('#gGrid').innerHTML = `<rect x="${b.x-8000}" y="${b.y-8000}" width="${b.w+16000}" height="${b.h+16000}" fill="${ui.layers.grid && !clean ? 'url(#grid)' : 'transparent'}"/>`;
       const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -4170,14 +4726,7 @@ document.addEventListener('pointerdown', e => { const m = $('details.menu'); if 
 matchMedia('(max-width:1100px)').addEventListener('change', () => drawer(null));
 drawer(null);                                  // 恢复上次的面板收起状态
 $('#exportPng').onclick = exportPNG;
-// 项目文件：plan + state + 效果图记录，换机 / 备份时完整带走
-$('#exportProj').onclick = () => {
-  if (!confirmCheckGate(tr('导出项目', 'export the project'))) return;
-  const {renders, ...rest} = state;
-  const doc = {version:2, plan:deepCopy(PLAN), state:deepCopy(rest), renders:deepCopy(renders || [])};
-  download(tr('户型装修项目', 'floor-plan-project') + '.json',
-    new Blob([JSON.stringify(doc, null, 2)], {type:'application/json'}));
-};
+$('#exportProj').onclick = async () => { await projectBoot; exportProjectPackage(projectCurrent()); };
 $('#importProj').onclick = () => $('#fileIn').click();
 $('#exportJson').onclick = () => {
   if (!confirmCheckGate(tr('导出方案', 'export the plan'))) return;
@@ -4280,6 +4829,7 @@ async function loadSamplePlan(){
 // 导入：新版 {version:2, plan, state, renders}；旧版 {furniture,...} 按 125-C 示例户型导入（失败时退到空壳）
 async function importProject(txt){
   let o; try { o = JSON.parse(txt); } catch(e){ return toast(tr('文件格式不正确', 'Invalid file format')); }
+  if (o?.version === 3) return importProjectPackage(o);
   let project, note;
   if (o && o.plan){
     const res = sanitizePlan(o.plan);
@@ -4298,7 +4848,9 @@ async function importProject(txt){
   } else {
     return toast(tr('文件格式不正确', 'Invalid file format'));
   }
-  if (await openNewProject(project)) toast(note);
+  const ok = await openNewProject(project);
+  if (ok) toast(note);
+  return ok;
 }
 
 async function resetProject(){
@@ -4658,7 +5210,7 @@ window.Studio = {
   addDim: (from, to, opts) => addDim(from, to, opts || {}),
   confirmDim: id => confirmDim(id),
   deleteDim: id => deleteDim(id),
-  addBayWindow: (roomId, edge, depth) => addBayWindow(roomId, edge, depth),
+  addBayWindow: (roomId, edge, depth, shape) => addBayWindow(roomId, edge, depth, shape),
   exportGate,
   // 结构对象选中入口：{kind:'wall'|'room'|'win'|'door'|'slide'|'dim', id}
   undo, redo,
@@ -4677,8 +5229,32 @@ function aiResponseMessage(status, body){
 
 const publicAiOffline = () => tr('公网 AI 服务暂不可用，请刷新页面后重试。', 'The public AI service is temporarily unavailable. Refresh and try again.');
 
-// 公网隧道只传短 HTTP 请求，本机入口继续直接读取原来的 SSE。
-async function readPublicJob(path, cursor, signal){
+// 识别以外的 AI 任务由服务端执行，浏览器可以离开后按任务编号续读。
+const aiTaskCacheKey = 'interior-ai-tasks-v2' + projectScope;
+const aiTaskActive = new Map(), aiTaskPending = new Map();
+let aiTaskIndicator = '';
+const aiTaskId = /^[\w-]{1,128}$/;
+const aiTaskUrl = id => studioPath('/api/jobs/task' + (id ? '/' + id : ''));
+
+function sameTaskScheme(a, b){
+  return !!(a?.projectId && b?.projectId && a.projectId === b.projectId && a.schemeId === b.schemeId);
+}
+
+function cachedAiTasks(){
+  try { return Object.assign(Object.create(null), JSON.parse(localStorage.getItem(aiTaskCacheKey) || '{}')); }
+  catch { return Object.create(null); }
+}
+
+function cacheAiTask(id, changes){
+  if (!aiTaskId.test(id || '')) return;
+  const entries = cachedAiTasks();
+  entries[id] = {...entries[id], ...changes, savedAt:Date.now()};
+  const items = Object.entries(entries).filter(([, item]) => Date.now() - item.savedAt < 86_400_000)
+    .sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, 96);
+  try { localStorage.setItem(aiTaskCacheKey, JSON.stringify(Object.fromEntries(items))); } catch {}
+}
+
+async function readAiJob(path, cursor, signal){
   for (let attempt = 1; ; attempt++){
     const response = await fetch(`${path}?cursor=${cursor}`, {cache:'no-store', signal}).catch(error => {
       if (signal.aborted || attempt === 3) throw error;
@@ -4690,15 +5266,15 @@ async function readPublicJob(path, cursor, signal){
   }
 }
 
-async function* publicJobUpdates(id, signal){
-  if (typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id)){
+async function* aiJobUpdates(id, signal){
+  if (typeof id !== 'string' || !aiTaskId.test(id)){
     throw new Error(tr('服务未返回任务编号。', 'The service did not return a job ID.'));
   }
-  const path = studioPath(`/api/jobs/${id}`);
+  const path = aiTaskUrl(id);
   let cursor = 0, done = false;
   try {
     while (!done){
-      const response = await readPublicJob(path, cursor, signal);
+      const response = await readAiJob(path, cursor, signal);
       if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
       const update = await response.json();
       if (!Array.isArray(update?.chunks) || !Number.isSafeInteger(update.cursor) || update.cursor < cursor || typeof update.done !== 'boolean'){
@@ -4707,44 +5283,168 @@ async function* publicJobUpdates(id, signal){
       cursor = update.cursor;
       done = update.done;
       yield update;
-      if (!done && !update.chunks.length) await new Promise(resolve => setTimeout(resolve, 1000));
+      if (!done && !update.chunks.length) await new Promise(resolve => setTimeout(resolve, document.hidden ? 3000 : 1000));
     }
   } finally {
-    if (!done) void fetch(path, {method:'DELETE', keepalive:true}).catch(() => {});
+    if (!done && signal.aborted) void fetch(path, {method:'DELETE', keepalive:true}).catch(() => {});
   }
 }
 
-async function* aiTextChunks(kind, init){
-  const owner = PUBLIC_ACCESS === 'owner';
-  const response = await fetch(studioPath(owner ? `/api/jobs/${kind}` : `/api/${kind}`), init);
+async function* aiTextChunks(kind, init, meta = {}){
+  const ownership = meta.ownership || projectTaskOwnership();
+  const body = JSON.stringify({...JSON.parse(init.body), ownership});
+  const response = await fetch(studioPath(`/api/jobs/${kind}`), {...init, body});
   if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
-  if (owner){
-    const {id} = await response.json();
-    let errorBody = '';
-    for await (const {chunks, status, done, error} of publicJobUpdates(id, init.signal)){
+  const {id, createdAt} = await response.json();
+  if (!aiTaskId.test(id || '')) throw new Error(tr('服务未返回任务编号。', 'The service did not return a job ID.'));
+  const task = {
+    id, kind, ownership, createdAt:createdAt || Date.now(),
+    meta:kind === 'render' ? {kind:meta.kind, cam:meta.cam, style:meta.style, note:meta.note} : {message:meta.message},
+  };
+  cacheAiTask(id, {...task, acknowledged:false});
+  aiTaskActive.set(id, task);
+  meta.onJob?.(id);
+  let buffer = '';
+  try {
+    for await (const {chunks, status, done, error} of aiJobUpdates(id, init.signal)){
       if (error) throw new Error(error);
       if (status >= 300){
-        errorBody += chunks.join('');
-        if (done) throw new Error(aiResponseMessage(status, errorBody));
+        if (done) throw new Error(aiResponseMessage(status, chunks.join('')));
       } else {
+        const parsed = takeSSE(buffer + chunks.join('')); buffer = parsed.rest;
+        for (const event of parsed.events)
+          if (event.type === 'status' && event.text) task.label = event.text;
+        paintAiTaskInbox();
         yield* chunks;
       }
     }
-    return;
-  }
-  if (!response.body) throw new Error(tr('当前浏览器不支持流式读取', 'Streaming is not supported in this browser'));
-  const reader = response.body.getReader(), decoder = new TextDecoder();
-  try {
-    for (;;){
-      const {done, value} = await reader.read();
-      if (done) break;
-      yield decoder.decode(value, {stream:true});
-    }
-    const rest = decoder.decode();
-    if (rest) yield rest;
   } finally {
-    reader.releaseLock();
+    if (init.signal.aborted) cacheAiTask(id, {acknowledged:true});
+    aiTaskActive.delete(id);
+    paintAiTaskInbox();
   }
+}
+
+function rememberPendingChat(task, result){
+  aiTaskPending.set(task.id, {...task, result});
+  paintAiTaskInbox();
+}
+
+async function recoverAiTask(task){
+  if (aiTaskActive.has(task.id) || aiTaskPending.has(task.id)) return;
+  aiTaskActive.set(task.id, task);
+  let buffer = '', result, failure = '', terminal = false;
+  try {
+    for await (const update of aiJobUpdates(task.id, new AbortController().signal)){
+      task.phase = update.phase || task.phase;
+      const parsed = takeSSE(buffer + update.chunks.join('')); buffer = parsed.rest;
+      for (const event of parsed.events){
+        if (event.type === 'status') task.label = event.text;
+        if (event.type === 'error') failure = event.message;
+        if (event.type === 'result' && task.kind === 'chat') result = event.result;
+        if (event.type === 'image' && task.kind === 'render') result = event;
+      }
+      if (update.done){
+        terminal = true;
+        result ||= update.result;
+        failure ||= update.error || (update.status >= 300 ? aiResponseMessage(update.status) : '');
+      }
+      paintAiTaskInbox();
+    }
+    if (!terminal || cachedAiTasks()[task.id]?.acknowledged) return;
+    if (task.kind === 'render' && result?.url && !failure){
+      const record = recordRenderResult(result, {...task.meta, jobId:task.id});
+      const saved = await saveProjectTaskRender(task.ownership, record);
+      if (saved !== false){
+        cacheAiTask(task.id, {acknowledged:true});
+        if (sameTaskScheme(task.ownership, {projectId:activeProjectId, schemeId:activeSchemeId})){
+          renderHistory();
+        } else aiTaskPending.set(task.id, {...task, complete:true});
+      }
+      else aiTaskPending.set(task.id, {...task, failure:tr('原方案已删除或存储不可用。', 'The original design was deleted or storage is unavailable.')});
+    } else if (task.kind === 'chat' && result && !failure) rememberPendingChat(task, result);
+    else aiTaskPending.set(task.id, {...task, failure:failure || tr('任务未返回可读取的结果。', 'The task returned no readable result.')});
+  } catch(error){
+    if (/404/.test(error.message)) cacheAiTask(task.id, {acknowledged:true});
+  } finally {
+    aiTaskActive.delete(task.id);
+    paintAiTaskInbox();
+  }
+}
+
+async function recoverAiTasks(){
+  if (!projectAi || document.hidden) return;
+  try {
+    const response = await fetch(aiTaskUrl(), {cache:'no-store', signal:AbortSignal.timeout(8000)});
+    if (!response.ok) return;
+    const {jobs} = await response.json();
+    const cached = cachedAiTasks();
+    for (const job of jobs || []){
+      if (!aiTaskId.test(job.id || '') || !['chat', 'render'].includes(job.kind) ||
+          !job.ownership?.projectId || cached[job.id]?.acknowledged ||
+          !projectRows.has(job.ownership.projectId)) continue;
+      void recoverAiTask({...cached[job.id], ...job});
+    }
+  } catch { /* Reconnect on the next visible refresh. */ }
+}
+
+function paintAiTaskInbox(){
+  const ownership = {projectId:activeProjectId, schemeId:activeSchemeId};
+  const indicator = [...aiTaskActive.keys(), ...aiTaskPending.keys()].join(',');
+  if (indicator !== aiTaskIndicator){
+    aiTaskIndicator = indicator;
+    if (!projectPanel.hidden) renderProjects();
+  }
+  const title = tr('户型装修设计', 'Floor Plan Designer');
+  document.title = aiTaskPending.size ? `(${aiTaskPending.size}) ${title}` : title;
+  const describe = task => {
+    const elapsed = Math.max(0, Math.floor((Date.now() - task.createdAt) / 1000));
+    return `${task.label || tr('后台处理中', 'Running in background')} · ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')} · ${tr('可以离开', 'You can leave')}` +
+      (PUBLIC_ACCESS === 'owner' ? tr(' · 总时限 15 分钟', ' · 15 min limit') : '');
+  };
+  for (const kind of ['chat', 'render']){
+    const box = $(`#${kind}TaskInbox`);
+    if (!box) continue;
+    const running = [...aiTaskActive.values()].filter(task => task.kind === kind && sameTaskScheme(task.ownership, ownership));
+    const pending = [...aiTaskPending.values()].filter(task => task.kind === kind && sameTaskScheme(task.ownership, ownership));
+    box.hidden = !running.length && !pending.length;
+    const summary = running.map(describe).join(' / ');
+    if (box.firstElementChild?.textContent !== summary || box.childElementCount !== 1 + pending.length ||
+        pending.some(task => !Array.from(box.children).some(child => child.dataset.task === task.id))){
+      const status = document.createElement('span'); status.textContent = summary;
+      box.replaceChildren(status);
+      for (const task of pending){
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'btn';
+        button.dataset.task = task.id;
+        button.textContent = task.failure || (task.complete
+          ? tr('效果图已保存到此方案', 'Render saved to this design')
+          : tr('查看已完成的助手回复', 'View completed assistant reply'));
+        button.onclick = () => {
+          if (!sameTaskScheme(task.ownership, projectTaskOwnership())) return;
+          aiTaskPending.delete(task.id);
+          cacheAiTask(task.id, {acknowledged:true});
+          if (task.result){
+            if (task.meta?.message) chatAdd('me', task.meta.message);
+            const bubble = chatAdd('bot', task.result.reply);
+            if (task.ownership.baseRevision === projectTaskOwnership().baseRevision){
+              if (!task.result.ops?.length || confirm(tr('将这条助手回复中的修改应用到当前方案？', 'Apply the changes from this reply to the current design?'))){
+                chatResult(task.result, bubble, null);
+              }
+            } else if (task.result.ops?.length){
+              chatMeta(bubble, tr('提交后方案已修改，请按当前方案重新发送指令。', 'The design has changed. Send the request again for the current design.'));
+            }
+          }
+          paintAiTaskInbox();
+        };
+        box.append(button);
+      }
+    }
+  }
+}
+
+function projectAiTaskCount(projectId){
+  return [...aiTaskActive.values(), ...aiTaskPending.values()].filter(task => task.ownership?.projectId === projectId).length;
 }
 
 /* ======================= 图纸上传与结果预览 ======================= */
@@ -4753,7 +5453,7 @@ const IMP_MAX_BYTES = 25 * 1024 * 1024;    // 服务端上限 40 MiB，给 base6
 const IMP_MAX_FILES = 20;
 const IMP_UPLOAD_TIMEOUT = 5 * 60_000;
 const impState = {files:[], result:null, onApply:null, retryId:null, attachSource:null, submission:null, applying:false,
-  review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null,
+  review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null, reviewSchemeId:null,
   reviewVariant:'fixed', reviewBase:null, reviewApplied:false, reviewTimer:0,
   reviewRerun:true, reviewGen:0, reviewSince:0};
 const impEls = {};
@@ -5016,6 +5716,7 @@ function impOpenResult(data, onApply, meta = {}){
   impState.reviewState = typeof meta.reviewState === 'string' ? meta.reviewState : null;
   impState.reviewMode = meta.mode === 'project' ? 'project' : 'preview';
   impState.reviewRowId = typeof meta.rowId === 'string' ? meta.rowId : null;
+  impState.reviewSchemeId = typeof meta.schemeId === 'string' ? meta.schemeId : null;
   impState.reviewVariant = 'fixed';
   impState.reviewBase = null;
   impState.reviewApplied = false;
@@ -5043,7 +5744,7 @@ function impReviewStop(){
 function impReviewReset(){
   impReviewStop();
   impState.review = null; impState.reviewJobId = null; impState.reviewState = null;
-  impState.reviewMode = 'preview'; impState.reviewRowId = null;
+  impState.reviewMode = 'preview'; impState.reviewRowId = null; impState.reviewSchemeId = null;
   impState.reviewVariant = 'fixed'; impState.reviewBase = null; impState.reviewApplied = false;
   impState.reviewRerun = true; impState.reviewSince = 0;
   impReviewRender();
@@ -5179,9 +5880,9 @@ async function impReviewApplyProject(){
   const fixed = impReviewFixedData();
   if (!fixed) return;
   // 对比弹窗不拦截背景点击：执行前必须确认用户还在被对比的那个项目上。
-  if (!impState.reviewRowId || impState.reviewRowId !== activeProjectId){
+  if (!impState.reviewRowId || impState.reviewRowId !== activeProjectId || impState.reviewSchemeId !== activeSchemeId){
     impClose();
-    toast(tr('当前项目已切换，请重新打开对比后再应用。', 'The project changed. Reopen the comparison to apply.'));
+    toast(tr('当前方案已切换，请重新打开复核结果。', 'The scheme changed. Reopen the review to apply it.'));
     return;
   }
   const requested = projectRows.get(activeProjectId)?.reviewRequestedSig;
@@ -5209,6 +5910,7 @@ async function impReviewApplyProject(){
   if (current){
     // 记住应用时的场景指纹与复核版本：撤销或重新复核后「已应用」自动失效。
     void putProject({...current, reviewApplied:true,
+      reviewAppliedSchemeId:activeSchemeId,
       reviewAppliedSig:sceneSignature(Studio.projectJSON()),
       reviewAppliedReview:Number.isFinite(+impState.review?.updatedAt) ? +impState.review.updatedAt : 0,
       updatedAt:current.updatedAt || Date.now()});
@@ -6019,7 +6721,7 @@ function chatFocus(focus){
 function chatResult(r, bubble, context){
   const ops = Array.isArray(r.ops) ? r.ops : [];
   if (ops.length){
-    if (ops.some(op => op?.op === 'editScene') &&
+    if (context && ops.some(op => op?.op === 'editScene') &&
         (JSON.stringify(context.plan) !== JSON.stringify(Studio.getPlan()) ||
          JSON.stringify(context.state) !== JSON.stringify(editableChatState()))){
       chatMeta(bubble, tr('等待回复时方案已改变，请基于当前方案重发这条指令。',
@@ -6060,46 +6762,65 @@ async function chatSend(){
   const text = chatEls.in.value.trim();
   if (!text) return;
   chatEls.in.value = '';
+  const ownership = projectTaskOwnership();
+  const isCurrent = () => sameTaskScheme(ownership, {projectId:activeProjectId, schemeId:activeSchemeId});
   chatAdd('me', text);
   const ctrl = new AbortController();
   chatState.ctrl = ctrl;
   chatBusy(true);
   chatStatus(tr('正在准备上下文…', 'Preparing context…'), true);
-  let cur = null;
+  let cur = null, jobId = null;
   try {
     const [context, images] = await buildChatContext();
     if (ctrl.signal.aborted) throw new DOMException('aborted', 'AbortError');
+    if (!isCurrent()) return;
     chatStatus(tr('正在思考…', 'Thinking…'), true);
     const chunks = aiTextChunks('chat', {
       method:'POST',
       headers:{'content-type':'application/json'},
-      body: JSON.stringify({sessionId: activeProjectId ? `${chatSid}-${activeProjectId}` : chatSid, message: text, context, images}),
+      body: JSON.stringify({sessionId: `${chatSid}-${ownership.schemeId || ownership.projectId || 'draft'}`, message: text, context, images}),
       signal: ctrl.signal,
-    });
+    }, {ownership, message:text, onJob:id => { jobId = id; }});
     let buf = '', acc = '', got = false, erred = false;
-    const ensure = () => cur || (cur = chatAdd('bot', ''));
+    const ensure = () => cur?.el.isConnected ? cur : (cur = chatAdd('bot', ''));
     for await (const textChunk of chunks){
       buf += textChunk;
       const step = takeSSE(buf); buf = step.rest;
       for (const ev of step.events){
         const type = ev && ev.type;
-        if (type === 'status' && ev.text){ chatStatus(String(ev.text), true); }
+        if (type === 'status' && ev.text && isCurrent()){ chatStatus(String(ev.text), true); }
         else if (type === 'delta' && ev.text){
-          acc += ev.text; const m = ensure(); m.text = acc; m.el.innerHTML = mdLite(acc); chatScroll();
+          acc += ev.text;
+          if (isCurrent()){
+            const m = ensure(); m.text = acc; m.el.innerHTML = mdLite(acc); chatScroll();
+          }
         }
         else if (type === 'result' && ev.result && typeof ev.result === 'object'){
           got = true;
           const r = ev.result;
           const reply = typeof r.reply === 'string' && r.reply.trim() ? r.reply : acc;
-          const m = ensure(); m.text = reply; m.el.innerHTML = mdLite(reply);
-          chatResult(r, m, context);
-          chatScroll();
+          if (!isCurrent() || ownership.baseRevision !== projectTaskOwnership().baseRevision){
+            if (jobId) rememberPendingChat({id:jobId, kind:'chat', ownership, meta:{message:text}}, {...r, reply});
+          } else if (!jobId || !cachedAiTasks()[jobId]?.acknowledged){
+            const m = ensure(); m.text = reply; m.el.innerHTML = mdLite(reply);
+            chatResult(r, m, context);
+            if (jobId) cacheAiTask(jobId, {acknowledged:true});
+            chatScroll();
+          }
         }
-        else if (type === 'error'){ erred = true; chatAdd('err', String(ev.message || tr('服务返回错误', 'The service returned an error'))); }
+        else if (type === 'error'){
+          erred = true;
+          const failure = String(ev.message || tr('服务返回错误', 'The service returned an error'));
+          if (isCurrent()){
+            chatAdd('err', failure);
+            if (jobId) cacheAiTask(jobId, {acknowledged:true});
+          }
+        }
       }
     }
-    if (!got && !erred && !ctrl.signal.aborted && !cur) chatAdd('err', tr('没有收到回复，请重试。', 'No reply received — please try again.'));
+    if (isCurrent() && !got && !erred && !ctrl.signal.aborted && !cur) chatAdd('err', tr('没有收到回复，请重试。', 'No reply received — please try again.'));
   } catch(e){
+    if (!isCurrent()) return;
     if (e && e.name === 'AbortError'){
       if (cur) chatMeta(cur, tr('已停止生成', 'Generation stopped'));
       else chatAdd('err', tr('已停止', 'Stopped'));
@@ -6256,7 +6977,7 @@ function renderCorners(){
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn' + (renderState.corner === i ? ' on' : '');
     b.textContent = tr(zh, en);
-    b.onclick = () => { renderState.corner = i; renderCorners(); renderFly(); };
+    b.onclick = () => { renderState.corner = i; renderRememberOptions(); renderCorners(); renderFly(); };
     box.appendChild(b);
   });
 }
@@ -6268,10 +6989,41 @@ function renderStyles(){
   R_STYLES.forEach(([zh, en]) => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn' + (renderState.style === zh ? ' on' : '');
+    b.setAttribute('aria-pressed', String(renderState.style === zh));
     b.textContent = tr(zh, en);
-    b.onclick = () => { renderState.style = zh; renderStyles(); };
+    b.onclick = () => {
+      renderState.style = zh;
+      renderRememberOptions();
+      for (const button of box.querySelectorAll('button')){
+        const selected = button === b;
+        button.classList.toggle('on', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      }
+    };
     box.appendChild(b);
   });
+}
+
+function renderRememberOptions(){
+  state.renderOptions = {style:renderState.style, cam:renderState.cam, corner:renderState.corner, note:renderEls.note.value};
+  save();
+}
+
+function renderRestoreOptions(){
+  const options = state.renderOptions || {};
+  renderState.style = R_STYLES.some(([style]) => style === options.style) ? options.style : R_STYLES[0][0];
+  renderState.cam = options.cam || 'current';
+  renderState.corner = options.corner || 0;
+  renderEls.cam.value = renderState.cam;
+  renderEls.note.value = options.note || '';
+  renderStyles(); renderCorners();
+  renderPromptShow('');
+}
+
+function renderPromptShow(prompt, open = false){
+  renderEls.promptBox.hidden = !prompt;
+  renderEls.promptBox.open = open;
+  renderEls.prompt.textContent = prompt || '';
 }
 
 function renderNotice(){
@@ -6318,8 +7070,9 @@ function renderAvailability(){
     : !is3 ? tr('需要 3D 场景', 'Needs the 3D scene') : '';
   e.gen.disabled = !!why || renderState.busy;
   e.gen.title = why;
-  e.re.disabled = !online || !is3 || renderState.busy;
-  e.re.title = why;
+  const canReplay = validRenderReference(renderState.last?.referenceUrl);
+  e.re.disabled = !online || !canReplay || renderState.busy;
+  e.re.title = !canReplay ? tr('这条记录没有保存参考图。', 'This record has no saved reference image.') : '';
   e.dl.disabled = !renderState.last || renderState.online === false;
 }
 
@@ -6370,6 +7123,8 @@ function renderOutShow(url, bust){
 function renderShowRec(rec, open){
   renderState.last = rec;
   renderOutShow(rec.url);
+  if (validRenderReference(rec.referenceUrl)) renderRefShow(renderAssetUrl(rec.referenceUrl));
+  renderPromptShow(rec.prompt);
   renderEls.actions.hidden = false;
   renderEls.outCap.textContent = rRecTitle(rec) || tr('效果图', 'Render');
   renderHistory();
@@ -6409,11 +7164,11 @@ function renderRelang(){
   renderEls.cam.value = camVal;
   renderState.cam = camVal;
   renderStyles(); renderCorners();
-  renderEls.note.placeholder = tr('补充描述，例如「傍晚暖光，加一块地毯」', 'Extra notes, e.g. "warm evening light, add a rug"');
+  renderEls.note.placeholder = tr('补充光线、氛围与质感，例如「傍晚暖光，突出木纹」', 'Describe light, mood or texture, e.g. "warm evening light, emphasize wood grain"');
   renderEls.gen.textContent = renderState.busy ? tr('生成中…', 'Generating…') : tr('生成效果图', 'Generate');
   renderEls.stop.textContent = tr('停止', 'Stop');
   renderEls.dl.textContent = tr('下载', 'Download');
-  renderEls.re.textContent = tr('重新生成', 'Regenerate');
+  renderEls.re.textContent = tr('按原参考图重生成', 'Replay original reference');
   renderEls.refCap.textContent = tr('参考截图', 'Reference');
   renderEls.outCap.textContent = renderState.last ? (rRecTitle(renderState.last) || tr('效果图', 'Render')) : tr('效果图', 'Render');
   renderEls.refRetry.textContent = tr('加载失败 · 重试', 'Failed · Retry');
@@ -6505,66 +7260,81 @@ function renderFly(){
   renderState.refT = setTimeout(renderRefreshRef, 1100);
 }
 
-function renderAddRecord(rec){
-  state.renders = Array.isArray(state.renders) ? state.renders : [];
-  state.renders.push(rec);
-  if (state.renders.length > 30) state.renders.splice(0, state.renders.length - 30);
-  save();
-  renderHistory();
+function recordRenderResult(event, meta){
+  const camera = meta.cam || event.camera || {};
+  return {
+    id: meta.jobId || uid(), kind: meta.kind || event.kind || 'angle',
+    roomId: camera.roomId || null, camera: {...camera},
+    style: meta.style || event.style || R_STYLES[0][0], note: meta.note ?? event.note ?? '',
+    prompt: event.prompt || '', url: event.url, referenceUrl: event.referenceUrl || null,
+    at: new Date().toISOString(),
+  };
+}
+
+const validRenderReference = url => typeof url === 'string' && /^\/files\/(?:renders\/references|public-ai\/remote-owner)\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.png$/.test(url);
+async function renderReplayShot(referenceUrl, signal){
+  if (!validRenderReference(referenceUrl)){
+    throw new Error(tr('这条记录没有保存参考图。', 'This record has no saved reference image.'));
+  }
+  const response = await fetch(renderAssetUrl(referenceUrl), {signal});
+  if (!response.ok) throw new Error(tr('原参考图已不可用。', 'The original reference image is unavailable.'));
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 // opts.kind==='room' + opts.roomId：从室内标题条生成，机位 = 当前进房位姿（任务 5）
 async function renderGenerate(opts = {}){
   if (renderState.busy || renderState.online === false) return null;
-  if (!Studio.is3D()){ renderViewSync(); return null; }
-  if (!window.View3D){ toast(tr('3D 引擎尚未就绪', 'The 3D engine is not ready yet')); return null; }
+  const replay = opts.replay;
+  if (!replay && !Studio.is3D()){ renderViewSync(); return null; }
+  if (!replay && !window.View3D){ toast(tr('3D 引擎尚未就绪', 'The 3D engine is not ready yet')); return null; }
   if (!confirmCheckGate(tr('生成效果图', 'generate the render'))) return null;
-  const note = renderEls.note.value.trim();
-  const style = renderState.style;
+  const note = replay?.note ?? renderEls.note.value.trim();
+  const style = replay?.style || renderState.style;
   const asRoom = opts.kind === 'room' && !!roomDef(opts.roomId);
-  const kind = asRoom ? 'room' : 'angle';
+  const kind = replay?.kind || (asRoom ? 'room' : 'angle');
   const roomId = asRoom ? opts.roomId : (renderState.cam === 'corner' ? renderPickRoom() : null);
-  const cam = asRoom
-    ? {key: 'room', corner: null, roomId}
-    : {key: renderState.cam, corner: renderState.cam === 'corner' ? renderState.corner : null, roomId: roomId || null};
+  const cam = replay ? {...replay.camera} : {key:asRoom ? 'room' : renderState.cam,
+    corner:!asRoom && renderState.cam === 'corner' ? renderState.corner : null, roomId};
+  if (!cam.label) cam.label = rCamLabel(cam.key, cam.corner, cam.roomId);
+  if (!replay && cam.roomId && roomDef(cam.roomId)) cam.roomName = nm(roomState(cam.roomId).name);
+  const ownership = projectTaskOwnership();
+  const visible = () => sameTaskScheme(ownership, {projectId:activeProjectId, schemeId:activeSchemeId});
   const ctrl = new AbortController();
   renderState.ctrl = ctrl;
   renderErr('');
+  renderPromptShow('');
   renderSetBusy(true);
-  renderStatus(tr('正在截图…', 'Capturing the view…'), true);
-  let gotUrl = '', lastRec = null;
+  renderStatus(replay ? tr('正在读取原参考图…', 'Loading original reference…') : tr('正在截图…', 'Capturing the view…'), true);
+  const meta = {kind, cam, style, note, ownership, onJob: id => { meta.jobId = id; }};
+  let lastRec = null;
   try {
-    await renderWaitFly();
-    const shot = await renderShot();
+    if (!replay) await renderWaitFly();
+    if (!visible()) return null;
+    const shot = replay ? await renderReplayShot(replay.referenceUrl, ctrl.signal) : await renderShot();
     if (!shot) throw new Error(tr('截图失败（3D 画面为空）', 'Screenshot failed (empty 3D frame)'));
+    if (!visible()) return null;
     renderRefShow(shot);
-    const st = Studio.getState();
-    const scene = {
-      plan: Studio.getPlan(),
-      furniture: st.furniture,
-      materials: MATS,
-      roomMaterials: Object.fromEntries(Object.entries(st.rooms).map(([id, v]) => [id, v.mat])),
-      camera: {
-        view: window.View3D.viewInfo?.() || null,
-        preset: cam.key,
-        kind,
-        roomId: cam.roomId,
-        room: cam.roomId && roomDef(cam.roomId)
-          ? {name: roomState(cam.roomId).name, poly: roomDef(cam.roomId).poly} : null,
-      },
-    };
+    const {baseRevision} = projectTaskOwnership();
+    ownership.baseRevision = baseRevision;
+    if (!replay) cam.view = window.View3D.viewInfo?.() || null;
     const cut = shot.indexOf(',');
-    renderStatus(tr('已提交，正在生成，可能需要 1–3 分钟…', 'Submitted — generating, this can take 1–3 minutes…'), true);
+    renderStatus(tr('正在提交生成任务…', 'Submitting render job…'), true);
     const chunks = aiTextChunks('render', {
       method: 'POST',
       headers: {'content-type': 'application/json'},
       body: JSON.stringify({
         kind, roomId: cam.roomId, mime: 'image/png',
         image: cut > 0 ? shot.slice(cut + 1) : shot,
-        scene, style, note: note || undefined,
+        scene: {camera:cam}, style, note: note || undefined,
       }),
       signal: ctrl.signal,
-    });
+    }, meta);
     let buf = '', err = '';
     for await (const textChunk of chunks){
       if (renderState.online !== true){ renderState.online = true; renderNotice(); renderAvailability(); }
@@ -6572,40 +7342,34 @@ async function renderGenerate(opts = {}){
       const step = takeSSE(buf); buf = step.rest;
       for (const ev of step.events){
         const type = ev && ev.type;
-        if (type === 'status' && ev.text) renderStatus(String(ev.text), true);
+        if (type === 'status' && ev.text && visible()) renderStatus(String(ev.text), true);
+        else if (type === 'prompt' && typeof ev.text === 'string' && visible()) renderPromptShow(ev.text, true);
         else if (type === 'error'){
           err = String(ev.message || tr('服务返回错误', 'The service returned an error'));
-          renderErr(err);
+          if (visible()) renderErr(err);
         } else if (type === 'image' && typeof ev.url === 'string'){
-          gotUrl = ev.url;
-          const rec = {
-            id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-            kind,
-            roomId: cam.roomId || null,
-            camera: {key: cam.key, corner: cam.corner, roomId: cam.roomId, label: rCamLabel(cam.key, cam.corner, cam.roomId)},
-            style,
-            prompt: typeof ev.prompt === 'string' && ev.prompt ? ev.prompt : `[${style}] ${kind}`,
-            url: ev.url,
-            at: new Date().toISOString(),
-            note: note || '',
-          };
-          lastRec = rec;
-          renderAddRecord(rec);
-          renderShowRec(rec, false);
-          // 房间面板正在显示这个房间时，刷新最近一张缩略图
-          if (rec.kind === 'room' && ui.sel?.kind === 'room' && ui.sel.id === rec.roomId) renderPanel();
-          renderStatus(tr('已生成', 'Done'), false);
+          lastRec = recordRenderResult(ev, meta);
+          if (!await saveProjectTaskRender(ownership, lastRec)){
+            throw new Error(tr('效果图已生成，但原方案无法保存。', 'The render finished, but the original scheme could not be saved.'));
+          }
+          cacheAiTask(meta.jobId, {acknowledged:true});
+          if (visible()){
+            renderShowRec(lastRec, false);
+            if (lastRec.kind === 'room' && ui.sel?.kind === 'room' && ui.sel.id === lastRec.roomId) renderPanel();
+            renderStatus(tr('已生成', 'Done'), false);
+          }
         }
       }
     }
-    if (ctrl.signal.aborted){ if (!gotUrl) renderStatus(tr('已取消', 'Cancelled'), false); return lastRec; }
-    if (!gotUrl){
+    if (ctrl.signal.aborted){ if (!lastRec && visible()) renderStatus(tr('已取消', 'Cancelled'), false); return lastRec; }
+    if (!lastRec && visible()){
       if (!err) renderErr(tr('没有收到图片，请重试或在补充描述里写得更具体。', 'No image was returned — try again or add more detail.'));
       renderStatus(tr('生成失败', 'Failed'), false);
     }
   } catch(e){
+    if (!visible()) return lastRec;
     if (e && e.name === 'AbortError'){
-      if (!gotUrl) renderStatus(tr('已取消', 'Cancelled'), false);
+      if (!lastRec) renderStatus(tr('已取消', 'Cancelled'), false);
     } else {
       const msg = (e && e.message) || String(e);
       const net = e instanceof TypeError || /fetch|network|load failed/i.test(msg);
@@ -6655,7 +7419,7 @@ function renderInit(){
   Object.assign(renderEls, {
     root: id('#render'), cam: id('#rCam'), corners: id('#rCorners'), styles: id('#rStyles'),
     capture: id('#rCapture'),
-    note: id('#rNote'), st: id('#rSt'), gen: id('#rGen'), stop: id('#rStop'),
+    note: id('#rNote'), prompt: id('#rPrompt'), promptBox: id('#rPromptBox'), st: id('#rSt'), gen: id('#rGen'), stop: id('#rStop'),
     off: id('#renderOff'), err: id('#renderErr'),
     ref: id('#rRef'), refWrap: id('#rRefWrap'), refRetry: id('#rRefRetry'), refCap: id('#rRefCap'),
     out: id('#rOut'), outWrap: id('#rOutWrap'), outRetry: id('#rOutRetry'), outCap: id('#rOutCap'),
@@ -6665,11 +7429,13 @@ function renderInit(){
   });
   renderEls.cam.onchange = () => {
     renderState.cam = renderEls.cam.value;
-    renderCorners(); renderFly(); renderAvailability();
+    renderRememberOptions(); renderCorners(); renderFly(); renderAvailability();
   };
+  renderEls.note.maxLength = 1000;
+  renderEls.note.onchange = renderRememberOptions;
   renderEls.capture.onclick = renderCaptureCurrent;
   renderEls.gen.onclick = () => renderGenerate();
-  renderEls.re.onclick = () => renderGenerate();
+  renderEls.re.onclick = () => renderGenerate({replay:renderState.last});
   renderEls.stop.onclick = () => { try { renderState.ctrl?.abort(); } catch(e){} };
   renderEls.dl.onclick = () => { if (renderState.last) renderDownload(renderState.last.url, renderState.last.id); };
   renderEls.ref.onclick = () => { if (renderState.refURL) openLightbox(renderState.refURL, tr('参考截图', 'Reference'), null); };
@@ -6684,6 +7450,7 @@ function renderInit(){
   renderEls.lb.onclick = e => { if (e.target === renderEls.lb) closeLightbox(); };
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && renderEls.lb.classList.contains('on')) closeLightbox(); });
   renderRelang();
+  renderRestoreOptions();
   const last = (state.renders || []).at(-1);
   if (last) renderShowRec(last, false);          // 刷新后恢复最近一张
   renderProbe();
@@ -6697,65 +7464,198 @@ impInit();
 const projectEndpoint = studioPath('/api/jobs/plan-import');
 const projectSourceURL = jobId => studioPath('/api/jobs/' + encodeURIComponent(jobId) + '/source');
 const projectActiveKey = 'interior-active-project-v1' + projectScope;
+const projectSortKey = 'interior-project-sort-v2' + projectScope;
 const projectRows = new Map();
+const persistedSchemes = new Map();
+const projectUndoHistory = new Map();
 const projectOpening = new Set();
 const projectReviewRequests = new Set();
 const projectPanel = $('#projectPanel'), projectToggle = $('#projectToggle'), projectList = $('#projectList');
 const projectPending = row => row.phase === 'queued' || row.phase === 'running';
 const projectAi = PUBLIC_ACCESS !== 'guest' && /^https?:$/.test(location.protocol);
-let activeProjectId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
+let activeProjectId = '', activeSchemeId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
 let projectTimer = 0, projectSyncing = false, projectSyncAgain = false;
+let projectEditing = null, projectComparison = null, projectDragging = null;
+let projectSort = (() => {
+  try { return localStorage.getItem(projectSortKey) || 'recent'; } catch(e){ return 'recent'; }
+})();
 
 const projectDb = new Promise(resolve => {
   try {
-    const request = indexedDB.open('interior-projects-v1' + projectScope, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('projects', {keyPath:'id'});
-    request.onsuccess = () => resolve(request.result);
+    const request = indexedDB.open('interior-projects-v1' + projectScope, 2);
+    request.onupgradeneeded = ({oldVersion}) => {
+      const db = request.result;
+      const projects = oldVersion ? request.transaction.objectStore('projects') : db.createObjectStore('projects', {keyPath:'id'});
+      const schemes = db.createObjectStore('schemes', {keyPath:'id'});
+      schemes.createIndex('projectId', 'projectId');
+      if (!oldVersion) return;
+      const scan = projects.openCursor();
+      scan.onsuccess = () => {
+        const cursor = scan.result;
+        if (!cursor) return;
+        const {snapshot, ...row} = cursor.value;
+        if (snapshot?.plan && !row.hidden){
+          const scheme = makeProjectScheme(row.id, snapshot, tr('默认方案', 'Default scheme'));
+          schemes.put(scheme);
+          row.schemeIds = [scheme.id];
+          row.activeSchemeId = scheme.id;
+          row.baseSnapshot = snapshot;
+          row.baseSource = 'legacy';
+          if (row.jobId) row.reviewRequestedSchemeId = scheme.id;
+        }
+        cursor.update(row);
+        cursor.continue();
+      };
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = request.onblocked = () => resolve(null);
   } catch(e){ resolve(null); }
 });
-async function projectTransaction(mode, run){
+async function projectTransaction(mode, run, includeSchemes = false){
   const db = await projectDb;
   if (!db) throw new Error('Project storage unavailable');
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction('projects', mode);
-    const request = run(transaction.objectStore('projects'));
-    transaction.oncomplete = () => resolve(request.result);
-    transaction.onabort = transaction.onerror = () => reject(transaction.error || request.error);
+    const transaction = db.transaction(includeSchemes ? ['projects', 'schemes'] : 'projects', mode);
+    const stores = transaction.objectStore('projects');
+    const schemes = includeSchemes ? transaction.objectStore('schemes') : null;
+    const result = run(stores, schemes);
+    transaction.oncomplete = () => resolve(typeof result === 'function' ? result() : result?.result);
+    transaction.onabort = transaction.onerror = () => reject(transaction.error || result?.error);
   });
 }
+function makeProjectScheme(projectId, snapshot, name){
+  return {id:projectIdV2(), projectId, name, plan:snapshot.plan, state:snapshot.state || {}, updatedAt:Date.now(), revision:1};
+}
+function projectIdV2(){ return globalThis.crypto?.randomUUID?.() || uid(); }
+function projectScheme(row, id = row?.activeSchemeId){
+  return row?.schemes?.find(scheme => scheme.id === id) || null;
+}
+function projectSchemeSnapshot(scheme){
+  return scheme ? {version:2, plan:scheme.plan, state:scheme.state} : null;
+}
+function projectWithSchemes(row, schemes){
+  const current = schemes.find(scheme => scheme.id === row.activeSchemeId) || schemes[0];
+  return {...row, schemes, activeSchemeId:current?.id, snapshot:projectSchemeSnapshot(current)};
+}
+function projectWithScheme(row, scheme){
+  const schemes = row?.schemes || [];
+  return projectWithSchemes(row, schemes.some(item => item.id === scheme.id)
+    ? schemes.map(item => item.id === scheme.id ? scheme : item)
+    : [...schemes, scheme]);
+}
 async function putProject(row){
+  const {schemes, snapshot, ...record} = row;
   projectRows.set(row.id, row);
-  try { await projectTransaction('readwrite', store => store.put(row)); }
-  catch(e){ projectStorageIssue = true; renderProjects(); }
+  const next = schemes || [], schemeIds = next.map(scheme => scheme.id);
+  const removed = [...persistedSchemes.values()].filter(scheme => scheme.projectId === row.id && !schemeIds.includes(scheme.id));
+  try {
+    await projectTransaction('readwrite', (store, schemeStore) => {
+      store.put({...record, schemeIds});
+      for (const scheme of next) if (scheme !== persistedSchemes.get(scheme.id)) schemeStore.put(scheme);
+      for (const scheme of removed) schemeStore.delete(scheme.id);
+    }, true);
+    for (const scheme of next) persistedSchemes.set(scheme.id, scheme);
+    for (const scheme of removed) persistedSchemes.delete(scheme.id);
+    return true;
+  } catch(e){
+    projectStorageIssue = true;
+    keepLegacyProjectCache = true;
+    renderProjects();
+    return false;
+  }
 }
 function projectCurrent(){
   const snapshot = Studio.projectJSON();
-  return {
-    ...projectRows.get(activeProjectId), id:activeProjectId, name:snapshot.plan.name,
-    phase:'saved', snapshot, updatedAt:Date.now(),
-  };
+  const row = projectRows.get(activeProjectId) || {id:activeProjectId, createdAt:Date.now()};
+  const existing = projectScheme(row, activeSchemeId);
+  const now = Date.now();
+  const base = existing || makeProjectScheme(row.id, snapshot, tr('方案一', 'Scheme 1'));
+  const revision = (base.revision || 1) + Number(!!existing && projectRevisionSignature(snapshot) !== projectRevisionSignature(base));
+  const changed = !existing || JSON.stringify(snapshot.state) !== JSON.stringify(base.state) || revision !== base.revision;
+  const scheme = changed ? {...base, plan:snapshot.plan, state:snapshot.state, updatedAt:now, revision} : base;
+  return projectWithScheme({...row, activeSchemeId:scheme.id, name:row.name || snapshot.plan.name,
+    baseSnapshot:row.baseSnapshot || snapshot, phase:'saved', updatedAt:changed ? now : row.updatedAt}, scheme);
+}
+function projectRevisionSignature(snapshot){
+  return JSON.stringify([snapshot.plan, snapshot.state?.furniture, snapshot.state?.rooms,
+    snapshot.state?.demolished, snapshot.state?.measures]);
+}
+function projectTaskOwnership(){
+  if (!activeProjectId || !activeSchemeId) return {};
+  const row = projectCurrent();
+  return {projectId:row.id, schemeId:activeSchemeId, baseRevision:projectScheme(row, activeSchemeId).revision};
+}
+function projectTaskSnapshot(ownership){
+  if (!ownership?.projectId || !ownership.schemeId) return null;
+  const {projectId, schemeId} = ownership;
+  const row = projectId === activeProjectId && schemeId === activeSchemeId ? projectCurrent() : projectRows.get(projectId);
+  return row?.hidden ? null : projectScheme(row, schemeId);
+}
+async function saveProjectTaskRender(ownership, rec){
+  if (!rec?.id) return false;
+  const scheme = projectTaskSnapshot(ownership);
+  if (!scheme) return false;
+  const {projectId, schemeId} = ownership;
+  if ((scheme.state.renders || []).some(item => item.id === rec.id)){
+    if (persistedSchemes.get(schemeId)?.state.renders?.some(item => item.id === rec.id)) return true;
+    return putProject(projectId === activeProjectId ? projectCurrent() : projectRows.get(projectId));
+  }
+  if (projectId === activeProjectId && schemeId === activeSchemeId){
+    state.renders = [...(state.renders || []), rec].slice(-30);
+    const row = projectCurrent();
+    projectRecordActive(row);
+    const saved = await putProject(row);
+    if (!saved) save();
+    return saved;
+  }
+  const row = projectRows.get(projectId), now = Date.now();
+  const next = {...scheme, state:{...scheme.state, renders:[...(scheme.state.renders || []), rec].slice(-30)}, updatedAt:now};
+  return putProject(projectWithScheme({...row, updatedAt:now}, next));
+}
+function projectPriceDefaults(){
+  return projectRows.get(activeProjectId)?.budget?.prices || {};
+}
+async function projectConfirmScheme(){
+  if (!activeSchemeId) return;
+  const row = projectCurrent();
+  if (row.confirmedSchemeId === row.activeSchemeId && row.confirmedSnapshot?.revision === projectScheme(row).revision) return;
+  await putProject({...row, confirmedSchemeId:row.activeSchemeId, confirmedSnapshot:projectScheme(row)});
+}
+async function setProjectPriceDefaults(prices){
+  await projectBoot;
+  if (!activeProjectId) return false;
+  const row = projectCurrent();
+  const saved = await putProject({...row, budget:{...row.budget, prices:deepCopy(prices)}, updatedAt:Date.now()});
+  if (!projectPanel.hidden) renderProjects();
+  return saved;
 }
 function projectRowForJob(row){
   const current = projectRows.get(row.id);
   return current && current.jobId === row.jobId && !current.hidden ? current : null;
 }
 function projectReviewSnapshot(row){
+  const schemeId = row.id === activeProjectId ? activeSchemeId : row.activeSchemeId;
   const snapshot = row.id === activeProjectId ? Studio.projectJSON() : row.snapshot;
   if (snapshot?.plan){
-    return {result:{plan:snapshot.plan, furniture:snapshot.state?.furniture || []}, signature:sceneSignature(snapshot)};
+    return {result:{plan:snapshot.plan, furniture:snapshot.state?.furniture || []}, signature:sceneSignature(snapshot), schemeId};
   }
   return row.result?.plan ? {result:{plan:row.result.plan, furniture:row.result.furniture || []}} : null;
 }
 function projectRecordActive(row){
   try {
-    sessionStorage.setItem(projectActiveKey, row.id);
-    localStorage.setItem(projectActiveKey, JSON.stringify({id:row.id, updatedAt:row.updatedAt}));
+    const pointer = JSON.stringify({id:row.id, schemeId:row.activeSchemeId});
+    sessionStorage.setItem(projectActiveKey, pointer);
+    localStorage.setItem(projectActiveKey, pointer);
   } catch(e){}
 }
 function saveActiveProject(){
   if (!activeProjectId || projectSwitching) return;
   const row = projectCurrent();
+  activeSchemeId = row.activeSchemeId;
   projectRecordActive(row);
   void putProject(row);
   if (!projectPanel.hidden) renderProjects();
@@ -6768,6 +7668,7 @@ function loadProjectScene(snapshot){
   return result;
 }
 function refreshProjectScene(){
+  clearDrawingCheck();
   clearTimeout(chatState.focusT);
   chatState.msgs = []; chatEls.msgs.replaceChildren(); chatEls.in.value = '';
   clearTimeout(renderState.refT); renderState.refRevision++;
@@ -6775,38 +7676,52 @@ function refreshProjectScene(){
   renderEls.ref.removeAttribute('src'); renderEls.out.removeAttribute('src');
   renderEls.outCap.textContent = ''; renderEls.actions.hidden = true;
   renderErr(''); renderStatus('', false);
+  if (typeof renderRestoreOptions === 'function') renderRestoreOptions();
   const last = state.renders.at(-1);
   if (last) renderShowRec(last, false);
   else { renderHistory(); renderAvailability(); }
   chatPane('props');
-  undoStack.length = redoStack.length = 0;
+  const history = projectUndoHistory.get(activeSchemeId);
+  undoStack.splice(0, undoStack.length, ...(history?.undo || []));
+  redoStack.splice(0, redoStack.length, ...(history?.redo || []));
   ui.sel = ui.mA = ui.mCur = null;
   window.View3D?.exitRoom?.({silent:true});
+  window.View3D?.resetWalk?.();
   save();
   buildDefs(); renderDims(); renderOpenings(); renderAll(); refit();
   if (Studio.is3D()) window.View3D?.flyIso?.();
 }
-async function switchProject(row, install){
+async function switchProject(row, install, schemeId = row.activeSchemeId){
   await projectBoot;
-  if (projectSwitching || document.body.classList.contains('busy') || chatState.sending || renderState.busy){
+  if (projectSwitching || document.body.classList.contains('busy')){
     const message = tr('请等当前操作完成后再切换项目。', 'Finish the current operation before switching projects.');
     toast(message); return {ok:false, errors:[message]};
   }
   projectSwitching = true;
   try {
     if (activeProjectId){
-      await putProject(projectCurrent());
-      // 等待浏览器存储时，最后一次键盘操作也归到原来的项目。
-      void putProject(projectCurrent());
+      const previous = projectCurrent();
+      projectUndoHistory.set(previous.activeSchemeId, {undo:undoStack.slice(), redo:redoStack.slice()});
+      void putProject(previous);
+      if (row.id === previous.id) row = previous;
     }
-    const result = install();
+    if (schemeId && projectRows.get(row.id)?.schemes?.length) row = projectRows.get(row.id);
+    if (checkMode) exitCheck(true);
+    const result = install(row);
     if (!result.ok) return result;
     activeProjectId = row.id;
-    projectRows.set(row.id, {...row, result:undefined, snapshot:undefined, phase:'saved'});
+    activeSchemeId = schemeId || '';
+    projectRows.set(row.id, projectWithSchemes({...row, activeSchemeId, result:undefined, phase:'saved'}, row.schemes || []));
     refreshProjectScene();
-    const saved = projectCurrent();
+    let saved = projectCurrent();
+    activeSchemeId = saved.activeSchemeId;
+    if (saved.jobId && !saved.reviewRequestedSchemeId) {
+      saved = {...saved, reviewRequestedSchemeId:activeSchemeId,
+        ...(saved.reviewApplied ? {reviewAppliedSchemeId:activeSchemeId} : {})};
+    }
     projectRecordActive(saved); await putProject(saved);
     closeProjects();
+    document.dispatchEvent(new Event('project-schemechange'));
     return result;
   } finally {
     projectSwitching = false;
@@ -6815,14 +7730,98 @@ async function switchProject(row, install){
   }
 }
 async function openNewProject(snapshot){
-  const row = {id:uid(), createdAt:Date.now()};
+  const row = {id:projectIdV2(), createdAt:Date.now(), baseSnapshot:deepCopy(snapshot), baseSource:'manual'};
   const result = await switchProject(row, () => loadProjectScene(snapshot));
   if (!result.ok && result.errors?.[0]) toast(result.errors[0]);
   return result.ok;
 }
+function projectBackup(row){
+  const {id, name, order, createdAt, updatedAt, baseSnapshot, baseSource, activeSchemeId, confirmedSchemeId, confirmedSnapshot, compareSchemeId, budget, jobId} = row;
+  const reviewLink = jobId ? {
+    requestedSchemeId:row.reviewRequestedSchemeId, requestedSig:row.reviewRequestedSig,
+    applied:row.reviewApplied, appliedSchemeId:row.reviewAppliedSchemeId,
+    appliedSig:row.reviewAppliedSig, appliedVersion:row.reviewAppliedReview,
+  } : undefined;
+  return deepCopy({version:3, project:{id, name, order, createdAt, updatedAt, baseSnapshot, baseSource, activeSchemeId,
+    confirmedSchemeId, confirmedSnapshot, compareSchemeId, budget, sourceTaskId:jobId, reviewLink}, schemes:row.schemes});
+}
+function exportProjectPackage(row){
+  if (!row?.schemes?.length) return false;
+  const operation = tr('导出项目', 'export the project');
+  if (row.id === activeProjectId && !confirmCheckGate(operation)) return false;
+  const other = row.schemes.filter(scheme => row.id !== activeProjectId || scheme.id !== activeSchemeId).flatMap(scheme => {
+    const plan = sanitizePlan(scheme.plan);
+    if (!plan.ok) return [scheme.name];
+    const ignored = new Set(Array.isArray(scheme.state.checkIgnores) ? scheme.state.checkIgnores : []);
+    return checkPlan(plan.plan).some(issue => !ignored.has(issue.key)) ? [scheme.name] : [];
+  });
+  if (other.length && !confirm(tr(`以下方案还有待校核问题：${other.join('、')}。仍导出项目？`,
+    `Unresolved checks in ${other.join(', ')}. Export the project anyway?`))) return false;
+  const filename = row.name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_') || tr('户型装修项目', 'floor-plan-project');
+  download(filename + '.json', new Blob([JSON.stringify(projectBackup(row), null, 2)], {type:'application/json'}));
+  return true;
+}
+function projectName(value, fallback){
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 100) : fallback;
+}
+function projectValidPrices(prices){
+  if (!prices || typeof prices !== 'object' || Array.isArray(prices)) return {};
+  return Object.fromEntries(Object.entries(prices).filter(([, price]) => Number.isFinite(price) && price >= 0));
+}
+function projectReadSnapshot(raw){
+  if (!raw || typeof raw !== 'object') return null;
+  const normalized = sanitizePlan(raw.plan);
+  if (!normalized.ok || normalized.errors?.length) return null;
+  const source = raw.state && typeof raw.state === 'object' && !Array.isArray(raw.state) ? raw.state : {};
+  return {version:2, plan:normalized.plan, state:{...source,
+    furniture:(Array.isArray(source.furniture) ? source.furniture : []).map(normalizeFurn).filter(Boolean),
+    prices:projectValidPrices(source.prices),
+    renders:(Array.isArray(source.renders) ? source.renders : []).filter(rec => rec && typeof rec.url === 'string').slice(-30)}};
+}
+async function importProjectPackage(doc){
+  await projectBoot;
+  const meta = doc.project, fail = () => {
+    toast(tr('项目文件里的方案数据不完整，未导入。', 'The project contains incomplete scheme data and was not imported.'));
+    return false;
+  };
+  if (!meta || typeof meta !== 'object' || !Array.isArray(doc.schemes) || !doc.schemes.length) return fail();
+  const now = Date.now(), id = projectIdV2(), ids = new Map(), schemes = [];
+  for (const [index, entry] of doc.schemes.entries()){
+    const snapshot = projectReadSnapshot(entry);
+    if (!snapshot || typeof entry.id !== 'string' || ids.has(entry.id)) return fail();
+    const scheme = makeProjectScheme(id, snapshot, projectName(entry.name, tr(`方案 ${index+1}`, `Scheme ${index+1}`)));
+    if (Number.isFinite(entry.updatedAt)) scheme.updatedAt = entry.updatedAt;
+    ids.set(entry.id, scheme.id);
+    schemes.push(scheme);
+  }
+  const baseSnapshot = meta.baseSnapshot ? projectReadSnapshot(meta.baseSnapshot) : projectSchemeSnapshot(schemes[0]);
+  if (!baseSnapshot) return fail();
+  const sourceTaskId = typeof meta.sourceTaskId === 'string' && /^import-[a-f0-9-]{36}$/.test(meta.sourceTaskId)
+    ? meta.sourceTaskId : null;
+  const hasSource = sourceTaskId && ![...projectRows.values()].some(item => !item.hidden && item.jobId === sourceTaskId);
+  const review = hasSource ? meta.reviewLink : null;
+  const reviewedScheme = ids.get(review?.requestedSchemeId), appliedScheme = ids.get(review?.appliedSchemeId);
+  const row = projectWithSchemes({id, name:projectName(meta.name, schemes[0].plan.name),
+    ...(Number.isFinite(meta.order) ? {order:meta.order} : {}),
+    createdAt:Number.isFinite(meta.createdAt) ? meta.createdAt : now, updatedAt:now, baseSnapshot,
+    baseSource:['import','legacy','manual'].includes(meta.baseSource) ? meta.baseSource : 'manual',
+    activeSchemeId:ids.get(meta.activeSchemeId), confirmedSchemeId:ids.get(meta.confirmedSchemeId),
+    confirmedSnapshot:meta.confirmedSnapshot ? projectReadSnapshot(meta.confirmedSnapshot) : undefined,
+    compareSchemeId:ids.get(meta.compareSchemeId), budget:{prices:projectValidPrices(meta.budget?.prices)},
+    ...(hasSource ? {jobId:sourceTaskId} : {}),
+    ...(reviewedScheme ? {reviewRequestedSchemeId:reviewedScheme,
+      reviewRequestedSig:typeof review.requestedSig === 'string' ? review.requestedSig : undefined} : {}),
+    ...(appliedScheme && review.applied ? {reviewApplied:true, reviewAppliedSchemeId:appliedScheme,
+      reviewAppliedSig:typeof review.appliedSig === 'string' ? review.appliedSig : undefined,
+      reviewAppliedReview:Number.isFinite(review.appliedVersion) ? review.appliedVersion : undefined} : {}),
+  }, schemes);
+  const result = await switchProject(row, () => loadProjectScene(row.snapshot));
+  if (result.ok) toast(tr(`项目已导入（${schemes.length} 个方案）`, `Project imported (${schemes.length} schemes)`));
+  return result.ok;
+}
 async function startBlankProject(){
   const plan = await loadPlanFile('data/empty-plan.json') || FALLBACK_PLAN;
-  await openNewProject({plan, state:defaultState()});
+  return openNewProject({plan, state:defaultState()});
 }
 
 function projectFormatTime(value){
@@ -6846,7 +7845,8 @@ function projectReviewApplied(row){
   if (Number.isFinite(+row.reviewAppliedReview) &&
       +row.reviewAppliedReview !== (+projectReview(row)?.updatedAt || 0)) return false;
   if (!row.reviewAppliedSig) return true;   // 旧数据：没有指纹时沿用原行为
-  return Boolean(row.snapshot) && row.reviewAppliedSig === sceneSignature(row.snapshot);
+  const target = projectSchemeSnapshot(projectScheme(row, row.reviewAppliedSchemeId)) || row.snapshot;
+  return Boolean(target) && row.reviewAppliedSig === sceneSignature(target);
 }
 const sameReview = (a, b) => (a?.state || '') === (b?.state || '') &&
   (+a?.count || 0) === (+b?.count || 0) && (+a?.updatedAt || 0) === (+b?.updatedAt || 0);
@@ -6885,6 +7885,41 @@ function projectStatus(row){
   default: return [tr('已保存', 'Saved'), 'is-ready'];
   }
 }
+function projectListOrder(sort = projectSort){
+  const rows = [...projectRows.values()].filter(row => !row.hidden);
+  const recent = (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+  if (sort === 'name') return rows.sort((a,b) => (a.name || '').localeCompare(b.name || '') || recent(a,b));
+  if (sort === 'manual') return rows.sort((a,b) => (a.order ?? Infinity) - (b.order ?? Infinity) || recent(a,b));
+  return rows.sort(recent);
+}
+function setProjectSort(sort){
+  if (!['manual','name','recent'].includes(sort)) return;
+  projectSort = sort;
+  try { localStorage.setItem(projectSortKey, projectSort); } catch(e){}
+}
+async function moveProjectOrder(fromId, toId, after){
+  const ordered = projectListOrder('manual'), from = ordered.findIndex(row => row.id === fromId);
+  if (from < 0 || fromId === toId) return;
+  const [moved] = ordered.splice(from,1);
+  const to = ordered.findIndex(row => row.id === toId);
+  if (to < 0) return;
+  ordered.splice(to + Number(after),0,moved);
+  setProjectSort('manual');
+  const next = ordered.map((row,order) => ({...row, order}));
+  for (const row of next) projectRows.set(row.id, row);
+  try {
+    await projectTransaction('readwrite', store => {
+      for (const row of next){
+        const read = store.get(row.id);
+        read.onsuccess = () => { if (read.result) store.put({...read.result, order:row.order}); };
+      }
+    });
+  } catch(e){ projectStorageIssue = true; }
+  renderProjects();
+}
+function projectActionButton(row, action, label, {primary = false, schemeId, title} = {}){
+  return `<button type="button" class="btn${primary ? ' primary' : ''}" data-project-action="${action}"${schemeId ? ` data-scheme-id="${esc(schemeId)}"` : ''}${title ? ` title="${esc(title)}"` : ''}${projectOpening.has(row.id) ? ' disabled' : ''}>${esc(label)}</button>`;
+}
 function projectDetails(row){
   const plan = row.snapshot?.plan || row.result?.plan;
   if (plan) {
@@ -6902,7 +7937,7 @@ function projectDetails(row){
 }
 function projectActions(row){
   const button = (action, label, primary = false) =>
-    `<button type="button" class="btn${primary ? ' primary' : ''}" data-project-action="${action}" ${projectOpening.has(row.id) ? 'disabled' : ''}>${esc(label)}</button>`;
+    projectActionButton(row, action, label, {primary});
   const review = projectReview(row);
   const reviewBusy = review?.state === 'pending' || review?.state === 'running';
   const canReview = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy;
@@ -6910,25 +7945,111 @@ function projectActions(row){
   if (canReview && row.sourceAvailable === false) rerunButton = button('attach-source', tr('补传原图', 'Attach original drawing'));
   else if (canReview && row.reviewEnabled !== false) rerunButton = button('rerun', tr('重新复核', 'Run review again'));
   const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
-    ? button('review', tr('查看对比', 'Compare')) : '';
+    ? button('review', tr('查看复核差异', 'View review differences')) : '';
   const checkButton = button('check', tr('校核', 'Check'), row.phase === 'saved');
-  if (row.id === activeProjectId) return checkButton + reviewButton + rerunButton;
   if (projectPending(row)) return button('cancel', tr('取消识别', 'Cancel analysis'));
   if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true) + rerunButton;
   if (row.phase === 'failed' || row.phase === 'canceled'){
     return button('retry', tr('重新导入', 'Import again'), true) + button('hide', tr('移除记录', 'Remove entry'));
   }
-  return button('open', tr('打开项目', 'Open project'), true) + checkButton + reviewButton + rerunButton;
+  const manage = button('rename', tr('重命名项目', 'Rename project')) +
+    button('export', tr('导出项目', 'Export project')) + button('delete', tr('删除项目', 'Delete project'));
+  const open = row.id === activeProjectId ? '' : button('open', tr('打开项目', 'Open project'), true);
+  return open + checkButton + reviewButton + rerunButton + manage;
+}
+function projectRenameForm(row, schemeId){
+  if (projectEditing?.projectId !== row.id || projectEditing.schemeId !== schemeId) return '';
+  return `<form class="project-inline" data-project-rename>
+    <input name="name" maxlength="100" value="${esc(projectEditing.value)}" aria-label="${esc(tr('名称', 'Name'))}" required>
+    <button type="submit" class="btn primary">${esc(tr('保存', 'Save'))}</button>
+    ${projectActionButton(row, 'rename-cancel', tr('取消', 'Cancel'))}
+  </form>`;
+}
+function projectSchemeList(row){
+  const schemes = row.schemes || [];
+  if (!schemes.length) return '';
+  const button = (action, label, schemeId, primary) => projectActionButton(row, action, label, {schemeId, primary});
+  return `<div class="project-schemes" aria-label="${esc(tr('方案', 'Schemes'))}">
+    <div class="project-row-actions">
+      ${button('scheme-new', tr('新建方案', 'New scheme'), null, true)}
+      ${schemes.length > 1 ? button('scheme-compare', tr('对比方案', 'Compare schemes')) : ''}
+      ${(row.jobId || row.baseSource === 'import') && row.baseSnapshot ? button('scheme-original', tr('从识别基准新建', 'New from recognition')) : ''}
+    </div>
+    ${schemes.map(scheme => {
+      const active = row.id === activeProjectId && scheme.id === activeSchemeId;
+      const basis = row.compareSchemeId === scheme.id;
+      return `<div class="project-scheme${active ? ' is-current' : ''}" data-project-scheme="${esc(scheme.id)}">
+        <div class="project-scheme-label"><strong>${esc(scheme.name)}</strong>
+          <small>${esc([active ? tr('当前', 'Current') : '', basis ? tr('对比基准', 'Comparison base') : ''].filter(Boolean).join(' · '))}</small></div>
+        <div class="project-row-actions">
+          ${active ? '' : button('scheme-open', tr('打开', 'Open'), scheme.id)}
+          ${button('scheme-rename', tr('重命名', 'Rename'), scheme.id)}
+          ${button('scheme-copy', tr('复制', 'Duplicate'), scheme.id)}
+          ${schemes.length > 1 && !basis ? button('scheme-base', tr('设为对比基准', 'Set comparison base'), scheme.id) : ''}
+          ${schemes.length > 2 ? button('scheme-compare', tr('对比', 'Compare'), scheme.id) : ''}
+          ${schemes.length > 1 ? button('scheme-delete', tr('删除', 'Delete'), scheme.id) : ''}
+        </div>${projectRenameForm(row, scheme.id)}</div>`;
+    }).join('')}
+    ${projectComparison?.projectId === row.id ? projectCompareHTML(row) : ''}
+  </div>`;
+}
+function projectSchemeStats(scheme, prices){
+  const {plan, state:scene} = scheme, areas = new Map();
+  let area = 0, rooms = 0;
+  for (const room of plan.rooms){
+    const measured = roomArea(room), key = scene.rooms?.[room.id]?.mat || room.mat;
+    if (room.counted !== false){ area += measured; rooms++; }
+    areas.set(key, (areas.get(key) || 0) + measured);
+  }
+  let budget = 0;
+  for (const [key, estimate] of areas){
+    const price = materialPrice(key, plan.materials, prices, scene.prices);
+    budget += flooringCost(estimate, price);
+  }
+  return {area, rooms, furniture:scene.furniture?.length || 0, budget, materials:[...areas.keys()].sort().join('|')};
+}
+function projectCompareHTML(row){
+  const [a,b] = projectComparison.ids.map(id => {
+    const scheme = projectScheme(row, id);
+    const plan = scheme && sanitizePlan(scheme.plan);
+    return plan?.ok ? {...scheme, plan:plan.plan} : null;
+  });
+  if (!a || !b || a.id === b.id) return '';
+  const viewBox = impReviewViewBox([a.plan,b.plan]);
+  const stats = [a,b].map(scheme => projectSchemeStats(scheme, row.budget?.prices));
+  const number = value => Math.round(value).toLocaleString();
+  const label = (zh, en, value) => `<div><dt>${esc(tr(zh,en))}</dt><dd>${esc(value)}</dd></div>`;
+  const render = (scheme,index) => {
+    const {area, rooms, furniture, budget} = stats[index];
+    const demolished = new Set(scheme.state.demolished || []);
+    const plan = {...scheme.plan, walls:scheme.plan.walls.filter((wall,i) => !demolished.has(wall.id) && !demolished.has('w'+i))};
+    return `<figure><figcaption>${esc(scheme.name)}</figcaption>
+      ${impReviewMap(plan, scheme.state.furniture, [], viewBox)}
+      <dl>${label('使用面积','Floor area', fmt(area,1)+' m²')}${label('房间','Rooms',rooms)}
+        ${label('家具','Furniture',furniture)}${label('地面估算','Flooring','¥'+number(budget))}</dl></figure>`;
+  };
+  const diff = stats[1].budget - stats[0].budget;
+  return `<div class="project-comparison">
+    <div class="project-scheme-label"><strong>${esc(tr('方案对比', 'Scheme comparison'))}</strong>
+      ${projectActionButton(row, 'scheme-compare-close', tr('收起', 'Close'))}</div>
+    <div class="project-compare-grid">${render(a,0)}${render(b,1)}</div>
+    <p>${esc(tr('地面材料估算差额', 'Flooring estimate difference'))} ${diff < 0 ? '−' : '+'}¥${number(Math.abs(diff))}</p>
+    ${stats[0].materials === stats[1].materials ? '' : `<p>${esc(tr('两案采用材料不同', 'The schemes use different materials'))}</p>`}
+  </div>`;
 }
 function renderProjects(){
-  const rows = [...projectRows.values()].filter(row => !row.hidden).sort((a, b) =>
-    Number(b.id === activeProjectId) - Number(a.id === activeProjectId) || b.updatedAt - a.updatedAt);
+  const rows = projectListOrder();
   const pending = rows.filter(projectPending).length, count = $('#projectCount');
   count.hidden = pending === 0;
   count.textContent = pending > 99 ? '99+' : String(pending);
   projectToggle.setAttribute('aria-label', pending
     ? tr(`项目，${pending} 个任务进行中`, `Projects, ${pending} tasks in progress`) : tr('项目','Projects'));
   if (projectPanel.hidden) return;
+  const sorts = [['recent','按最近更新','Recently edited'],['name','按项目名称','By name'],['manual','手动排序','Manual order']];
+  const sort = $('#projectSort');
+  sort.innerHTML = sorts.map(([key,zh,en]) => `<option value="${key}">${esc(tr(zh,en))}</option>`).join('');
+  sort.value = projectSort;
+  sort.setAttribute('aria-label', tr('项目排序', 'Project sort order'));
   const warning = $('#projectWarning');
   warning.textContent = projectSyncIssue || (projectStorageIssue
     ? tr('浏览器存储不可用，项目请及时导出备份。', 'Browser storage is unavailable. Export projects to keep a copy.') : '');
@@ -6947,18 +8068,28 @@ function renderProjects(){
         (row.phase === 'done' || row.phase === 'saved')
         ? `<span class="project-chip is-review">${esc(tr('复核中', 'Reviewing'))}</span>` : '';
     const icon = projectPending(row) || projectOpening.has(row.id) ? 'project-spinner' : 'project-folder';
-    return `<details class="project-row" data-project-id="${esc(row.id)}" ${expanded.has(row.id) ? 'open' : ''}>
+    const reorder = projectSort === 'manual' ? `<div class="project-row-actions">
+      <span class="project-handle" draggable="true" data-project-drag title="${esc(tr('拖动调整顺序','Drag to reorder'))}" aria-hidden="true">⠿</span>
+      ${projectActionButton(row,'move-up',tr('上移','Move up'))}${projectActionButton(row,'move-down',tr('下移','Move down'))}</div>` : '';
+    const taskCount = typeof projectAiTaskCount === 'function' ? projectAiTaskCount(row.id) : 0;
+    return `<details class="project-row" data-project-id="${esc(row.id)}" ${expanded.has(row.id) || row.id === activeProjectId && !expanded.size ? 'open' : ''}>
       <summary class="project-row-head"><span class="project-row-icon" aria-hidden="true"><i class="${icon}"></i></span>
         <span class="project-row-title"><b title="${esc(row.name)}">${esc(row.name)}</b><span class="project-row-meta">${esc(projectFormatTime(row.createdAt || row.updatedAt))}</span></span>
-        <span class="project-status ${tone}">${esc(status)}</span>${chip}</summary>
+        <span class="project-status ${tone}">${esc(status)}</span>${chip}
+        ${taskCount ? `<span class="project-chip">${esc(tr(`${taskCount} 个任务`, `${taskCount} tasks`))}</span>` : ''}</summary>
       <div class="project-row-body">${detail ? `<p class="project-row-message">${esc(detail)}</p>` : ''}
         ${note ? `<p class="project-row-message">${esc(note)}</p>` : ''}
-        <div class="project-row-actions">${projectActions(row) || ''}</div></div></details>`;
+        <div class="project-row-actions">${projectActions(row)}</div>${projectRenameForm(row, undefined)}${reorder}${projectSchemeList(row)}</div></details>`;
   }).join('');
   projectList.scrollTop = scroll;
-  if (focusRow){
+  if (projectEditing && focus?.name === 'name') {
+    const input = projectList.querySelector('form[data-project-rename] input');
+    input?.focus({preventScroll:true});
+    if (input && focus.selectionStart != null) input.setSelectionRange(focus.selectionStart, focus.selectionEnd);
+  } else if (focusRow){
     const node = [...projectList.children].find(el => el.dataset.projectId === focusRow);
-    (node?.querySelector(focus.dataset.projectAction ? `[data-project-action="${focus.dataset.projectAction}"]` : 'summary')
+    const scheme = focus.dataset.schemeId;
+    (node?.querySelector(focus.dataset.projectAction ? `[data-project-action="${focus.dataset.projectAction}"]${scheme ? `[data-scheme-id="${CSS.escape(scheme)}"]` : ''}` : 'summary')
       || node?.querySelector('summary'))?.focus({preventScroll:true});
   }
 }
@@ -6997,8 +8128,9 @@ async function syncProjectJobs(){
     for (const job of jobs){
       if (!/^import-[a-f0-9-]{36}$/.test(job.id)) continue;
       seen.add(job.id);
-      if ([...projectRows.values()].some(row => row.oldJobs?.includes(job.id))) continue;
-      let prev = [...projectRows.values()].find(row => row.jobId === job.id);
+      const currentRows = [...projectRows.values()];
+      let prev = currentRows.find(row => !row.hidden && row.jobId === job.id);
+      if (!prev && currentRows.some(row => row.oldJobs?.includes(job.id) || row.hidden && row.jobId === job.id)) continue;
       if (!prev && job.sourceAvailable === true && job.replaces){
         const replaced = [...projectRows.values()].find(row => row.jobId === job.replaces && !row.hidden);
         if (replaced) prev = await projectSourceAttached(replaced, job, {sync:false});
@@ -7078,6 +8210,7 @@ async function projectSourceAttached(row, saved, {sync = true} = {}){
     linked.oldJobs = [...new Set([...(current.oldJobs || []), current.jobId])];
     linked.review = null;
     linked.reviewRequestedSig = undefined;
+    linked.reviewRequestedSchemeId = undefined;
   }
   const written = putProject(linked);
   // 补传刚恢复了过期任务时，轮询可能已经把新任务添加为独立的待预览项。
@@ -7133,7 +8266,7 @@ async function projectReviewAgain(row, {sourceSaved = false} = {}){
     if (!latest) return false;
     if (response.status === 202){
       const unchanged = sameReview(latest.review, current.review);
-      await putProject({...latest, reviewRequestedSig:baseline?.signature,
+      await putProject({...latest, reviewRequestedSig:baseline?.signature, reviewRequestedSchemeId:baseline?.schemeId,
         ...(unchanged ? {review:{...(latest.review || {}), state:'pending', count:0, updatedAt:Date.now()}} : {})});
       renderProjects();
       scheduleProjectSync(0);
@@ -7161,22 +8294,81 @@ async function projectReviewAgain(row, {sourceSaved = false} = {}){
   }
 }
 
+async function openProjectScheme(row, schemeId = row.activeSchemeId){
+  if (!projectScheme(row, schemeId)) return false;
+  if (row.id === activeProjectId && schemeId === activeSchemeId) return true;
+  const result = await switchProject(row, latest => {
+    const selected = projectSchemeSnapshot(projectScheme(latest, schemeId));
+    return selected ? loadProjectScene(selected) : {ok:false, errors:[tr('该方案已删除。', 'The scheme was deleted.')]};
+  }, schemeId);
+  return result.ok;
+}
+async function createProjectScheme(row, selected, original = false){
+  if (row.id === activeProjectId) row = projectCurrent();
+  const base = row.baseSnapshot || row.snapshot;
+  let snapshot = selected || (!original && row.confirmedSnapshot) || base;
+  if (original && row.jobId && row.baseSource === 'legacy' && row.sourceAvailable !== false){
+    try {
+      const source = await projectResult(row);
+      snapshot = {plan:source.plan, state:{furniture:source.furniture || []}};
+    } catch(e){ /* use the migrated baseline if the source task is unavailable */ }
+  }
+  const latest = projectRows.get(row.id);
+  if (!latest || latest.hidden || !snapshot) return false;
+  row = row.id === activeProjectId ? projectCurrent() : latest;
+  const names = new Set(row.schemes.map(scheme => scheme.name));
+  let n = row.schemes.length + 1, name;
+  do { name = tr(`方案 ${n}`, `Scheme ${n}`); n++; } while (names.has(name));
+  const scheme = makeProjectScheme(row.id, deepCopy(snapshot), name);
+  const next = projectWithScheme(row, scheme);
+  await putProject({...next, updatedAt:Date.now()});
+  return openProjectScheme(next, scheme.id);
+}
+async function deleteProjectScheme(row, scheme){
+  if (row.schemes.length <= 1 || !confirm(tr(`删除方案「${scheme.name}」？`, `Delete “${scheme.name}”?`))) return false;
+  if (row.id === activeProjectId && scheme.id === activeSchemeId){
+    const next = row.schemes.find(item => item.id !== scheme.id);
+    if (!await openProjectScheme(row, next.id)) return false;
+  }
+  const latest = projectRows.get(row.id), remaining = latest.schemes.filter(item => item.id !== scheme.id);
+  if (!remaining.length) return false;
+  projectUndoHistory.delete(scheme.id);
+  if (projectComparison?.ids.includes(scheme.id)) projectComparison = null;
+  const next = projectWithSchemes({...latest, updatedAt:Date.now(),
+    compareSchemeId:latest.compareSchemeId === scheme.id ? undefined : latest.compareSchemeId,
+    confirmedSchemeId:latest.confirmedSchemeId === scheme.id ? undefined : latest.confirmedSchemeId}, remaining);
+  await putProject(next);
+  return true;
+}
+async function deleteProject(row){
+  if (!confirm(tr(`删除项目「${row.name}」及其所有方案？`, `Delete “${row.name}” and all its schemes?`))) return false;
+  if (row.id === activeProjectId){
+    const other = projectListOrder().find(item => item.id !== row.id && item.schemes?.length);
+    if (!(other ? await openProjectScheme(other) : await startBlankProject())) return false;
+  }
+  for (const scheme of row.schemes || []) projectUndoHistory.delete(scheme.id);
+  if (projectEditing?.projectId === row.id) projectEditing = null;
+  if (projectComparison?.projectId === row.id) projectComparison = null;
+  // 识别任务仍可作为备份重导入的来源，保留标记以免后台同步复活被删除的项目。
+  await putProject({id:row.id, hidden:true, jobId:row.jobId, oldJobs:row.oldJobs});
+  return true;
+}
 async function projectClick(e){
   const button = e.target.closest('[data-project-action]');
   if (!button) return;
-  const row = projectRows.get(button.closest('[data-project-id]').dataset.projectId);
+  let row = projectRows.get(button.closest('[data-project-id]').dataset.projectId);
   if (!row || button.disabled || projectOpening.has(row.id)) return;
-  const action = button.dataset.projectAction, opening = action === 'open' || action === 'preview' || action === 'review' || action === 'check';
+  if (row.id === activeProjectId) row = projectCurrent();
+  const action = button.dataset.projectAction;
+  const scheme = projectScheme(row, button.dataset.schemeId);
+  const opening = ['open','check','preview','review','delete','scheme-open','scheme-new','scheme-copy','scheme-original','scheme-delete'].includes(action);
   button.disabled = true;
   if (opening){ projectOpening.add(row.id); renderProjects(); }
   try {
     switch (action){
-    case 'open':
-      await switchProject(row, () => loadProjectScene(row.snapshot));
-      break;
+    case 'open': await openProjectScheme(row); break;
     case 'check': {
-      const result = row.id === activeProjectId ? {ok:true} : await switchProject(row, () => loadProjectScene(row.snapshot));
-      if (!result.ok) break;
+      if (!await openProjectScheme(row)) break;
       closeProjects();
       enterCheck();
       break;
@@ -7187,7 +8379,8 @@ async function projectClick(e){
       if (!current || current.snapshot || current.jobId !== row.jobId) break;
       closeProjects();
       impOpenResult(result, ({plan,furniture}) => switchProject(
-        {...row, reviewApplied:Boolean(impState.reviewApplied)}, () => {
+        {...current, baseSource:'import', baseSnapshot:{plan:result.plan, state:{furniture:result.furniture || []}},
+          reviewApplied:Boolean(impState.reviewApplied)}, () => {
           state = {...defaultState(), renders:[]};
           return applyPlan(plan, {furniture, clearFurniture:true, freshState:true, history:false});
         }), {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'preview', rowId:row.id});
@@ -7195,16 +8388,55 @@ async function projectClick(e){
     }
     case 'review': {
       if (!row.jobId || !row.snapshot) break;
-      // 对比和「应用到当前项目」都针对当前打开的方案：不是当前项目时先切换过去
-      if (row.id !== activeProjectId){
-        const result = await switchProject(row, () => loadProjectScene(row.snapshot));
-        if (!result.ok) break;
+      const target = row.reviewRequestedSchemeId || row.activeSchemeId;
+      if (!projectScheme(row, target)){
+        toast(tr('复核所用方案已删除，请对当前方案重新复核。', 'The reviewed scheme was deleted. Run a new review for the current scheme.'));
+        break;
       }
+      if (!await openProjectScheme(row, target)) break;
+      const snapshot = Studio.projectJSON();
       closeProjects();
-      impOpenResult({plan:row.snapshot.plan, furniture:row.snapshot.state?.furniture || []}, null,
-        {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'project', rowId:row.id});
+      impOpenResult({plan:snapshot.plan, furniture:snapshot.state?.furniture || []}, null,
+        {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'project', rowId:row.id, schemeId:target});
       break;
     }
+    case 'rename':
+    case 'scheme-rename':
+      projectEditing = {projectId:row.id, schemeId:action === 'rename' ? undefined : scheme?.id, value:action === 'rename' ? row.name : scheme?.name};
+      renderProjects();
+      projectList.querySelector('form[data-project-rename] input')?.focus();
+      projectList.querySelector('form[data-project-rename] input')?.select();
+      break;
+    case 'rename-cancel': projectEditing = null; renderProjects(); break;
+    case 'move-up':
+    case 'move-down': {
+      const list = projectListOrder('manual'), at = list.findIndex(item => item.id === row.id), down = action === 'move-down';
+      const other = list[at + (down ? 1 : -1)];
+      if (other) await moveProjectOrder(row.id, other.id, down);
+      break;
+    }
+    case 'export': exportProjectPackage(row); break;
+    case 'delete': await deleteProject(row); break;
+    case 'scheme-open': if (scheme) await openProjectScheme(row, scheme.id); break;
+    case 'scheme-new': await createProjectScheme(row); break;
+    case 'scheme-original': await createProjectScheme(row, null, true); break;
+    case 'scheme-copy': if (scheme) await createProjectScheme(row, scheme); break;
+    case 'scheme-delete': if (scheme) await deleteProjectScheme(row, scheme); break;
+    case 'scheme-base':
+      if (scheme){
+        await putProject({...row, compareSchemeId:scheme.id});
+        if (projectComparison?.projectId === row.id) projectComparison = null;
+        renderProjects();
+      }
+      break;
+    case 'scheme-compare': {
+      const basis = projectScheme(row, row.compareSchemeId) || projectScheme(row);
+      const other = scheme && scheme !== basis ? scheme : row.schemes.find(item => item !== basis);
+      if (basis && other) projectComparison = {projectId:row.id, ids:[basis.id, other.id]};
+      renderProjects();
+      break;
+    }
+    case 'scheme-compare-close': projectComparison = null; renderProjects(); break;
     case 'attach-source': projectOpenSource(row); break;
     case 'rerun': await projectReviewAgain(row); break;
     case 'cancel': {
@@ -7242,7 +8474,52 @@ projectToggle.onclick = () => {
 $('#projectClose').onclick = () => closeProjects(true);
 $('#projectNew').onclick = startBlankProject;
 $('#projectImport').onclick = () => { closeProjects(); impOpen(); };
+$('#projectSort').onchange = e => { setProjectSort(e.target.value); renderProjects(); };
 projectList.onclick = projectClick;
+projectList.oninput = e => {
+  if (projectEditing && e.target.closest('form[data-project-rename]')) projectEditing.value = e.target.value;
+};
+projectList.onsubmit = async e => {
+  if (!e.target.matches('form[data-project-rename]') || !projectEditing) return;
+  e.preventDefault();
+  const {projectId, schemeId, value} = projectEditing, row = projectRows.get(projectId);
+  if (!row || !value.trim()) return;
+  const current = row.id === activeProjectId ? projectCurrent() : row;
+  const scheme = schemeId ? projectScheme(current, schemeId) : null;
+  projectEditing = null;
+  const name = projectName(value, scheme?.name || current.name);
+  await putProject(scheme ? projectWithScheme({...current, updatedAt:Date.now()}, {...scheme, name, updatedAt:Date.now()})
+    : {...current, name, updatedAt:Date.now()});
+  renderProjects();
+};
+projectList.ondragstart = e => {
+  if (!e.target.matches('[data-project-drag]')) return;
+  projectDragging = e.target.closest('[data-project-id]').dataset.projectId;
+  e.dataTransfer.setData('text/plain', projectDragging);
+  e.dataTransfer.effectAllowed = 'move';
+};
+projectList.ondragover = e => {
+  if (!projectDragging) return;
+  const row = e.target.closest('[data-project-id]');
+  if (!row || row.dataset.projectId === projectDragging) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  projectList.querySelector('.drag-over')?.classList.remove('drag-over');
+  row.classList.add('drag-over');
+};
+projectList.ondragend = () => {
+  projectDragging = null;
+  projectList.querySelector('.drag-over')?.classList.remove('drag-over');
+};
+projectList.ondrop = e => {
+  const target = e.target.closest('[data-project-id]');
+  if (!target || !projectDragging) return;
+  e.preventDefault();
+  const rect = target.querySelector('summary').getBoundingClientRect();
+  const source = projectDragging;
+  projectList.ondragend();
+  void moveProjectOrder(source, target.dataset.projectId, e.clientY > rect.top + rect.height / 2);
+};
 addEventListener('resize', () => { if (!projectPanel.hidden) resizeProjects(); });
 document.addEventListener('pointerdown', e => { if (!projectPanel.hidden && !e.target.closest('#projectShelf')) closeProjects(); });
 document.addEventListener('keydown', e => {
@@ -7258,26 +8535,66 @@ $('#tip').textContent = TIPS()['2d'];
 fitView(); renderAll();
 const projectBoot = (async () => {
   await hydrateDefaultPlan();
-  let recent, tabId;
+  let recent, tab;
   try {
     recent = JSON.parse(localStorage.getItem(projectActiveKey) || 'null');
-    tabId = sessionStorage.getItem(projectActiveKey);
+    const pointer = sessionStorage.getItem(projectActiveKey);
+    if (pointer) {
+      try { tab = JSON.parse(pointer); } catch(e){ tab = {id:pointer}; }
+    }
   } catch(e){}
   try {
-    const rows = await projectTransaction('readonly', store => store.getAll());
-    rows.forEach(row => projectRows.set(row.id, row));
+    const [rows, schemes] = await projectTransaction('readonly', (store, schemeStore) => {
+      const projects = store.getAll(), plans = schemeStore.getAll();
+      return () => [projects.result, plans.result];
+    }, true);
+    for (const scheme of schemes) persistedSchemes.set(scheme.id, scheme);
+    for (const row of rows) {
+      const matches = (row.schemeIds || []).map(id => persistedSchemes.get(id)).filter(scheme => scheme?.projectId === row.id);
+      projectRows.set(row.id, projectWithSchemes(row, matches));
+    }
+    keepLegacyProjectCache = false;
   } catch(e){ projectStorageIssue = true; }
-  const id = tabId || recent?.id, row = projectRows.get(id);
-  activeProjectId = id || uid();
-  if (row?.snapshot && !(recent?.id === id && recent.updatedAt >= row.updatedAt && hasStoredPlan())){
-    if (loadProjectScene(row.snapshot).ok) refreshProjectScene();
+  const pointer = tab || recent;
+  const requested = projectRows.get(pointer?.id);
+  const row = requested?.schemes?.length && !requested.hidden ? requested
+    : [...projectRows.values()].filter(item => item.schemes?.length && !item.hidden).sort((a,b) => b.updatedAt - a.updatedAt)[0];
+  activeProjectId = row?.id || (!projectRows.size ? pointer?.id : null) || projectIdV2();
+  const scheme = (pointer?.id === row?.id ? projectScheme(row, pointer?.schemeId) : null) || projectScheme(row);
+  activeSchemeId = scheme?.id || '';
+  if (scheme && loadProjectScene(projectSchemeSnapshot(scheme)).ok) {
+    refreshProjectScene();
+  } else if (!row) {
+    const legacy = hasStoredPlan() && !projectRows.size;
+    if (!legacy && hasStoredPlan() && !projectStorageIssue) {
+      const plan = await loadPlanFile('data/empty-plan.json') || sanitizePlan(FALLBACK_PLAN).plan;
+      loadProjectScene({plan, state:{}});
+    }
+    const now = Date.now();
+    const initial = {id:activeProjectId, createdAt:now, updatedAt:now, baseSource:legacy ? 'legacy' : 'manual'};
+    if (legacy) {
+      const migrated = makeProjectScheme(activeProjectId, Studio.projectJSON(), tr('默认方案', 'Default scheme'));
+      initial.schemes = [migrated]; initial.activeSchemeId = activeSchemeId = migrated.id;
+    }
+    projectRows.set(activeProjectId, initial);
   }
-  if (!row) projectRows.set(activeProjectId, {id:activeProjectId, createdAt:Date.now()});
   onProjectSave = saveActiveProject;
-  save();
+  const current = projectCurrent();
+  activeSchemeId = current.activeSchemeId;
+  projectRecordActive(current);
+  if (!await putProject(current)) save();
   renderProjects();
   scheduleProjectSync(0);
 })();
+void projectBoot.then(() => {
+  if (!projectAi) return;
+  void recoverAiTasks();
+  document.addEventListener('visibilitychange', () => void recoverAiTasks());
+  document.addEventListener('project-schemechange', paintAiTaskInbox);
+  window.addEventListener('online', () => void recoverAiTasks());
+  setInterval(paintAiTaskInbox, 1000);
+  setInterval(() => void recoverAiTasks(), 15_000);
+});
 
 /* ======================= 首次使用引导 ======================= */
 // 高亮 + 分步卡片。首次访问自动弹出；之后从「文件 → 使用引导」重看。
@@ -7466,6 +8783,7 @@ let archFloor, archUp, furnG, labelG, doorG, lampG, colliders = [], selKey = nul
 let sigArch = '', sigFurn = '', sigLabels = '', grow = 1, furnGrow = 1;
 const doors = [], keys = {};
 let doorPlanRev = -1, lastDoorVisibility = -Infinity;
+let walkMarker;
 
 /* ======================= 初始化 ======================= */
 function init(){
@@ -7490,8 +8808,14 @@ function init(){
   orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true; orbit.maxPolarAngle = Math.PI*.495; orbit.minDistance = 1.5; orbit.maxDistance = 45;
   walkCtl = new PointerLockControls(camera, document.body);
+  walkCtl.pointerSpeed = 0;
   walkCtl.addEventListener('lock', () => { $('#walkOverlay').style.display = 'none'; $('#cross').style.display = 'block'; });
-  walkCtl.addEventListener('unlock', () => { if (opt.mode === 'walk'){ $('#walkOverlay').style.display = 'flex'; $('#cross').style.display = 'none'; } });
+  walkCtl.addEventListener('unlock', () => { if (opt.mode === 'walk'){
+    rememberWalk(); $('#walkOverlay').style.display = 'flex'; $('#cross').style.display = 'none';
+  } });
+  document.addEventListener('mousemove', e => {
+    if (active && opt.mode === 'walk' && walkCtl.isLocked) lookBy(-e.movementX, -e.movementY);
+  });
 
   hemi = new THREE.HemisphereLight(0xfff8ee, 0xb9a88f, 1.1);
   sun = new THREE.DirectionalLight(0xfff1dd, 2.6);
@@ -7509,6 +8833,8 @@ function init(){
   archFloor = new THREE.Group(); archUp = new THREE.Group(); furnG = new THREE.Group(); labelG = new THREE.Group();
   doorG = new THREE.Group(); lampG = new THREE.Group();
   scene.add(archFloor, archUp, furnG, labelG, doorG, lampG);
+  walkMarker = new THREE.Mesh(new THREE.RingGeometry(.15, .22, 32), new THREE.MeshBasicMaterial({color:0xb5653a,side:THREE.DoubleSide}));
+  walkMarker.rotation.x = -Math.PI / 2; walkMarker.visible = false; scene.add(walkMarker);
 
   const cv = renderer.domElement; let downAt = null, look = null;
   cv.addEventListener('pointerdown', e => {
@@ -7525,7 +8851,7 @@ function init(){
   // 在父元素上用捕获阶段监听，赶在 OrbitControls 之前关掉它，避免同时旋转镜头
   let fdrag = null;
   host.addEventListener('pointerdown', e => {
-    if (e.target !== cv || !e.isPrimary || anim || opt.mode !== 'orbit' || ui.sel?.kind !== 'furn') return;
+    if (e.target !== cv || !e.isPrimary || anim || pickingWalkPoint || opt.mode !== 'orbit' || ui.sel?.kind !== 'furn') return;
     const h = pick(e), f = h?.fid === ui.sel.id && getF(h.fid), g = f && groundAt(e.clientX, e.clientY);
     if (!g) return;
     fdrag = {id:f.id, pid:e.pointerId, sx:e.clientX, sy:e.clientY, ox:g.x - f.cx, oy:g.y - f.cy, before:snap(), moved:false};
@@ -7555,6 +8881,7 @@ function init(){
       return;
     }
     if (anim || opt.mode !== 'orbit' || !tap) return;
+    if (pickingWalkPoint){ if (e.button === 0) chooseWalkPoint(e); return; }
     const h = pick(e);
     if (h?.door){ if (e.button === 0) toggleDoor(h.door); }
     else if (h?.fid) window.select({kind:'furn', id:h.fid});
@@ -8358,8 +9685,11 @@ function openingTop(rect, walls, cut){
 function windowSills(windows, bayAreas, topY){
   // 相接且绕过圆角的同一排窗应有连续的下沿，留出图纸测量误差。
   const sills = windows.map(w => {
+    if (Number.isFinite(w.sill)) return M(w.sill);
+    if (w.style === 'floor') return 0;
     const r = w.rect || curveBounds(windowCurve(w));
-    return bayAreas.some(b => overlaps(r, b)) ? .45 : (Math.abs(r[1] - topY) < 60 ? 1.4 : .9);
+    const bay = bayAreas.find(item => overlaps(r,item.bounds));
+    return bay ? M(bay.sill) : (Math.abs(r[1] - topY) < 60 ? 1.4 : .9);
   });
   if (!windows.some(w => !w.rect)) return sills;
 
@@ -8397,7 +9727,7 @@ function windowSills(windows, bayAreas, topY){
       }
     }
     const sill = run.reduce((height, i) => Math.min(height, sills[i]), Infinity);
-    run.forEach(i => { sills[i] = sill; });
+    run.forEach(i => { if (!Number.isFinite(windows[i].sill) && windows[i].style !== 'floor') sills[i] = sill; });
   });
   return sills;
 }
@@ -8444,14 +9774,23 @@ function buildArch(){
   const ext = Math.max(BOUNDS.w, BOUNDS.h) / 2000 + 3;
   Object.assign(sun.shadow.camera, {left:-ext, right:ext, top:ext, bottom:-ext, near:1, far:ext*4});
   sun.shadow.camera.updateProjectionMatrix();
-  const bayRuns = bayLintels(), bayAreas = ROOMS.filter(r => r.counted === false).map(r => bbox(r.poly));
+  const bayRuns = bayLintels(), bayAreas = ROOMS.filter(r => r.counted === false || r.bay)
+    .map(r => ({bounds:bbox(r.poly), sill:r.bay?.sill ?? 450}));
   ROOMS.forEach(r => {
-    const m = floorMat(roomState(r.id).mat), bay = r.counted === false;
-    const geo = bay ? new THREE.ExtrudeGeometry(shapeOf(r.poly), {depth:.45, bevelEnabled:false}) : new THREE.ShapeGeometry(shapeOf(r.poly));
+    const m = floorMat(roomState(r.id).mat), bay = r.counted === false || r.bay, sill = M(r.bay?.sill ?? 450);
+    const geo = bay && sill > 0 ? new THREE.ExtrudeGeometry(shapeOf(r.poly), {depth:sill, bevelEnabled:false}) : new THREE.ShapeGeometry(shapeOf(r.poly));
     geo.rotateX(-Math.PI/2);
     const fl = new THREE.Mesh(geo, bay ? [m, mat('#e9e4da')] : m);
     fl.receiveShadow = true; fl.userData.room = r.id;
-    if (bay){ fl.castShadow = true; archUp.add(fl); } else archFloor.add(fl);
+    if (bay){
+      fl.castShadow = true; archUp.add(fl);
+      if (r.bay?.cushion && sill < top){
+        const cushion = new THREE.ExtrudeGeometry(shapeOf(r.poly), {depth:Math.min(.04,top-sill), bevelEnabled:false});
+        cushion.rotateX(-Math.PI/2);
+        const pad = new THREE.Mesh(cushion, fabric('#e7dccd'));
+        pad.position.y = sill; pad.receiveShadow = true; archUp.add(pad);
+      }
+    } else archFloor.add(fl);
     // 天花：法线朝下，只在室内仰视时可见
     const cg = new THREE.ShapeGeometry(shapeOf(r.poly, true)); cg.rotateX(Math.PI/2);
     const ceil = new THREE.Mesh(cg, mat('#fbfaf7', {roughness:1})); ceil.position.y = H; ceil.visible = top >= H; archUp.add(ceil);
@@ -8473,7 +9812,7 @@ function buildArch(){
   const topY = Math.min(...WALLS.map(w => wallRect(w)[1]), ...WINS.map(w => (w.rect || curveBounds(windowCurve(w)))[1]));
   const sills = windowSills(WINS, bayAreas, topY);
   WINS.forEach((win, i) => {
-    const sill = sills[i], head = 2.4;
+    const sill = sills[i], head = Number.isFinite(win.h) ? sill + M(win.h) : Math.max(2.4, sill);
     const curve = windowCurve(win), r = win.rect || curveBounds(curve);
     colliders.push([wx(r[0]), wz(r[1]), wx(r[2]), wz(r[3]), curve]);
     if (curve){ curvedWindow(curve, sill, head, top); return; }
@@ -8564,7 +9903,8 @@ function buildLabels(){
   const counted = ROOMS.filter(r => r.counted !== false);
   $('#roomList').innerHTML = counted.map(r => `<div class="rrow">
       <button data-room="${esc(r.id)}"><span>${esc(nm(roomState(r.id).name))}</span><small>${roomArea(r).toFixed(2)} m²</small></button>
-      <button class="rent" data-enter="${esc(r.id)}" title="${esc(tr('进入房间，从室内查看','Enter the room and look around from inside'))}">${tr('进入房间','Enter room')}</button></div>`).join('')
+      <button class="rent" data-enter="${esc(r.id)}" title="${esc(tr('进入房间，从室内查看','Enter the room and look around from inside'))}">${tr('进入房间','Enter room')}</button>
+      <button class="rent" data-walk-room="${esc(r.id)}" title="${esc(tr('从这里开始漫游','Start walking here'))}">${tr('漫游','Walk')}</button></div>`).join('')
     + `<div class="rrow"><button data-room="__all"><span>${tr('全屋', 'Whole home')}</span><small>${counted.reduce((a, r) => a + roomArea(r), 0).toFixed(2)} m²</small></button></div>`;
   document.querySelectorAll('#roomList button').forEach(b => b.classList.remove('on'));
   // 室内视角下保持当前房间高亮（换语言 / 换方案重建列表后也不丢）
@@ -8581,6 +9921,14 @@ function buildLabels(){
     if (!roomDef(id)) return;
     document.querySelectorAll('#roomList button[data-room]').forEach(x => x.classList.toggle('on', x.dataset.room === id));
     enterRoom(id);
+  });
+  document.querySelectorAll('#roomList button[data-walk-room]').forEach(b => b.onclick = () => {
+    const roomId = b.dataset.walkRoom;
+    const source = interiorPose(roomId);
+    if (!source) return;
+    const direction = source.t.clone().sub(source.p).normalize();
+    setMode('walk', {x:source.p.x * 1000 + PC().x, y:source.p.z * 1000 + PC().y, height:source.p.y,
+      yaw:Math.atan2(-direction.x, -direction.z), pitch:Math.asin(direction.y), roomId, structure:walkStructure()});
   });
 }
 
@@ -8845,9 +10193,10 @@ async function enter(){
   stage.classList.remove('animating');
 }
 async function exit(){
-  if (opt.mode === 'walk'){ walkCtl.unlock(); stopTouchWalk(); $('#walkOverlay').style.display = 'none'; $('#cross').style.display = 'none';
+  if (opt.mode === 'walk'){ rememberWalk(); walkCtl.unlock(); stopTouchWalk(); $('#walkOverlay').style.display = 'none'; $('#cross').style.display = 'none';
     const dir = new THREE.Vector3(); camera.getWorldDirection(dir); orbit.target.copy(camera.position).addScaledVector(dir, 3).setY(0); opt.mode = 'orbit'; syncModeBtns(); syncHint3d(); }
   exitRoom({silent: true});                             // 清室内裁切 / 标题条，再走 3D → 2D 动画
+  stopWalkPointPick();
   fly = null; orbit.enabled = false; showLabels(false); stage.classList.add('animating');
   const A = curPose(), B = planPose();
   await animate(1300, t => {
@@ -8956,12 +10305,104 @@ const HINT_ORBIT = () => COARSE ? tr('单指旋转 · 双指缩放 / 平移 · �
 const HINT_TOUCHWALK = () => tr('左下摇杆移动 · 拖动画面转向 · 点门旁按钮开关', 'Joystick moves · drag to look · tap the door button');
 const HINT_WALK = () => tr('WASD 移动 · 鼠标转向 · 点击 / E 开关面前的门 · Esc 暂停', 'WASD moves · mouse looks · click / E toggles the door ahead · Esc pauses');
 function syncHint3d(){ $('#hint3d').textContent = opt.mode === 'orbit' ? HINT_ORBIT() : touchWalk ? HINT_TOUCHWALK() : HINT_WALK(); }
-let touchWalk = false;
-const joy = {x:0, y:0, id:null}, eul = new THREE.Euler(0, 0, 0, 'YXZ');
+let touchWalk = false, pickingWalkPoint = false, pendingWalkPoint = null, walkLastSavedAt = 0;
+let walkedSinceSave = false, activeWalkStructure = '';
+let smoothWalk = true;
+try { smoothWalk = localStorage.getItem('interior-walk-smooth') !== 'off'; } catch {}
+const joy = {x:0, y:0, id:null};
+const walkLook = new THREE.Euler(0, 0, 0, 'YXZ'), walkLookTarget = new THREE.Quaternion();
+
+function walkStructure(){
+  const layout = JSON.stringify([BOUNDS, WALLS, WINS, DOORS, SLIDES,
+    ROOMS.map(({id, poly, arcs}) => [id, poly, arcs]), [...state.demolished].sort()]);
+  let hash = 2166136261;
+  for (let i = 0; i < layout.length; i++) hash = Math.imul(hash ^ layout.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(36);
+}
+
+function currentWalkPose(){
+  const angle = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  return {x: Math.round(camera.position.x * 1000 + PC().x), y: Math.round(camera.position.z * 1000 + PC().y),
+    height:camera.position.y, yaw:angle.y, pitch:angle.x, roomId:roomView.id, structure:activeWalkStructure};
+}
+
+function rememberWalk(){
+  if (!active || opt.mode !== 'walk') return;
+  state.view.lastWalk = currentWalkPose();
+  walkLastSavedAt = performance.now();
+  walkedSinceSave = false;
+  save();
+}
+
+function stopWalkPointPick(){
+  pickingWalkPoint = false;
+  stage.classList.remove('pick-walk');
+}
+
+function chooseWalkPoint(e){
+  const p = groundAt(e.clientX, e.clientY);
+  const room = p && (roomView.id ? roomDef(roomView.id) : ROOMS.find(item => item.counted !== false && pointInPoly(p.x,p.y,item.poly)));
+  if (!room || !pointInPoly(p.x,p.y,room.poly) || blocked(wx(p.x), wz(p.y))){
+    toast(tr('请点击房间内一处可站立的地面。', 'Pick a clear floor position inside a room.'));
+    return;
+  }
+  const middle = room.at || polyCenter(room.poly);
+  let directionX = middle[0] - p.x, directionY = middle[1] - p.y;
+  if (Math.hypot(directionX, directionY) < 30){
+    const direction = camera.getWorldDirection(new THREE.Vector3());
+    directionX = direction.x; directionY = direction.z;
+  }
+  pendingWalkPoint = {x:p.x, y:p.y, height:ROOM_EYE, yaw:Math.atan2(-directionX, -directionY), pitch:0,
+    roomId:roomView.id, structure:walkStructure()};
+  walkMarker.position.set(wx(p.x), .03, wz(p.y)); walkMarker.visible = true;
+  stopWalkPointPick();
+  toast(tr('站立点已选定。点击「漫游」开始。', 'Standing point set. Choose Walk to start there.'));
+}
+
+function validWalkPoint(pose){
+  const {x, y, roomId} = pose;
+  if (blocked(wx(x), wz(y))) return false;
+  const room = roomId && roomDef(roomId);
+  if (roomId) return !!room && pointInPoly(x, y, room.poly);
+  return x >= BOUNDS.x - 2000 && y >= BOUNDS.y - 2000 && x <= BOUNDS.x + BOUNDS.w + 2000 && y <= BOUNDS.y + BOUNDS.h + 2000;
+}
+
+function resetWalk(){
+  stopWalkPointPick(); pendingWalkPoint = null;
+  walkedSinceSave = false;
+  if (!inited) return;
+  walkMarker.visible = false;
+  if (opt.mode === 'walk'){
+    opt.mode = 'orbit'; walkCtl.unlock(); stopTouchWalk(); orbit.enabled = true;
+    $('#walkOverlay').style.display = 'none'; $('#cross').style.display = 'none';
+    showLabels(opt.labels && !roomView.id);
+    archUp.traverse(o => { if (o.userData.walkOnly) o.visible = false; });
+  }
+  syncModeBtns(); syncHint3d(); renderWalkViews();
+}
+
+function renderWalkViews(){
+  const select = $('#walkViews'), chosen = select.value;
+  const structure = walkStructure();
+  select.replaceChildren(new Option(tr('已保存的视角','Saved viewpoints'), ''));
+  for (const item of state.view.viewpoints){
+    const stale = item.pose.structure !== structure;
+    select.add(new Option(item.name + (stale ? tr(' · 结构已变更', ' · Structure changed') : ''), item.id));
+  }
+  select.value = state.view.viewpoints.some(item => item.id === chosen) ? chosen : '';
+  $('#walkChoose').disabled = opt.mode === 'walk';
+  $('#walkSave').disabled = opt.mode !== 'walk' || state.view.viewpoints.length >= 30;
+  $('#walkDelete').disabled = $('#walkGo').disabled = !select.value;
+}
+
 function lookBy(dx, dy){
-  eul.setFromQuaternion(camera.quaternion);
-  eul.y += dx * .005; eul.x = THREE.MathUtils.clamp(eul.x + dy * .005, -1.35, 1.35);
-  camera.quaternion.setFromEuler(eul);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || !(dx || dy)) return;
+  const gain = touchWalk ? .0035 : .0016;
+  walkLook.y += dx * gain;
+  walkLook.x = THREE.MathUtils.clamp(walkLook.x + dy * gain, -1.35, 1.35);
+  walkLookTarget.setFromEuler(walkLook);
+  if (!smoothWalk) camera.quaternion.copy(walkLookTarget);
+  walkedSinceSave = true;
 }
 function startTouchWalk(){
   touchWalk = true;
@@ -8997,18 +10438,40 @@ function entryPose(){
   const px = cx + (thinX ? s*off : 0), py = cy + (thinX ? 0 : s*off);
   return [wx(px), 1.6, wz(py), wx(cx), 1.5, wz(cy)];
 }
-function setMode(m){
-  if (anim) return;
+function setMode(m, requestedPoint){
+  if (anim || (m === 'walk' && m === opt.mode && !requestedPoint)) return;
+  if (opt.mode === 'walk') rememberWalk();
+  stopWalkPointPick();
   opt.mode = m; syncModeBtns();
   if (m === 'walk'){
     window.select(null);
     if (opt.cut < H){ opt.cut = H; syncCutBtns(); sync(); }
     orbit.enabled = false; fly = null;
-    // 从室内视角进入漫游：起点就在房间内（沿长轴看向另一侧），而不是回到入户门
-    const e = roomView.id ? interiorWalkPose(roomView.id) : entryPose();
-    camera.position.set(e[0], e[1], e[2]); camera.lookAt(e[3], e[4], e[5]);
+    activeWalkStructure = walkStructure();
+    const recent = state.view.lastWalk;
+    const oldPoint = recent && (!roomView.id || recent.roomId === roomView.id) ? recent : null;
+    const start = requestedPoint || pendingWalkPoint || oldPoint;
+    pendingWalkPoint = null; walkMarker.visible = false;
+    if (start && validWalkPoint(start)){
+      if (start.structure !== activeWalkStructure) toast(tr('结构已更新，请留意保存视角周围的变化。', 'The structure changed. Check the surroundings of this viewpoint.'));
+      if (roomView.id !== start.roomId){
+        exitRoom({silent:true});
+        roomView.id = start.roomId; roomView.arrived = !!start.roomId;
+        stage.classList.toggle('roomview', !!start.roomId);
+        syncRoomListSel(start.roomId);
+      }
+      camera.position.set(wx(start.x), start.height, wz(start.y));
+      camera.quaternion.setFromEuler(new THREE.Euler(start.pitch, start.yaw, 0, 'YXZ'));
+    } else {
+      if (start) toast(tr('保存的站立点已不可用，已返回默认起点。', 'The saved standing point is blocked. Using the default starting point.'));
+      const e = roomView.id ? interiorWalkPose(roomView.id) : entryPose();
+      camera.position.set(e[0], e[1], e[2]); camera.lookAt(e[3], e[4], e[5]);
+    }
+    orbit.enabled = false;
+    walkLook.setFromQuaternion(camera.quaternion, 'YXZ'); walkLookTarget.copy(camera.quaternion);
     if (roomView.id) applyRoomClip(roomView.id);        // 室内漫游仍按房间裁切，避免看见室外
-    $('#walkOverlay').style.display = 'flex';
+    if (!walkCtl.isLocked && !touchWalk) $('#walkOverlay').style.display = 'flex';
+    rememberWalk();
     syncHint3d();
   } else {
     walkCtl.unlock(); stopTouchWalk(); orbit.enabled = true;
@@ -9027,6 +10490,7 @@ function setMode(m){
   }
   showLabels(opt.labels && m === 'orbit' && !roomView.id);
   renderRoomBar();
+  renderWalkViews();
   archUp.traverse(o => { if (o.userData.walkOnly) o.visible = m === 'walk'; });
 }
 function blocked(x, z, r = .22){
@@ -9037,6 +10501,8 @@ function blocked(x, z, r = .22){
   return doors.some(door => door.blocks(x, z, r));
 }
 function stepWalk(dt){
+  if (smoothWalk) camera.quaternion.slerp(walkLookTarget, 1 - Math.exp(-dt / .037));
+  if (walkedSinceSave && performance.now() - walkLastSavedAt > 1000) rememberWalk();
   if (!walkCtl.isLocked && !touchWalk) return;
   const sp = (keys.ShiftLeft || keys.ShiftRight ? 2.6 : 1.4) * dt, fwd = new THREE.Vector3();
   camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
@@ -9048,6 +10514,7 @@ function stepWalk(dt){
   if (mag < .05) return;
   mv.normalize().multiplyScalar(sp * mag);
   const p = camera.position;
+  const x = p.x, z = p.z;
   if (!blocked(p.x + mv.x, p.z)) p.x += mv.x;
   if (!blocked(p.x, p.z + mv.z)) p.z += mv.z;
   // 室内漫游：限制在房间 AABB 内，裁切之外不会出现「走出墙外」的空白
@@ -9058,6 +10525,7 @@ function stepWalk(dt){
       if (b.Z1 - b.Z0 > m*2) p.z = THREE.MathUtils.clamp(p.z, b.Z0 + m, b.Z1 - m);
     }
   }
+  if (p.x !== x || p.z !== z) walkedSinceSave = true;
 }
 function toggleDoorAhead(){
   const hit = pick();
@@ -9068,6 +10536,7 @@ addEventListener('pointerup', e => {
 });
 addEventListener('keydown', e => {
   if (!active || e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Escape' && pickingWalkPoint) stopWalkPointPick();
   keys[e.code] = true;
   if (opt.mode === 'walk' && e.code === 'KeyE' && !e.repeat) toggleDoorAhead();
 });
@@ -9078,9 +10547,9 @@ function syncModeBtns(){ document.querySelectorAll('#modes3d .btn').forEach(b =>
 function syncCutBtns(){ document.querySelectorAll('[data-cut]').forEach(b => b.classList.toggle('on', +b.dataset.cut === opt.cut)); }
 function syncWalkTexts(){
   const t = COARSE
-    ? [tr('点击开始，从入户门进入', 'Tap to start at the front door'), tr('左下摇杆移动 · 在画面上拖动转向', 'Joystick moves · drag on screen to look'),
+    ? [tr('点击开始漫游', 'Tap to start walking'), tr('左下摇杆移动 · 在画面上拖动转向', 'Joystick moves · drag on screen to look'),
        tr('点门旁按钮开关 · 点「退出漫游」回到鸟瞰', 'Tap the door button · "Exit walk" returns to orbit')]
-    : [tr('点击开始，从入户门进入', 'Click to start at the front door'),
+    : [tr('点击开始漫游', 'Click to start walking'),
        tr('<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 移动 · 鼠标转向 · <kbd>Shift</kbd> 快走', '<kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · mouse looks · <kbd>Shift</kbd> runs'),
        tr('点击或按 <kbd>E</kbd> 开关正前方的门 · <kbd>Esc</kbd> 暂停', 'Click or press <kbd>E</kbd> to toggle the door ahead · <kbd>Esc</kbd> pauses')];
   t.forEach((h, i) => $('#wo' + (i + 1)).innerHTML = h);
@@ -9088,6 +10557,37 @@ function syncWalkTexts(){
 }
 function bindUI(){
   document.querySelectorAll('#modes3d .btn').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  $('#walkTools').ontoggle = renderWalkViews;
+  $('#walkChoose').onclick = () => {
+    if (opt.mode !== 'orbit') return;
+    pickingWalkPoint = true; stage.classList.add('pick-walk');
+    toast(tr('点击房间内可站立的地面。', 'Click a clear floor position inside a room.'));
+  };
+  $('#walkSave').onclick = () => {
+    if (opt.mode !== 'walk' || state.view.viewpoints.length >= 30) return;
+    const name = prompt(tr('保存视角名称', 'Name this viewpoint'), '')?.trim();
+    if (!name) return;
+    const item = {id:uid(), name:name.slice(0, 60), pose:currentWalkPose()};
+    state.view.viewpoints.push(item); rememberWalk();
+    renderWalkViews(); $('#walkViews').value = item.id; $('#walkGo').disabled = $('#walkDelete').disabled = false;
+  };
+  $('#walkViews').onchange = e => { $('#walkGo').disabled = $('#walkDelete').disabled = !e.target.value; };
+  $('#walkGo').onclick = () => {
+    const selected = state.view.viewpoints.find(item => item.id === $('#walkViews').value);
+    if (selected) setMode('walk', selected.pose);
+  };
+  $('#walkDelete').onclick = () => {
+    const selected = $('#walkViews').value;
+    state.view.viewpoints = state.view.viewpoints.filter(item => item.id !== selected);
+    save(); renderWalkViews();
+  };
+  $('#walkSmooth').checked = smoothWalk;
+  $('#walkSmooth').onchange = e => {
+    smoothWalk = e.target.checked;
+    if (!smoothWalk && opt.mode === 'walk') camera.quaternion.copy(walkLookTarget);
+    try { localStorage.setItem('interior-walk-smooth', smoothWalk ? 'on' : 'off'); } catch {}
+  };
+  document.addEventListener('visibilitychange', () => { if (document.hidden && walkedSinceSave) rememberWalk(); });
   // 触屏设备用摇杆漫游；桌面端锁定鼠标，锁定失败时也退回到摇杆
   $('#walkOverlay').onclick = () => COARSE ? startTouchWalk() : walkCtl.lock();
   document.addEventListener('pointerlockerror', () => { if (active && opt.mode === 'walk') startTouchWalk(); });
@@ -9148,11 +10648,11 @@ function shotURL(opts = {}){
   if (!inited) return null;
   const scale = Math.max(.25, Math.min(4, Number(opts.scale) || 1));
   const clean = !!opts.clean;
-  const labelVis = labelG.children.map(o => o.visible), labelsOn = labelG.visible;
+  const labelVis = labelG.children.map(o => o.visible), labelsOn = labelG.visible, markerWasVisible = walkMarker.visible;
   labelRenderer.render(scene, camera);
   if (clean || scale !== 1){
     if (selHelper){ scene.remove(selHelper); selHelper.geometry.dispose(); selHelper = null; selKey = null; }
-    if (clean){ labelG.children.forEach(o => { o.visible = false; }); labelG.visible = false; }
+    if (clean){ labelG.children.forEach(o => { o.visible = false; }); labelG.visible = false; walkMarker.visible = false; }
     renderer.setSize(Math.round(SW()*scale), Math.round(SH()*scale), false);
     camera.aspect = SW()/SH(); camera.updateProjectionMatrix();
     renderer.render(scene, camera);
@@ -9162,7 +10662,7 @@ function shotURL(opts = {}){
     renderer.setSize(SW(), SH(), false);
     camera.aspect = SW()/SH(); camera.updateProjectionMatrix();
     renderer.render(scene, camera);
-    if (clean){ labelG.children.forEach((o, i) => { o.visible = labelVis[i]; }); labelG.visible = labelsOn; }
+    if (clean){ labelG.children.forEach((o, i) => { o.visible = labelVis[i]; }); labelG.visible = labelsOn; walkMarker.visible = markerWasVisible; }
     updateSel();
   }
   return url;
@@ -9172,16 +10672,17 @@ function shotURL(opts = {}){
 function viewInfo(){
   if (!active || !camera) return null;
   const r3 = v => ({x:+v.x.toFixed(3), y:+v.y.toFixed(3), z:+v.z.toFixed(3)});
-  return {mode: opt.mode, fov: FOV, position: r3(camera.position), target: r3(orbit.target), room: roomView.id || null};
+  const target = opt.mode === 'walk' ? camera.getWorldDirection(new THREE.Vector3()).add(camera.position) : orbit.target;
+  return {mode: opt.mode, fov: FOV, position: r3(camera.position), target: r3(target), room: roomView.id || null};
 }
 
-function relang(){ syncWalkTexts(); if (inited){ buildLabels(); doors.forEach(labelDoor); renderRoomBar(); } }
+function relang(){ syncWalkTexts(); if (inited){ buildLabels(); doors.forEach(labelDoor); renderRoomBar(); renderWalkViews(); } }
 
 window.View3D = {enter, exit, relang, sync:() => sync(), shotURL, groundAt, flyToRoom:id => active && !anim && flyToRoom(id),
   flyIso: () => active && !anim && flyTo(isoWhole()),
   flyTop: () => active && !anim && flyTo(topWhole()),
   flyToWorld: (...a) => active && !anim && flyToWorld(...a),
-  flying: () => !!fly || !!anim, walking: () => active && opt.mode === 'walk', viewInfo,
+  flying: () => !!fly || !!anim, walking: () => active && opt.mode === 'walk', viewInfo, resetWalk,
   // 房间内部视角（任务 5）
   enterRoom: (id, opts) => enterRoom(id, opts),
   exitRoom: (opts) => exitRoom(opts),

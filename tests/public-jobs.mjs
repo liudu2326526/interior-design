@@ -94,6 +94,25 @@ test('streams loopback SSE with cursor retry and split UTF-8', async t => {
   assert.equal((await call(id)).status, 404);
 });
 
+test('lists resumable jobs only for their owner and reuses an active submission', async t => {
+  const { call, start } = await fixture(t, (req, res) => {
+    req.resume();
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.flushHeaders();
+  });
+  const ownership = { projectId: 'p1', schemeId: 's1', baseRevision: 5 };
+  const input = JSON.stringify({ message: '调整方案', ownership });
+  const id = await start('chat', input);
+  assert.equal(await start('chat', input), id);
+  const owned = await (await call('task')).json();
+  assert.deepEqual(owned.jobs.map(job => ({ id: job.id, kind: job.kind, ownership: job.ownership })),
+    [{ id, kind: 'chat', ownership }]);
+  assert.deepEqual(await (await call('task', { owner: 'bob' })).json(), { jobs: [] });
+  assert.equal((await call(`task/${id}`, { owner: 'bob' })).status, 404);
+  assert.equal((await (await call(`task/${id}`)).json()).done, false);
+  assert.equal((await call(`task/${id}`, { method: 'DELETE' })).status, 200);
+});
+
 test('preserves an import response and upstream HTTP error', async t => {
   const failure = JSON.stringify({ error: '图纸缺少尺寸标注' });
   let target;

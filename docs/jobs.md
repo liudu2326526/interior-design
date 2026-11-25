@@ -134,17 +134,17 @@ SSE 接口继续保留（见第 3 节），两者共用同一份执行逻辑（`
 
 含义：浏览器离开后，公网任务最多再等 10 分钟；总时长到 15 分钟必定停止，UI 应写明这个上限。
 
-**当前限制**：公网网关仍把 `/api/jobs/chat`、`/api/jobs/render` 转发到旧的 SSE 路径，由 relay 在内存里收集事件。也就是说，公网的"可离开"只有租期级别的保证，没有本地那样的落盘与恢复。要拿到同样保证，后续需要在 relay 里增加透传：`POST /api/jobs/chat|render` → 本机 `/api/jobs/…`，`GET|DELETE /api/jobs/task/<id>` → 本机同名路径，并按登录用户记录任务归属（relay 是公网的信任边界，本机只区分 `local` / `remote`）。本次未做，保持改动最小。
+公网网关将对话和效果图提交转发至本机 SSE。Relay 记录登录会话、方案归属与事件，在同一登录会话内支持按 `GET /api/jobs/task` 列出任务、按任务 ID 续读或取消。完全相同的在途请求可以复用任务。公网任务保存在网关内存中，网关重启或登录会话失效后需要重新提交。
 
-## 7. 前端接入（index.html 由后续 agent 实现）
+## 7. 前端接入
 
 1. **提交**：`POST /api/jobs/chat`（或 `/render`），body 沿用现有字段并附 `ownership: {projectId, schemeId, baseRevision}`。取响应里的 `jobId`，连同 `projectId` / `schemeId` 记入方案（IndexedDB 或 `localStorage`），用于刷新后找回。
 2. **轮询**：`GET /api/jobs/task/<jobId>?cursor=<cursor>`，建议运行中 1 s 一次、页面隐藏时 3–5 s 一次（可见性恢复时立刻补一次）。把 `chunks.join('')` 交给现有 `takeSSE(buf)`，逐事件处理，保留未成帧的尾巴到下一次。`cursor` 用响应里的值。
 3. **阶段文案**：`status` 事件给出阶段名；服务端没有新阶段时按已用时间显示兜底文案，不伪造百分比。计时器每秒跳动。
-4. **完成**：`done: true` 后用 `result`（对话：`{reply, ops, focus}`；效果图：`{url, prompt}`）走现有 `applyOps` / 效果图记录逻辑。若任务 `ownership.baseRevision` 与当前方案修订号不一致，进入"待确认"，不自动应用。
+4. **完成**。效果图写回提交时所属方案。助手在当前方案及修订号匹配时按现有规则应用。离开方案后完成的助手结果可在原方案查看，编辑过的方案需要重新提交修改指令。
 5. **取消**：`DELETE /api/jobs/task/<jobId>`。
 6. **恢复**：页面加载时 `GET /api/jobs/task`，把 `queued` / `running` 的任务接回轮询；`done` 且未读的在项目列表打状态点。
-7. **降级**：`file://` 打开或接口返回 `404` / `501` 时退回现有 SSE 流程；任何网络失败都不阻塞 2D/3D 编辑。
+7. **离线编辑**。本地页面未连接服务时，2D 和 3D 编辑仍可用。
 
 ## 8. 测试
 

@@ -162,6 +162,16 @@ test('stays fast when model geometry lands far outside the canvas', () => {
   assert.ok(image.width > 0 && image.height > 0);
 });
 
+test('renders V2 straight walls and windows like legacy rectangles', () => {
+  const v2 = {
+    ...sample,
+    version: 2,
+    walls: sample.walls.map(([...wall], index) => ({ id: 'w' + index, rect: wall.slice(0, 4), kind: wall[4] })),
+    wins: sample.wins.map((rect, index) => ({ id: 'win' + index, rect })),
+  };
+  assert.deepEqual(renderPlanPng(v2), renderPlanPng(sample));
+});
+
 test('returns a plain white image for empty, invalid and extreme input', () => {
   for (const plan of [
     null,

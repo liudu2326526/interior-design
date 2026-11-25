@@ -51,6 +51,16 @@ test('checkPlan reports doors and windows that sit away from every wall', () => 
   }
 });
 
+test('checkPlan recognises V2 windows between two wall ends', () => {
+  const plan = basePlan({
+    version: 2,
+    walls: [{ rect: [0, 0, 2000, 200] }, { rect: [3000, 0, 10000, 200] }],
+    wins: [{ rect: [2000, 0, 3000, 200] }, { rect: [2000, 3000, 3000, 3200] }],
+  });
+  const windows = checkPlan(plan, []).filter(issue => issue.where.startsWith('窗'));
+  assert.deepEqual(windows.map(issue => issue.where), ['窗 2']);
+});
+
 test('checkPlan flags only clearly overlapping counted rooms', () => {
   const overlapping = basePlan({
     rooms: [

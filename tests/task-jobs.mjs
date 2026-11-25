@@ -311,23 +311,40 @@ test('公网任务轮询租期为 10 分钟，总时限保持 15 分钟', async 
   assert.equal(RELAY_LIMITS.MAX_JOB_AGE, 15 * 60_000);
   assert.ok(RELAY_LIMITS.POLL_LEASE > 3 * 60_000);
 
-  const { url } = await relayFixture(t, { pollLease: 40 });
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const { url } = await relayFixture(t);
   const id = await relayStart(url);
+  now += RELAY_LIMITS.POLL_LEASE - 1;
   const first = await poll(url, id);
   assert.equal(first.done, false);
-  assert.deepEqual(first.chunks, ['data: {"type":"status","text":"处理中"}\n\n']);
-  await wait(80);
+  now += RELAY_LIMITS.POLL_LEASE;
   const later = await poll(url, id);
   assert.equal(later.done, true);
-  assert.equal(later.status, 410);
-  assert.match(later.error, /断开/);
+  assert.equal(later.status, 504);
+
+  const renewed = await relayStart(url);
+  now += RELAY_LIMITS.POLL_LEASE - 1;
+  assert.equal((await poll(url, renewed)).done, false);
+  now += 1;
+  assert.equal((await poll(url, renewed)).done, false);
+
+  const idle = await relayStart(url);
+  now += RELAY_LIMITS.POLL_LEASE;
+  const expired = await poll(url, idle);
+  assert.equal(expired.done, true);
+  assert.equal(expired.status, 410);
+  assert.match(expired.error, /断开/);
 });
 
 test('公网任务超过总时限后停止，即使一直在轮询', async t => {
-  const { url } = await relayFixture(t, { maxJobAge: 40, pollLease: 60_000 });
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const { url } = await relayFixture(t);
   const id = await relayStart(url);
-  await poll(url, id);
-  await wait(80);
+  now += RELAY_LIMITS.POLL_LEASE - 1;
+  assert.equal((await poll(url, id)).done, false);
+  now += RELAY_LIMITS.MAX_JOB_AGE - RELAY_LIMITS.POLL_LEASE + 1;
   const later = await poll(url, id);
   assert.equal(later.done, true);
   assert.equal(later.status, 504);

@@ -272,6 +272,19 @@ test('dims：缺 point 时按锚点推导量测点', () => {
   assert.deepEqual(plan.dims[1].to.point, [2200, 3600]);
 });
 
+test('dims：房间锚点精确落在唯一相邻边时修正边号，保留图纸读数', () => {
+  const plan = validatePlan(v1Plan({
+    dims: [{
+      id: 'width', axis: 'x', drawingValue: 4000,
+      from: { kind: 'room', id: 'living', edge: 0, point: [200, 1700] },
+      to: { kind: 'room', id: 'living', edge: 1, point: [4200, 1700] },
+    }],
+  }));
+  assert.equal(plan.plan.dims[0].from.edge, 3);
+  assert.deepEqual(plan.plan.dims[0].from.point, [200, 1700]);
+  assert.equal(plan.plan.dims[0].drawingValue, 4000);
+});
+
 test('弧段端点衔接只提示不拒绝', () => {
   const dangling = validatePlan(v1Plan()).warnings;
   assert.ok(dangling.some(line => line.includes('衔接')), JSON.stringify(dangling));

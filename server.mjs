@@ -15,6 +15,7 @@ import { CodexSession, SessionPool, probeModels } from './lib/codex/session.mjs'
 import { loadRenderImageProvider } from './lib/codex/render-image.mjs';
 import { parsePatch, validatePlan, validateImportedFurniture, summarizePlan, extractJson } from './lib/codex/plan.mjs';
 import { createImportJobs, importJobError, isImportJobPath } from './lib/import-jobs.mjs';
+import { buildRenderPrompt } from './lib/render-prompt.mjs';
 import { createTaskJobs, isTaskJobPath, taskJobError } from './lib/task-jobs.mjs';
 import { renderPlanPng } from './lib/plan-render.mjs';
 import { buildReviewMessage, checkPlan, parseReviewReply, reviewDelta } from './lib/plan-review.mjs';
@@ -39,6 +40,7 @@ const PUBLIC_RENDER_URL = /^\/files\/public-ai\/remote-owner\/([0-9a-f]{8}-[0-9a
 const PUBLIC_BRIDGE_TOKEN = loadPublicBridgeToken(process.env.STUDIO_PUBLIC_BRIDGE_TOKEN_FILE);
 const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex');
 const MAX_PUBLIC_RENDER_BYTES = 24 * 1024 * 1024;
+const MAX_DRAWING_PREVIEW_BYTES = 24 * 1024 * 1024;
 const renderImage = loadRenderImageProvider(process.env.STUDIO_RENDER_IMAGE_CONFIG_FILE);
 
 const MAX_BODY = 40 * 1024 * 1024;
@@ -225,9 +227,14 @@ function imageExt(mime) {
 }
 
 function isImportImage(buffer) {
-  return buffer.subarray(0, 8).equals(PNG_SIGNATURE)
-    || buffer.subarray(0, 3).toString('hex') === 'ffd8ff'
-    || (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP');
+  return Boolean(drawingImageType(buffer));
+}
+
+function drawingImageType(buffer) {
+  if (buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return 'image/png';
+  if (buffer.subarray(0, 3).toString('hex') === 'ffd8ff') return 'image/jpeg';
+  if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return '';
 }
 
 /** 上传文件名：去目录、去控制字符，保留原扩展名。 */
@@ -541,14 +548,28 @@ function chatSubmission(body) {
 /** 校验并规范化效果图请求。 */
 function renderSubmission(body) {
   if (!decodeBase64(body?.image)) throw taskJobError(400, '缺少 image（当前视角截图，base64）');
+  const input = body.scene?.camera;
+  const roomId = typeof body.roomId === 'string' ? body.roomId.slice(0, 120) : null;
+  const coordinate = vector => vector && ['x', 'y', 'z'].every(key => Number.isFinite(vector[key]))
+    ? {x:vector.x, y:vector.y, z:vector.z} : null;
+  const view = input?.view;
+  const camera = {
+    key:['current', 'iso', 'top', 'corner', 'room'].includes(input?.key ?? input?.preset) ? input.key ?? input.preset : 'current',
+    corner:Number.isInteger(input?.corner) && input.corner >= 0 && input.corner < 4 ? input.corner : null,
+    roomId,
+    roomName:typeof (input?.roomName ?? input?.room?.name) === 'string' ? (input.roomName ?? input.room.name).slice(0, 100) : '',
+    label:typeof input?.label === 'string' ? input.label.slice(0, 150) : '',
+    view:view ? {position:coordinate(view.position), target:coordinate(view.target), fov:Number.isFinite(view.fov) ? view.fov : null,
+      mode:view.mode === 'walk' ? 'walk' : 'orbit'} : null,
+  };
   return {
     kind: body.kind === 'room' ? 'room' : 'angle',
-    roomId: typeof body.roomId === 'string' ? body.roomId : null,
+    roomId,
     image: body.image,
     mime: typeof body.mime === 'string' ? body.mime : null,
-    scene: body.scene ?? null,
-    style: typeof body.style === 'string' ? body.style : '',
-    note: typeof body.note === 'string' ? body.note : '',
+    scene: {camera},
+    style: typeof body.style === 'string' ? body.style.trim().slice(0, 80) : '',
+    note: typeof body.note === 'string' ? body.note.trim().slice(0, 1000) : '',
   };
 }
 
@@ -688,47 +709,19 @@ async function handleChat(req, res, publicRequest) {
 
 // ---------------------------------------------------------------- /api/render
 
-function buildRenderMessage(payload, targetFile) {
-  const kind = payload.kind === 'room' ? `房间「${payload.roomId || '当前视角'}」` : '整体视角';
-  let scene = '';
-  try {
-    scene = truncate(JSON.stringify(payload.scene ?? {}), 60_000);
-  } catch {
-    scene = '{}';
-  }
-  return [
-    '请根据截图生成一张室内设计效果图。',
-    `类型：${kind}。风格：${payload.style || '现代简约'}。`,
-    payload.note ? `补充要求：${payload.note}` : '',
-    '',
-    '场景数据（JSON）：',
-    '```json',
-    scene,
-    '```',
-    '',
-    '要求：',
-    '1. 调用 image_gen 工具生成图片；保持截图中的机位、构图、墙体布局、门窗位置、家具位置与朝向不变。',
-    '2. 只提升真实感与光照，不要改变户型结构、不要增删房间或家具。',
-    `3. 把最终图片以 PNG 保存到：${targetFile}`,
-    '4. 回复一句中文说明，并给出最终文件路径。',
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-
 const renderImageTool = {
   type: 'function',
   name: 'image_gen',
   description: 'Generate the final photorealistic interior render from the reference screenshot already attached to this turn. The image is saved to the requested PNG target by the tool.',
   inputSchema: {
     type: 'object',
-    properties: { prompt: { type: 'string', description: 'Describe the photorealistic lighting, materials, and furnishing details to keep from the reference.' } },
+    properties: { prompt: { type: 'string', description: 'Pass the complete, unchanged render prompt provided with the reference image.' } },
     required: ['prompt'],
     additionalProperties: false,
   },
 };
 
-function createRenderTool(shot, payload, targetFile, emit) {
+function createRenderTool(shot, mime, prompt, targetFile, emit) {
   let generation;
   let generated = false;
   let error;
@@ -736,20 +729,11 @@ function createRenderTool(shot, payload, targetFile, emit) {
     get generated() { return generated; },
     get error() { return error; },
     dynamicTools: [renderImageTool],
-    async onToolCall({ arguments: args, signal }) {
-      const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : '';
-      if (!prompt) return { success: false, contentItems: [{ type: 'inputText', text: 'Please provide a render prompt.' }] };
+    async onToolCall({ signal }) {
       generation ??= (async () => {
         emit({ type: 'status', text: '正在根据参考视角生成图像…' });
         try {
-          const constraints = [
-            'Render the attached interior-design screenshot as a photorealistic architectural visualization.',
-            'Keep the camera angle, crop, walls, door and window openings, and furniture layout from the screenshot.',
-            `Design style: ${truncate(String(payload.style || '现代简约'), 80)}.`,
-            typeof payload.note === 'string' ? truncate(payload.note, 1000) : '',
-            truncate(prompt, 6000),
-          ].filter(Boolean).join('\n');
-          const image = await renderImage({ image: shot, mime: payload.mime, prompt: constraints, signal });
+          const image = await renderImage({ image: shot, mime, prompt, signal });
           signal.throwIfAborted();
           await fsp.writeFile(targetFile, image, { flag: 'wx', mode: 0o600 });
           generated = true;
@@ -767,7 +751,7 @@ function createRenderTool(shot, payload, targetFile, emit) {
 /**
  * 从通知/最终文本里找生成的图片；找不到时扫描 renders 目录中本次新增的文件兜底。
  */
-async function findRenderFile(rendersDir, beforeNames, id, blob) {
+async function findRenderFile(rendersDir, id, blob) {
   const exact = path.join(rendersDir, `${id}.png`);
   if (await isFile(exact)) return exact;
 
@@ -781,7 +765,7 @@ async function findRenderFile(rendersDir, beforeNames, id, blob) {
   let best = null;
   const entries = await fsp.readdir(rendersDir).catch(() => []);
   for (const name of entries) {
-    if (!/\.(png|jpe?g|webp)$/i.test(name) || beforeNames.has(name)) continue;
+    if (!/\.(png|jpe?g|webp)$/i.test(name)) continue;
     const file = path.join(rendersDir, name);
     const stat = await fsp.stat(file).catch(() => null);
     if (!stat || !stat.isFile()) continue;
@@ -836,7 +820,7 @@ async function savePublicRender(directory, filename, expectedDirectory) {
 
 /**
  * 执行一次效果图生成；与实时 SSE 共用，事件由 emit 接收。
- * 返回 { status, result?: { url, prompt }, error? }。
+ * 返回 { status, result?: { url, prompt, referenceUrl }, error? }。
  */
 async function runRenderTurn({ payload, owner, signal, emit }) {
   const publicRequest = owner === 'remote';
@@ -865,32 +849,34 @@ async function runRenderTurn({ payload, owner, signal, emit }) {
     const id = crypto.randomUUID();
     tmpDir = path.join(os.tmpdir(), 'interior-design-studio', `render-${id}`);
     await fsp.mkdir(tmpDir, { recursive: true, mode: 0o700 });
-    const rendersDir = path.join(publicRequest ? tmpDir : PROJECTS, 'renders');
+    const rendersDir = path.join(tmpDir, 'renders');
     await fsp.mkdir(rendersDir, { recursive: true });
-    const beforeNames = publicRequest ? null : new Set(await fsp.readdir(rendersDir).catch(() => []));
     const expectedDirectory = publicRequest ? path.join(await fsp.realpath(tmpDir), 'renders') : null;
     const filename = `${id}.png`;
     const targetFile = path.join(rendersDir, filename);
     const shotPath = path.join(tmpDir, `shot.${imageExt(payload.mime)}`);
     await fsp.writeFile(shotPath, shot);
 
-    emit({ type: 'status', text: '正在生成效果图，可能需要 1–3 分钟…' });
-    const tool = renderImage ? createRenderTool(shot, payload, targetFile, emit) : null;
     let developerInstructions = await readPrompt('render.md');
+    const prompt = buildRenderPrompt(developerInstructions, payload);
+    emit({ type: 'prompt', text: prompt });
+    const tool = renderImage ? createRenderTool(shot, payload.mime, prompt, targetFile, emit) : null;
     if (tool) {
       developerInstructions += '\n使用本会话提供的 image_gen 函数并传入 prompt。工具会使用已附参考图并将 PNG 写入目标位置。无需自行复制文件。';
     }
     const input = [
-      { type: 'text', text: buildRenderMessage(payload, targetFile), text_elements: [] },
+      { type: 'text', text: `将效果图以 PNG 保存到：${targetFile}\n\n传给 image_gen 的提示词全文：\n${prompt}`, text_elements: [] },
       { type: 'localImage', path: shotPath },
     ];
 
+    emit({ type: 'status', text: '等待效果图生成…' });
     const result = await limitTurns(async () => {
       // 排队期间可能已经被中止：不再启动新的 codex 会话。
       if (signal.aborted) throw new Error('客户端已断开（client disconnected）');
+      emit({ type: 'status', text: '正在生成效果图，可能需要 1–3 分钟…' });
       const session = await CodexSession.start({
         install: probe.install,
-        cwd: publicRequest ? tmpDir : ROOT,
+        cwd: tmpDir,
         sandbox: 'workspace-write',
         approvalPolicy: 'never',
         developerInstructions,
@@ -926,23 +912,44 @@ async function runRenderTurn({ payload, owner, signal, emit }) {
       return fail(502, tool.error || 'Codex 未调用生图工具，请重试。');
     }
 
+    emit({ type: 'status', text: '正在保存效果图…' });
+    const localRenders = path.join(PROJECTS, 'renders');
     let url;
     if (publicRequest) {
       url = await savePublicRender(rendersDir, filename, expectedDirectory);
     } else {
       const blob = `${result.text}\n${JSON.stringify(result.items)}`;
-      const file = await findRenderFile(rendersDir, beforeNames, id, blob);
-      if (file) url = `/files/renders/${encodeURIComponent(path.basename(file))}`;
+      const file = await findRenderFile(rendersDir, id, blob);
+      const info = file && await fsp.lstat(file).catch(() => null);
+      if (info?.isFile() && info.size <= MAX_PUBLIC_RENDER_BYTES) {
+        const localName = `${id}${path.extname(file).toLowerCase()}`;
+        await fsp.mkdir(localRenders, { recursive: true });
+        await fsp.copyFile(file, path.join(localRenders, localName), fs.constants.COPYFILE_EXCL);
+        url = `/files/renders/${localName}`;
+      }
     }
     if (!url) {
       return fail(502, 'codex 没有生成图片（no image produced）。请重试，或在 note 里补充更具体的要求。');
     }
 
-    const style = payload.style || '现代简约';
-    const prompt = `[${style}] ${payload.kind === 'room' ? `room:${payload.roomId || ''}` : 'angle'}${payload.note ? ` · ${payload.note}` : ''}`;
-    emit({ type: 'image', url, prompt });
+    let referenceUrl = null;
+    if (shot.length <= MAX_PUBLIC_RENDER_BYTES && shot.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+      try {
+        const referenceName = `${crypto.randomUUID()}.png`;
+        const referenceDir = publicRequest ? rendersDir : path.join(localRenders, 'references');
+        await fsp.mkdir(referenceDir, { recursive: true, mode: 0o700 });
+        await fsp.writeFile(path.join(referenceDir, referenceName), shot, { flag: 'wx', mode: 0o600 });
+        referenceUrl = publicRequest
+          ? await savePublicRender(rendersDir, referenceName, expectedDirectory)
+          : `/files/renders/references/${referenceName}`;
+      } catch (error) {
+        console.warn('参考图保存失败（render reference）:', errorMessage(error));
+      }
+    }
+    const rendered = {url, prompt, referenceUrl, kind:payload.kind, style:payload.style, note:payload.note, camera:payload.scene?.camera};
+    emit({ type: 'image', ...rendered });
     emit({ type: 'done' });
-    return { status: 200, result: { url, prompt } };
+    return { status: 200, result: rendered };
   } finally {
     signal.removeEventListener('abort', interrupt);
     if (tmpDir) fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
@@ -1071,6 +1078,41 @@ function drawingReviewResult(input) {
   return { plan: validated.plan, furniture: validateImportedFurniture(input.furniture, validated.plan.bounds) };
 }
 
+async function sendDrawingPreview(res, folder, id) {
+  const directory = path.join(folder, 'files');
+  const expected = path.join(await fsp.realpath(IMPORT_JOBS_DIR), id, 'source', 'files');
+  if (await fsp.realpath(directory).catch(() => '') !== expected) {
+    return sendJson(res, 404, { code: 'missing-preview', error: '没有可显示的原图。' });
+  }
+  const entries = await fsp.readdir(directory, { withFileTypes: true });
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const handle = await fsp.open(path.join(directory, entry.name),
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK).catch(() => null);
+    if (!handle) continue;
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.nlink !== 1 || info.size < 12 || info.size > MAX_DRAWING_PREVIEW_BYTES) continue;
+      const header = Buffer.alloc(12);
+      const { bytesRead } = await handle.read(header, 0, header.length, 0);
+      const mime = drawingImageType(header.subarray(0, bytesRead));
+      if (!mime) continue;
+      const image = Buffer.alloc(info.size);
+      const { bytesRead: length } = await handle.read(image, 0, image.length, 0);
+      if (length !== info.size) continue;
+      res.writeHead(200, {
+        'Content-Type': mime, 'Content-Length': length,
+        'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+      });
+      return res.end(image);
+    } finally {
+      await handle.close().catch(() => {});
+    }
+  }
+  return sendJson(res, 415, { code: 'unsupported-preview', error: '原图暂只支持预览 24 MiB 内的 PNG、JPEG 或 WebP。' });
+}
+
 async function handleDrawingSource(req, res, id, owner) {
   try {
     if (req.method === 'GET') {
@@ -1078,8 +1120,12 @@ async function handleDrawingSource(req, res, id, owner) {
       if (!job) return sendJson(res, 404, {
         code: 'missing-job', error: '图纸任务不存在或已过期。', reviewEnabled: PLAN_REVIEW_ENABLED,
       });
-      const available = Boolean(await importJobs.sourceDirectory(owner, id));
-      return sendJson(res, 200, { available, reviewEnabled: PLAN_REVIEW_ENABLED });
+      const folder = await importJobs.sourceDirectory(owner, id);
+      if (new URL(req.url, 'http://localhost').searchParams.get('preview') === '1') {
+        if (!folder) return sendJson(res, 404, { code: 'missing-source', error: '尚未保存原图。' });
+        return await sendDrawingPreview(res, folder, id);
+      }
+      return sendJson(res, 200, { available: Boolean(folder), reviewEnabled: PLAN_REVIEW_ENABLED });
     }
     const input = await readJson(req);
     const body = drawingImportRequest(input);
@@ -1312,7 +1358,7 @@ async function runPlanReview({ source, result, signal, updateReview, saveReview 
     const note = await fsp.readFile(path.join(source, 'review-note.json'), 'utf8')
       .then(JSON.parse).then(body => typeof body?.note === 'string' ? body.note : '').catch(() => '');
     const rendered = path.join(workDirectory, 'review-plan.png');
-    await fsp.writeFile(rendered, renderPlanPng(plan), { mode: 0o600 });
+    await fsp.writeFile(rendered, renderPlanPng({ ...plan, furniture }), { mode: 0o600 });
     if (signal.aborted) return await unavailable();
 
     const check = checkPlan(plan, furniture);

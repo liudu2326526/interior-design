@@ -61,7 +61,7 @@ type WinArc = { id:string, from:Point, to:Point, sweep:number, thickness:number,
 type Door = { name:string, rect:Rect, h:Point, c:Point, o:Point, len:number, entry?:boolean }
 type Slide = { rect:Rect, v:boolean }
 type Room = { id:string, name:string, poly:Point[], arcs?:{edge:number, sweep:number}[],
-              mat:string, at?:Point, counted?:boolean }
+              mat:string, at?:Point, counted?:boolean, bay?:{sill?:number, cushion?:boolean} }
 type Ceiling = { h?:number, drops?:{rect:Rect, depth:number}[],
                  cove?:'none'|'perimeter', box?:boolean }
 type Dim = {
@@ -159,11 +159,14 @@ type State = {
   rooms: Record<roomId, { name, mat }>,
   demolished: string[],        // 'w'+index
   measures: any[],
+  drawingRegistration?: { key:string, origin:Point, scale:number, angle:number },
   renders?: RenderRecord[]
 }
 ```
 
 localStorage 键：方案 `interior-plan-v1`，状态 `interior-state-v1`（新键，避免读旧站数据）。
+
+`drawingRegistration` 保存本方案中原图像素到平面毫米坐标的对齐关系。`origin` 是图像原点，`scale` 为毫米/像素，`angle` 为平面顺时针角度。校核中分别点选原图和模型上的一对对应端点，再输入图上长度。标定以模型第一点为基准等比调整平面几何，家具随整体平面移动，家具本身的尺寸、竖向标高和原图标注值沿用已有值。几何和对齐关系可一步撤销。
 
 ## 3. 页面运行时 API（`window.Studio`）
 
@@ -339,7 +342,8 @@ pending / running 期间服务重启 → unavailable（同时删除 review.json�
 ```
 
 - `GET /api/jobs/<id>/review`：无请求体。`match` 或 `differ` 时返回 `200` 和 `JobReviewDetail`；`pending`、`running`、`unavailable`、任务不存在或不属于当前访问范围时返回 `404`（`{error}`），前端据此轮询。
-- `GET /api/jobs/<id>/source`：返回 `{available, reviewEnabled}`。此接口和任务列表只返回状态，原图在服务端私有保存。同一任务仅能在所属访问范围读取状态。任务不存在或属于其他访问范围时返回 `404`，附 `code: "missing-job"`。
+- `GET /api/jobs/<id>/source`：返回 `{available, reviewEnabled}`。任务不存在或属于其他访问范围时返回 `404`，附 `code: "missing-job"`。
+- `GET /api/jobs/<id>/source?preview=1`：只向同一访问范围返回归档中按文件名排序的首张可预览原图，按文件头识别 PNG、JPEG 或 WebP，限 24 MiB，禁止缓存。无原图时返回 `404`，无可预览格式时返回 `415`。校核可从本机选取图片用于对照，PDF 或 CAD 图纸可提供所需页的 PNG、JPEG 或 WebP。
 - `POST /api/jobs/<id>/source`：接收 `{files, note?, result?, name?}`。上传文件的格式与导入接口一致。已有任务仅补存原图。任务记录过期时，携带 `result: {plan, furniture}` 和可选 `name` 可恢复关联，响应会给出新的任务 `id`。前端沿用原有项目，并关联响应中的任务 ID。保存原图与启动复核是两次独立操作。
 - `POST /api/jobs/<id>/review`：可传 `{result: {plan, furniture}}` 复核当前项目快照。无请求体时使用任务保存的识别结果。接口沿用原图归档里的备注，受理后立即返回 `202 {ok:true}`，结果通过上面的 `GET` 查询。原图缺失、任务缺失和复核关闭返回 `404`，分别附 `missing-source`、`missing-job` 和 `review-disabled`。识别未完成或已有复核进行中返回 `409`，Codex 不可用返回 `503`。
 - 复核失败时任务 `review.state` 变为 `unavailable`，项目方案仍可编辑。设置 `STUDIO_PLAN_REVIEW=off` 会关闭自动和手动复核，仍可保存原图和读取已有复核结果。
