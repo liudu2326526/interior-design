@@ -5257,15 +5257,19 @@ function projectActions(row){
   const button = (action, label, primary = false) =>
     `<button type="button" class="btn${primary ? ' primary' : ''}" data-project-action="${action}" ${projectOpening.has(row.id) ? 'disabled' : ''}>${esc(label)}</button>`;
   const review = projectReview(row);
+  const reviewBusy = review?.state === 'pending' || review?.state === 'running';
+  // 只要不是正在复核，就给一个主动触发的入口（包括已有差异、复核失败、还没复核）。
+  const rerunButton = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy
+    ? button('rerun', tr('重新复核', 'Run review again')) : '';
   const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
     ? button('review', tr('查看对比', 'Compare')) : '';
-  if (row.id === activeProjectId) return reviewButton;
+  if (row.id === activeProjectId) return reviewButton + rerunButton;
   if (projectPending(row)) return button('cancel', tr('取消识别', 'Cancel analysis'));
-  if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true);
+  if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true) + rerunButton;
   if (row.phase === 'failed' || row.phase === 'canceled'){
     return button('retry', tr('重新导入', 'Import again'), true) + button('hide', tr('移除记录', 'Remove entry'));
   }
-  return button('open', tr('打开项目', 'Open project'), true) + reviewButton;
+  return button('open', tr('打开项目', 'Open project'), true) + reviewButton + rerunButton;
 }
 function renderProjects(){
   const rows = [...projectRows.values()].filter(row => !row.hidden).sort((a, b) =>
@@ -5395,6 +5399,44 @@ async function projectImportSubmitted({jobId, name, note, retryId}){
   });
   renderProjects(); scheduleProjectSync(0);
 }
+// 手动触发一次复核：服务端异步跑模型回合，结果通过任务列表的 review 字段回传。
+async function projectReviewAgain(row){
+  if (!row?.jobId) return;
+  let response;
+  try {
+    response = await fetch(studioPath('/api/jobs/' + encodeURIComponent(row.jobId) + '/review'),
+      {method:'POST', signal:AbortSignal.timeout(15000)});
+  } catch(e){
+    toast(tr('无法连接复核服务，请稍后重试。', 'Could not reach the review service. Try again.'));
+    return;
+  }
+  if (response.status === 202){
+    const current = projectRows.get(row.id);
+    if (current && current.jobId === row.jobId && !current.hidden && sameReview(current.review, row.review)){
+      await putProject({...current, review:{...(current.review || {}), state:'pending', count:0, updatedAt:Date.now()}});
+      renderProjects();
+    }
+    scheduleProjectSync(0);
+    toast(tr('已开始重新复核，完成后会提示差异。', 'Review started. Differences will show when it finishes.'));
+    return;
+  }
+  if (response.status === 409){
+    toast(tr('复核正在进行，请稍候。', 'A review is already running.'));
+    scheduleProjectSync(0);
+    return;
+  }
+  if (response.status === 404){
+    toast(tr('无法重新复核：原图已清理或复核未启用，可重新导入图纸。',
+      'Cannot re-run the review: the source drawing was cleaned up or reviews are disabled. Import the drawing again.'));
+    return;
+  }
+  if (response.status === 503){
+    toast(tr('codex 不可用，暂时无法复核。', 'codex is unavailable, so the review cannot run right now.'));
+    return;
+  }
+  toast(tr('无法开始复核，请稍后重试。', 'Could not start the review. Try again later.'));
+}
+
 async function projectClick(e){
   const button = e.target.closest('[data-project-action]');
   if (!button) return;
@@ -5432,6 +5474,7 @@ async function projectClick(e){
         {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'project', rowId:row.id});
       break;
     }
+    case 'rerun': await projectReviewAgain(row); break;
     case 'cancel': {
       const response = await fetch(studioPath(`/api/jobs/${encodeURIComponent(row.jobId)}`), {method:'DELETE'});
       if (!response.ok) throw new Error(aiResponseMessage(response.status, await response.text()));
