@@ -2368,7 +2368,7 @@ function renderDims(){
   s += sideChain('top', xs, stale.x) + sideChain('bottom', xs, stale.x);
   s += sideChain('left', ys, stale.y) + sideChain('right', ys, stale.y);
   // plan.dims：图纸 / AI 来源为中性灰，用户新增为深色，估算项带 ≈（设计 §5.2）。
-  const k = 1/view.s, r = 9*k;
+  const r = 9*k;
   for (const dim of PLAN.dims || []){
     if (!dim?.from?.point || !dim?.to?.point) continue;
     const geo = dimGeometry(dim), v = Math.round(dimValueOf(dim));
