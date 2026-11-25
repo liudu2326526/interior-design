@@ -15,6 +15,7 @@ import { CodexSession, SessionPool, probeModels } from './lib/codex/session.mjs'
 import { loadRenderImageProvider } from './lib/codex/render-image.mjs';
 import { parsePatch, validatePlan, validateImportedFurniture, summarizePlan, extractJson } from './lib/codex/plan.mjs';
 import { createImportJobs, importJobError, isImportJobPath } from './lib/import-jobs.mjs';
+import { createTaskJobs, isTaskJobPath, taskJobError } from './lib/task-jobs.mjs';
 import { renderPlanPng } from './lib/plan-render.mjs';
 import { buildReviewMessage, checkPlan, parseReviewReply, reviewDelta } from './lib/plan-review.mjs';
 
@@ -23,6 +24,11 @@ const PROJECTS = path.join(ROOT, 'projects');
 const WORKDIR = path.join(ROOT, 'workdir');
 const IMPORT_JOBS_DIR = path.resolve(process.env.STUDIO_IMPORT_JOBS_DIR ||
   path.join(os.homedir(), '.interior-design-studio', 'import-jobs'));
+/** 对话与效果图的后台任务目录；终态至少保留 30 分钟，可设置更长的保留期。 */
+const TASK_JOBS_DIR = path.resolve(process.env.STUDIO_TASK_JOBS_DIR ||
+  path.join(os.homedir(), '.interior-design-studio', 'task-jobs'));
+const TASK_JOBS_RETENTION_MS = Math.max(30 * 60_000,
+  Number(process.env.STUDIO_TASK_JOBS_RETENTION_MS) || 0);
 const PROMPTS = path.join(ROOT, 'prompts');
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT) || 4173;
@@ -369,39 +375,35 @@ const rerunReviews = new Set();
 const reviewing = new Set();
 const importJobs = createImportJobs({
   directory: IMPORT_JOBS_DIR,
+  writeSource: writeDrawingSource,
   execute: async (body, { id, owner, workDirectory, signal }) => {
-    // 识别阶段不清理工作目录：复核需要原图和 plan.json。
-    const result = await analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: false });
-    if (result.status >= 400) {
-      // 公网任务失败后不保留用户上传的文件。
-      if (owner === 'remote') await fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {});
-      return result;
-    }
-    if (!PLAN_REVIEW_ENABLED) {
-      // 复核关闭时不需要保留工作目录，恢复识别完成后立即清理的旧行为。
-      await fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {});
-      return result;
-    }
-    // 重新复核时仍要带上用户备注；与识别产物一起留在工作目录。
-    if (typeof body?.note === 'string' && body.note) {
-      await fsp.writeFile(path.join(workDirectory, 'review-note.json'),
-        JSON.stringify({ note: body.note }), { mode: 0o600 }).catch(() => {});
-    }
+    const result = await analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: true });
+    if (result.status >= 400 || !PLAN_REVIEW_ENABLED) return result;
     return {
       ...result,
-      after: ({ signal: reviewSignal, updateReview, saveReview }) =>
+      after: async ({ signal: reviewSignal, updateReview, saveReview }) =>
         runPlanReview({
-          workDirectory,
-          body,
+          source: await importJobs.sourceDirectory(owner, id),
           result: result.body,
           signal: reviewSignal,
           updateReview,
           saveReview,
-        }).finally(() => (owner === 'remote'
-          ? fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {})
-          : undefined)),
+        }),
     };
   },
+});
+/**
+ * 对话与效果图的后台任务：与浏览器连接解耦，事件与结果落盘。
+ * 执行逻辑与实时 SSE 完全相同（runChatTurn / runRenderTurn），不复制提示词与校验。
+ */
+const taskJobs = createTaskJobs({
+  directory: TASK_JOBS_DIR,
+  retention: TASK_JOBS_RETENTION_MS,
+  kinds: { chat: { timeoutMs: CHAT_TIMEOUT_MS }, render: { timeoutMs: RENDER_TIMEOUT_MS } },
+  execute: ({ kind, payload, owner, signal, emit }) =>
+    kind === 'chat'
+      ? runChatTurn({ payload, owner, signal, emit })
+      : runRenderTurn({ payload, owner, signal, emit }),
 });
 
 // ---------------------------------------------------------------- 路由
@@ -451,11 +453,21 @@ async function route(req, res) {
     if (!api(['POST'])) return;
     return handlePlanImport(req, res, publicRequest);
   }
-  const reviewPath = /^\/api\/jobs\/(.+)\/review$/.exec(pathname);
-  if (reviewPath && isImportJobPath(pathname)) {
-    // 复核子资源要先于通用 job 路由处理（后者只接受 GET / DELETE）。
+  if (pathname === '/api/jobs/chat' || pathname === '/api/jobs/render') {
+    if (!api(['POST'])) return;
+    return handleTaskSubmit(req, res, pathname.endsWith('/chat') ? 'chat' : 'render',
+      publicRequest ? 'remote' : 'local');
+  }
+  if (isTaskJobPath(pathname)) {
+    const collection = pathname === '/api/jobs/task' || pathname === '/api/jobs/task/';
+    if (!api(collection ? ['GET'] : ['GET', 'DELETE'])) return;
+    return handleTaskJob(req, res, pathname, url, publicRequest ? 'remote' : 'local');
+  }
+  const jobAction = /^\/api\/jobs\/([^/]+)\/(review|source)$/.exec(pathname);
+  if (jobAction && isImportJobPath(pathname)) {
     if (!api(['GET', 'POST'])) return;
-    return handlePlanReview(req, res, reviewPath[1], publicRequest ? 'remote' : 'local');
+    const handler = jobAction[2] === 'review' ? handlePlanReview : handleDrawingSource;
+    return handler(req, res, jobAction[1], publicRequest ? 'remote' : 'local');
   }
   if (isImportJobPath(pathname)) {
     const collection = pathname === '/api/jobs/plan-import';
@@ -505,7 +517,40 @@ async function handleHealth(res, url, publicRequest) {
   sendJson(res, 200, body);
 }
 
-// ---------------------------------------------------------------- /api/chat
+// ---------------------------------------------------------------- 对话 / 效果图（实时 SSE 与后台任务共用）
+
+/**
+ * 校验并规范化对话请求。实时 SSE 与后台任务共用同一份结果，
+ * 提示词、超时与错误文案因此只有一处。
+ */
+function chatSubmission(body) {
+  const message = typeof body?.message === 'string' ? body.message.trim() : '';
+  if (!message) throw taskJobError(400, 'message 不能为空（message is required）');
+  // 不在这里生成 sessionId：它进入幂等摘要，随机值会让同样的请求永远命中不了同一任务。
+  // 未提供时由 runChatTurn 在真正执行时生成一次。
+  const sessionId =
+    typeof body.sessionId === 'string' && body.sessionId.trim()
+      ? body.sessionId.trim().slice(0, 128)
+      : null;
+  const images = Array.isArray(body.images)
+    ? body.images.filter((img) => img && typeof img.data === 'string').slice(0, 6)
+    : [];
+  return { message, sessionId, images, context: body.context ?? null };
+}
+
+/** 校验并规范化效果图请求。 */
+function renderSubmission(body) {
+  if (!decodeBase64(body?.image)) throw taskJobError(400, '缺少 image（当前视角截图，base64）');
+  return {
+    kind: body.kind === 'room' ? 'room' : 'angle',
+    roomId: typeof body.roomId === 'string' ? body.roomId : null,
+    image: body.image,
+    mime: typeof body.mime === 'string' ? body.mime : null,
+    scene: body.scene ?? null,
+    style: typeof body.style === 'string' ? body.style : '',
+    note: typeof body.note === 'string' ? body.note : '',
+  };
+}
 
 function buildChatMessage(message, context) {
   const parts = [`用户消息：\n${message}`];
@@ -524,61 +569,46 @@ function buildChatMessage(message, context) {
   return parts.join('\n\n');
 }
 
-async function handleChat(req, res, publicRequest) {
-  let body;
-  try {
-    body = await readJson(req);
-  } catch (error) {
-    return sendJson(res, error.status || 400, { error: errorMessage(error) });
-  }
-
-  const message = typeof body?.message === 'string' ? body.message.trim() : '';
-  if (!message) return sendJson(res, 400, { error: 'message 不能为空（message is required）' });
-
-  const sessionId =
-    typeof body.sessionId === 'string' && body.sessionId.trim()
-      ? body.sessionId.trim().slice(0, 128)
-      : crypto.randomUUID();
-  const images = Array.isArray(body.images)
-    ? body.images.filter((img) => img && typeof img.data === 'string').slice(0, 6)
-    : [];
-
-  const sse = openSSE(res);
-  let settled = false;
-  let cancelled = false;
-  let activeSession = null;
+/**
+ * 执行一回合对话。事件交给 emit（实时 SSE 直接写响应，后台任务落盘），
+ * signal 中止时中断 codex 会话。返回 { status, result?, error? }。
+ */
+async function runChatTurn({ payload, owner, signal, emit }) {
+  const publicRequest = owner === 'remote';
+  // 未指定会话时为本任务生成一次，同一任务内的回合保持一致。
+  const sessionId = payload.sessionId || crypto.randomUUID();
   let tmpDir = null;
-  res.on('close', () => {
-    cancelled = true;
-    if (!settled) activeSession?.interrupt().catch(() => {});
-  });
+  let activeSession = null;
+  const interrupt = () => { activeSession?.interrupt().catch(() => {}); };
+  signal.addEventListener('abort', interrupt, { once: true });
 
   try {
     const probe = await getProbe();
     if (!probe.found) {
-      sse.send({ type: 'error', message: unusableMessage(probe) });
-      sse.send({ type: 'done' });
-      return;
+      const message = unusableMessage(probe);
+      emit({ type: 'error', message });
+      emit({ type: 'done' });
+      return { status: 503, error: message };
     }
 
-    sse.send({ type: 'status', text: '正在连接 codex…' });
+    emit({ type: 'status', text: '正在连接 codex…' });
     tmpDir = path.join(os.tmpdir(), 'interior-design-studio', `chat-${crypto.randomUUID()}`);
     await fsp.mkdir(tmpDir, { recursive: true });
     if (publicRequest) await fsp.mkdir(PUBLIC_CHAT_ROOT, { recursive: true, mode: 0o700 });
 
-    const input = [{ type: 'text', text: buildChatMessage(message, body.context), text_elements: [] }];
-    for (let i = 0; i < images.length; i++) {
-      const buffer = decodeBase64(images[i].data);
+    const input = [{ type: 'text', text: buildChatMessage(payload.message, payload.context), text_elements: [] }];
+    for (let i = 0; i < payload.images.length; i++) {
+      const buffer = decodeBase64(payload.images[i].data);
       if (!buffer) continue;
-      const file = path.join(tmpDir, `image-${i + 1}.${imageExt(images[i].mime)}`);
+      const file = path.join(tmpDir, `image-${i + 1}.${imageExt(payload.images[i].mime)}`);
       await fsp.writeFile(file, buffer);
       input.push({ type: 'localImage', path: file });
     }
 
     const developerInstructions = await readPrompt('patch.md');
     const result = await limitTurns(() => {
-      // 排队期间客户端可能已经断开：不要再占用 codex 会话跑一个没人接收的回合。
-      if (cancelled || sse.closed) throw new Error('客户端已断开（client disconnected）');
+      // 排队期间可能已经被中止：不要再占用 codex 会话跑一个没人接收的回合。
+      if (signal.aborted) throw new Error('客户端已断开（client disconnected）');
       return pool.run(
         publicRequest ? `public-chat:${sessionId}` : `chat:${sessionId}`,
         () =>
@@ -590,14 +620,14 @@ async function handleChat(req, res, publicRequest) {
             developerInstructions,
           }),
         (session) => {
-          if (cancelled || sse.closed) throw new Error('客户端已断开（client disconnected）');
+          if (signal.aborted) throw new Error('客户端已断开（client disconnected）');
           activeSession = session;
           return session.runTurn({
             input,
             timeoutMs: CHAT_TIMEOUT_MS,
             onEvent: (event) => {
-              if (event.type === 'status' && event.text) sse.send({ type: 'status', text: event.text });
-              else if (event.type === 'delta' && event.text) sse.send({ type: 'delta', text: event.text });
+              if (event.type === 'status' && event.text) emit({ type: 'status', text: event.text });
+              else if (event.type === 'delta' && event.text) emit({ type: 'delta', text: event.text });
             },
           });
         },
@@ -605,40 +635,71 @@ async function handleChat(req, res, publicRequest) {
     });
     activeSession = null;
 
-    if (cancelled || sse.closed) return;
+    if (signal.aborted) return { status: 499, error: '任务已中断（canceled）' };
     if (result.outcome !== 'completed') {
-      sse.send({ type: 'error', message: result.error || 'codex 回合未正常完成（turn incomplete）' });
-      sse.send({ type: 'done' });
-      return;
+      const message = result.error || 'codex 回合未正常完成（turn incomplete）';
+      emit({ type: 'error', message });
+      emit({ type: 'done' });
+      return { status: 502, error: message };
     }
-    sse.send({ type: 'result', result: parsePatch(result.text) });
-    sse.send({ type: 'done' });
+    const patch = parsePatch(result.text);
+    emit({ type: 'result', result: patch });
+    emit({ type: 'done' });
+    return { status: 200, result: patch };
+  } finally {
+    signal.removeEventListener('abort', interrupt);
+    if (tmpDir) fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------- /api/chat
+
+/** 实时 SSE：与后台任务共用 runChatTurn；连接关闭即中止，后台任务不中止。 */
+async function handleChat(req, res, publicRequest) {
+  let payload;
+  try {
+    payload = chatSubmission(await readJson(req));
+  } catch (error) {
+    return sendJson(res, error.status || 400, { error: errorMessage(error) });
+  }
+
+  const controller = new AbortController();
+  const sse = openSSE(res);
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
+  try {
+    await runChatTurn({
+      payload,
+      owner: publicRequest ? 'remote' : 'local',
+      signal: controller.signal,
+      emit: (event) => sse.send(event),
+    });
   } catch (error) {
     if (!sse.closed) {
       sse.send({ type: 'error', message: errorMessage(error) });
       sse.send({ type: 'done' });
     }
   } finally {
-    settled = true;
     sse.close();
-    if (tmpDir) fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
 // ---------------------------------------------------------------- /api/render
 
-function buildRenderMessage(body, targetFile) {
-  const kind = body.kind === 'room' ? `房间「${body.roomId || '当前视角'}」` : '整体视角';
+function buildRenderMessage(payload, targetFile) {
+  const kind = payload.kind === 'room' ? `房间「${payload.roomId || '当前视角'}」` : '整体视角';
   let scene = '';
   try {
-    scene = truncate(JSON.stringify(body.scene ?? {}), 60_000);
+    scene = truncate(JSON.stringify(payload.scene ?? {}), 60_000);
   } catch {
     scene = '{}';
   }
   return [
     '请根据截图生成一张室内设计效果图。',
-    `类型：${kind}。风格：${body.style || '现代简约'}。`,
-    body.note ? `补充要求：${body.note}` : '',
+    `类型：${kind}。风格：${payload.style || '现代简约'}。`,
+    payload.note ? `补充要求：${payload.note}` : '',
     '',
     '场景数据（JSON）：',
     '```json',
@@ -667,7 +728,7 @@ const renderImageTool = {
   },
 };
 
-function createRenderTool(shot, body, targetFile, sse) {
+function createRenderTool(shot, payload, targetFile, emit) {
   let generation;
   let generated = false;
   let error;
@@ -679,16 +740,16 @@ function createRenderTool(shot, body, targetFile, sse) {
       const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : '';
       if (!prompt) return { success: false, contentItems: [{ type: 'inputText', text: 'Please provide a render prompt.' }] };
       generation ??= (async () => {
-        sse.send({ type: 'status', text: '正在根据参考视角生成图像…' });
+        emit({ type: 'status', text: '正在根据参考视角生成图像…' });
         try {
           const constraints = [
             'Render the attached interior-design screenshot as a photorealistic architectural visualization.',
             'Keep the camera angle, crop, walls, door and window openings, and furniture layout from the screenshot.',
-            `Design style: ${truncate(String(body.style || '现代简约'), 80)}.`,
-            typeof body.note === 'string' ? truncate(body.note, 1000) : '',
+            `Design style: ${truncate(String(payload.style || '现代简约'), 80)}.`,
+            typeof payload.note === 'string' ? truncate(payload.note, 1000) : '',
             truncate(prompt, 6000),
           ].filter(Boolean).join('\n');
-          const image = await renderImage({ image: shot, mime: body.mime, prompt: constraints, signal });
+          const image = await renderImage({ image: shot, mime: payload.mime, prompt: constraints, signal });
           signal.throwIfAborted();
           await fsp.writeFile(targetFile, image, { flag: 'wx', mode: 0o600 });
           generated = true;
@@ -773,33 +834,32 @@ async function savePublicRender(directory, filename, expectedDirectory) {
   }
 }
 
-async function handleRender(req, res, publicRequest) {
-  let body;
-  try {
-    body = await readJson(req);
-  } catch (error) {
-    return sendJson(res, error.status || 400, { error: errorMessage(error) });
-  }
-
-  const shot = decodeBase64(body?.image);
-  if (!shot) return sendJson(res, 400, { error: '缺少 image（当前视角截图，base64）' });
-
-  const sse = openSSE(res);
-  let settled = false;
-  let cancelled = false;
-  let activeSession = null;
+/**
+ * 执行一次效果图生成；与实时 SSE 共用，事件由 emit 接收。
+ * 返回 { status, result?: { url, prompt }, error? }。
+ */
+async function runRenderTurn({ payload, owner, signal, emit }) {
+  const publicRequest = owner === 'remote';
   let tmpDir = null;
-  res.on('close', () => {
-    cancelled = true;
-    if (!settled) activeSession?.interrupt().catch(() => {});
-  });
+  let activeSession = null;
+  const interrupt = () => { activeSession?.interrupt().catch(() => {}); };
+  signal.addEventListener('abort', interrupt, { once: true });
 
   try {
     const probe = await getProbe();
     if (!probe.found) {
-      sse.send({ type: 'error', message: unusableMessage(probe) });
-      sse.send({ type: 'done' });
-      return;
+      const message = unusableMessage(probe);
+      emit({ type: 'error', message });
+      emit({ type: 'done' });
+      return { status: 503, error: message };
+    }
+
+    const shot = decodeBase64(payload.image);
+    if (!shot) {
+      const message = '缺少 image（当前视角截图，base64）';
+      emit({ type: 'error', message });
+      emit({ type: 'done' });
+      return { status: 400, error: message };
     }
 
     const id = crypto.randomUUID();
@@ -811,23 +871,23 @@ async function handleRender(req, res, publicRequest) {
     const expectedDirectory = publicRequest ? path.join(await fsp.realpath(tmpDir), 'renders') : null;
     const filename = `${id}.png`;
     const targetFile = path.join(rendersDir, filename);
-    const shotPath = path.join(tmpDir, `shot.${imageExt(body.mime)}`);
+    const shotPath = path.join(tmpDir, `shot.${imageExt(payload.mime)}`);
     await fsp.writeFile(shotPath, shot);
 
-    sse.send({ type: 'status', text: '正在生成效果图，可能需要 1–3 分钟…' });
-    const tool = renderImage ? createRenderTool(shot, body, targetFile, sse) : null;
+    emit({ type: 'status', text: '正在生成效果图，可能需要 1–3 分钟…' });
+    const tool = renderImage ? createRenderTool(shot, payload, targetFile, emit) : null;
     let developerInstructions = await readPrompt('render.md');
     if (tool) {
       developerInstructions += '\n使用本会话提供的 image_gen 函数并传入 prompt。工具会使用已附参考图并将 PNG 写入目标位置。无需自行复制文件。';
     }
     const input = [
-      { type: 'text', text: buildRenderMessage(body, targetFile), text_elements: [] },
+      { type: 'text', text: buildRenderMessage(payload, targetFile), text_elements: [] },
       { type: 'localImage', path: shotPath },
     ];
 
     const result = await limitTurns(async () => {
-      // 排队期间客户端可能已经断开：不再启动新的 codex 会话。
-      if (cancelled || sse.closed) throw new Error('客户端已断开（client disconnected）');
+      // 排队期间可能已经被中止：不再启动新的 codex 会话。
+      if (signal.aborted) throw new Error('客户端已断开（client disconnected）');
       const session = await CodexSession.start({
         install: probe.install,
         cwd: publicRequest ? tmpDir : ROOT,
@@ -839,12 +899,12 @@ async function handleRender(req, res, publicRequest) {
       });
       activeSession = session;
       try {
-        if (cancelled || sse.closed) throw new Error('客户端已断开（client disconnected）');
+        if (signal.aborted) throw new Error('客户端已断开（client disconnected）');
         return await session.runTurn({
           input,
           timeoutMs: RENDER_TIMEOUT_MS,
           onEvent: (event) => {
-            if (event.type === 'status' && event.text) sse.send({ type: 'status', text: event.text });
+            if (event.type === 'status' && event.text) emit({ type: 'status', text: event.text });
           },
         });
       } finally {
@@ -853,16 +913,17 @@ async function handleRender(req, res, publicRequest) {
       }
     });
 
-    if (cancelled || sse.closed) return;
+    if (signal.aborted) return { status: 499, error: '任务已中断（canceled）' };
+    const fail = (status, message) => {
+      emit({ type: 'error', message });
+      emit({ type: 'done' });
+      return { status, error: message };
+    };
     if (result.outcome !== 'completed') {
-      sse.send({ type: 'error', message: result.error || 'codex 回合未正常完成（turn incomplete）' });
-      sse.send({ type: 'done' });
-      return;
+      return fail(502, result.error || 'codex 回合未正常完成（turn incomplete）');
     }
     if (tool && !tool.generated) {
-      sse.send({ type: 'error', message: tool.error || 'Codex 未调用生图工具，请重试。' });
-      sse.send({ type: 'done' });
-      return;
+      return fail(502, tool.error || 'Codex 未调用生图工具，请重试。');
     }
 
     let url;
@@ -874,27 +935,89 @@ async function handleRender(req, res, publicRequest) {
       if (file) url = `/files/renders/${encodeURIComponent(path.basename(file))}`;
     }
     if (!url) {
-      sse.send({ type: 'error', message: 'codex 没有生成图片（no image produced）。请重试，或在 note 里补充更具体的要求。' });
-      sse.send({ type: 'done' });
-      return;
+      return fail(502, 'codex 没有生成图片（no image produced）。请重试，或在 note 里补充更具体的要求。');
     }
 
-    const style = typeof body.style === 'string' && body.style ? body.style : '现代简约';
-    sse.send({
-      type: 'image',
-      url,
-      prompt: `[${style}] ${body.kind === 'room' ? `room:${body.roomId || ''}` : 'angle'}${body.note ? ` · ${body.note}` : ''}`,
+    const style = payload.style || '现代简约';
+    const prompt = `[${style}] ${payload.kind === 'room' ? `room:${payload.roomId || ''}` : 'angle'}${payload.note ? ` · ${payload.note}` : ''}`;
+    emit({ type: 'image', url, prompt });
+    emit({ type: 'done' });
+    return { status: 200, result: { url, prompt } };
+  } finally {
+    signal.removeEventListener('abort', interrupt);
+    if (tmpDir) fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------- 后台任务
+
+/** POST /api/jobs/chat、POST /api/jobs/render：入队后立即返回 jobId。 */
+async function handleTaskSubmit(req, res, kind, owner) {
+  try {
+    const input = await readJson(req);
+    const payload = kind === 'chat' ? chatSubmission(input) : renderSubmission(input);
+    const job = await taskJobs.submit({ kind, owner, ownership: input?.ownership, payload });
+    return sendJson(res, 202, { jobId: job.id, ...job });
+  } catch (error) {
+    if (error.status) return sendJson(res, error.status, { error: errorMessage(error) });
+    console.error('后台任务接口异常（task job API）:', error.message);
+    return sendJson(res, 503, { error: '后台任务暂不可用，请稍后重试。' });
+  }
+}
+
+/** GET /api/jobs/task 与 GET|DELETE /api/jobs/task/<id>。 */
+async function handleTaskJob(req, res, pathname, url, owner) {
+  try {
+    if (pathname === '/api/jobs/task' || pathname === '/api/jobs/task/') {
+      return sendJson(res, 200, { jobs: await taskJobs.list(owner) });
+    }
+    const id = pathname.slice('/api/jobs/task/'.length);
+    if (req.method === 'DELETE') {
+      const found = await taskJobs.cancel(owner, id);
+      return sendJson(res, found ? 200 : 404, found ? { ok: true } : { error: '任务不存在或已过期。' });
+    }
+    const value = url.searchParams.get('cursor') ?? '0';
+    const cursor = /^\d+$/.test(value) ? Number(value) : NaN;
+    const job = await taskJobs.get(owner, id, cursor);
+    return sendJson(res, job ? 200 : 404, job || { error: '任务不存在或已过期。' });
+  } catch (error) {
+    if (error.status) return sendJson(res, error.status, { error: errorMessage(error) });
+    console.error('后台任务接口异常（task job API）:', error.message);
+    return sendJson(res, 503, { error: '后台任务暂不可用，请稍后重试。' });
+  }
+}
+
+// ---------------------------------------------------------------- /api/render（实时 SSE）
+
+/** 实时 SSE 效果图：与后台任务共用 runRenderTurn。 */
+async function handleRender(req, res, publicRequest) {
+  let payload;
+  try {
+    payload = renderSubmission(await readJson(req));
+  } catch (error) {
+    return sendJson(res, error.status || 400, { error: errorMessage(error) });
+  }
+
+  const controller = new AbortController();
+  const sse = openSSE(res);
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
+  try {
+    await runRenderTurn({
+      payload,
+      owner: publicRequest ? 'remote' : 'local',
+      signal: controller.signal,
+      emit: (event) => sse.send(event),
     });
-    sse.send({ type: 'done' });
   } catch (error) {
     if (!sse.closed) {
       sse.send({ type: 'error', message: errorMessage(error) });
       sse.send({ type: 'done' });
     }
   } finally {
-    settled = true;
     sse.close();
-    if (tmpDir) fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -909,10 +1032,74 @@ function drawingImportRequest(body) {
   return { files, note };
 }
 
+async function writeDrawingFiles(folder, files, signal) {
+  const written = [];
+  // 这些名称留给识别与复核的衍生文件。
+  const used = new Set(['plan.json', 'review-plan.png', 'review-note.json']);
+  for (let i = 0; i < files.length; i++) {
+    signal?.throwIfAborted();
+    const buffer = decodeBase64(files[i].data);
+    if (!buffer) continue;
+    const original = safeFileName(files[i].name, i + 1);
+    const extension = path.extname(original);
+    let name = original, suffix = i + 1;
+    while (used.has(name.toLowerCase())) name = `${path.basename(original, extension)}-${suffix++}${extension}`;
+    used.add(name.toLowerCase());
+    const file = path.join(folder, name);
+    await fsp.writeFile(file, buffer, { mode: 0o600, flag: 'wx' });
+    written.push({ name, file, image: isImportImage(buffer) });
+  }
+  return written;
+}
+
+async function writeDrawingSource(folder, body) {
+  const filesDirectory = path.join(folder, 'files');
+  await fsp.mkdir(filesDirectory, { mode: 0o700 });
+  if (!(await writeDrawingFiles(filesDirectory, body.files)).length) {
+    throw importJobError(400, '上传的文件无法解码。');
+  }
+  if (body.note) {
+    await fsp.writeFile(path.join(folder, 'review-note.json'), JSON.stringify({ note: body.note }), { mode: 0o600 });
+  }
+}
+
+function drawingReviewResult(input) {
+  const validated = validatePlan(input?.plan);
+  if (!validated.ok || !Array.isArray(input?.furniture)) {
+    throw importJobError(400, '当前方案无法用于复核，请检查户型数据。');
+  }
+  return { plan: validated.plan, furniture: validateImportedFurniture(input.furniture, validated.plan.bounds) };
+}
+
+async function handleDrawingSource(req, res, id, owner) {
+  try {
+    if (req.method === 'GET') {
+      const job = await importJobs.metadata(owner, id);
+      if (!job) return sendJson(res, 404, {
+        code: 'missing-job', error: '图纸任务不存在或已过期。', reviewEnabled: PLAN_REVIEW_ENABLED,
+      });
+      const available = Boolean(await importJobs.sourceDirectory(owner, id));
+      return sendJson(res, 200, { available, reviewEnabled: PLAN_REVIEW_ENABLED });
+    }
+    const input = await readJson(req);
+    const body = drawingImportRequest(input);
+    const result = input.result === undefined ? undefined : drawingReviewResult(input.result);
+    const name = (typeof input.name === 'string' ? input.name : result?.plan.name || '')
+      .replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 100) || '图纸项目';
+    const job = await importJobs.attachSource(owner, id, body, { result, name });
+    return sendJson(res, 200, { ...job, reviewEnabled: PLAN_REVIEW_ENABLED });
+  } catch (error) {
+    if (error.status) return sendJson(res, error.status, { error: errorMessage(error) });
+    console.error('图纸原件接口异常（drawing source API）:', error.message);
+    return sendJson(res, 503, { error: '原图暂时无法保存或读取，请稍后重试。' });
+  }
+}
+
 async function handleImportJob(req, res, key, url, owner) {
   try {
     if (key === 'plan-import' && req.method === 'GET') {
-      return sendJson(res, 200, { jobs: await importJobs.list(owner) });
+      const jobs = await importJobs.list(owner);
+      return sendJson(res, 200, { jobs: jobs.map(job => ({ ...job, reviewEnabled: PLAN_REVIEW_ENABLED })) });
     }
     if (req.method === 'POST') {
       const job = await importJobs.submit(owner, async () => {
@@ -972,26 +1159,9 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
     signal.throwIfAborted();
     if (!probe.found) return reply(503, { error: unusableMessage(probe) });
     await fsp.mkdir(importDir, { recursive: true, mode: 0o700 });
-    const written = [];
-    const images = [];
-    const used = new Set(['plan.json']);
-    for (let i = 0; i < files.length; i++) {
-      signal.throwIfAborted();
-      const buffer = decodeBase64(files[i].data);
-      if (!buffer) continue;
-      const originalName = safeFileName(files[i].name, i + 1);
-      const ext = path.extname(originalName);
-      let name = originalName;
-      let suffix = i + 1;
-      while (used.has(name.toLowerCase())) {
-        name = `${path.basename(originalName, ext)}-${suffix++}${ext}`;
-      }
-      used.add(name.toLowerCase());
-      const file = path.join(importDir, name);
-      await fsp.writeFile(file, buffer, { mode: 0o600 });
-      written.push(name);
-      if (isImportImage(buffer)) images.push({ name, file });
-    }
+    const saved = await writeDrawingFiles(importDir, files, signal);
+    const written = saved.map(({ name }) => name);
+    const images = saved.filter(({ image }) => image);
     if (!written.length) return reply(400, { error: '上传的文件无法解码（cannot decode files）' });
 
     const imageOnly = images.length === written.length;
@@ -1111,9 +1281,10 @@ async function collectReviewInputs(workDirectory) {
  * 复核一次识别结果。复核失败一律静默：状态标记为 unavailable，不写 review.json。
  * 由 importJobs 的 after 钩子或 POST 重跑调用，不占用识别并发槽位。
  */
-async function runPlanReview({ workDirectory, body, result, signal, updateReview, saveReview }) {
+async function runPlanReview({ source, result, signal, updateReview, saveReview }) {
   const plan = result?.plan ?? null;
   const furniture = Array.isArray(result?.furniture) ? result.furniture : [];
+  let workDirectory;
   // 失败时清掉上一次的复核正文，只保留契约要求的 state / count / updatedAt。
   const unavailable = () => updateReview({
     state: 'unavailable', count: 0, updatedAt: Date.now(),
@@ -1125,22 +1296,31 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
       state: 'running', count: 0, updatedAt: Date.now(),
       summary: undefined, issues: undefined, fixed: undefined, delta: undefined,
     });
-    if (signal.aborted) return await unavailable();
+    if (signal.aborted || !source) return await unavailable();
 
     const probe = await getProbe();
     if (!probe.found) return await unavailable();
 
+    workDirectory = await fsp.mkdtemp(path.join(os.tmpdir(), 'interior-plan-review-'));
+    const originals = path.join(source, 'files');
+    for (const entry of await fsp.readdir(originals, { withFileTypes: true })) {
+      signal.throwIfAborted();
+      if (entry.isFile()) await fsp.copyFile(path.join(originals, entry.name), path.join(workDirectory, entry.name));
+    }
+    const inputs = await collectReviewInputs(workDirectory);
+    if (!inputs.names.length) return await unavailable();
+    const note = await fsp.readFile(path.join(source, 'review-note.json'), 'utf8')
+      .then(JSON.parse).then(body => typeof body?.note === 'string' ? body.note : '').catch(() => '');
     const rendered = path.join(workDirectory, 'review-plan.png');
     await fsp.writeFile(rendered, renderPlanPng(plan), { mode: 0o600 });
     if (signal.aborted) return await unavailable();
 
-    const inputs = await collectReviewInputs(workDirectory);
     const check = checkPlan(plan, furniture);
     const message = buildReviewMessage({
       plan,
       furniture,
       explanation: typeof result?.explanation === 'string' ? result.explanation : '',
-      note: typeof body?.note === 'string' ? body.note : '',
+      note,
       check,
       fileNames: ['review-plan.png', ...inputs.names],
     });
@@ -1201,6 +1381,8 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
       console.error('图纸复核异常（plan review）:', errorMessage(error));
     }
     await unavailable();
+  } finally {
+    if (workDirectory) await fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -1209,40 +1391,35 @@ async function handlePlanReview(req, res, id, owner) {
     if (req.method === 'GET') {
       const review = await importJobs.getReview(owner, id);
       if (!review) return sendJson(res, 404, { error: '复核结果不存在或暂不可用。' });
-      // 重新复核需要工作目录里的原图；公网任务复核结束后上传文件已清理，前端据此隐藏按钮。
-      const rerun = Boolean(await importJobs.workDirectory(owner, id));
+      const rerun = PLAN_REVIEW_ENABLED && Boolean(await importJobs.sourceDirectory(owner, id));
       return sendJson(res, 200, { ...review, rerun });
     }
 
-    if (!PLAN_REVIEW_ENABLED) return sendJson(res, 404, { error: '复核功能未启用。' });
+    if (!PLAN_REVIEW_ENABLED) return sendJson(res, 404, { code: 'review-disabled', error: '复核功能未启用。' });
     if (reviewing.has(id)) return sendJson(res, 409, { error: '复核正在进行，请稍候。' });
     reviewing.add(id);
     let started = false;
     try {
-      const job = await importJobs.get(owner, id, 0);
-      if (!job) return sendJson(res, 409, { error: '图纸任务不存在或已过期。' });
+      const job = await importJobs.metadata(owner, id);
+      if (!job) return sendJson(res, 404, { code: 'missing-job', error: '图纸任务不存在或已过期。' });
       if (job.phase !== 'done') return sendJson(res, 409, { error: '图纸尚未识别完成，暂时无法复核。' });
       if (job.review?.state === 'pending' || job.review?.state === 'running') {
         return sendJson(res, 409, { error: '复核正在进行，请稍候。' });
       }
-      const workDirectory = await importJobs.workDirectory(owner, id);
-      // 工作目录清理后无法再复核：这是永久状态，用 404 而不是 409（后者会让客户端以为稍后能重试）。
-      if (!workDirectory) return sendJson(res, 404, { error: '复核工作目录已清理，无法重新复核。' });
-      const probe = await getProbe();
-      if (!probe.found) return sendJson(res, 503, { error: unusableMessage(probe) });
+      const source = await importJobs.sourceDirectory(owner, id);
+      if (!source) return sendJson(res, 404, { code: 'missing-source', error: '项目缺少原图，请先补传。' });
 
+      const input = await readJson(req, 4 * 1024 * 1024);
       let result = null;
-      try {
-        result = JSON.parse(job.chunks?.[0] || '');
-      } catch {
-        result = null;
+      if (input?.result !== undefined) {
+        result = drawingReviewResult(input.result);
+      } else {
+        const stored = await importJobs.get(owner, id, 0);
+        try { result = JSON.parse(stored?.chunks?.[0] || ''); } catch {}
       }
       if (!result?.plan) return sendJson(res, 409, { error: '识别结果不可用，无法重新复核。' });
-
-      const note = await fsp.readFile(path.join(workDirectory, 'review-note.json'), 'utf8')
-        .then(text => JSON.parse(text))
-        .then(value => (typeof value?.note === 'string' ? value.note : ''))
-        .catch(() => '');
+      const probe = await getProbe();
+      if (!probe.found) return sendJson(res, 503, { error: unusableMessage(probe) });
 
       await importJobs.setReview(owner, id, {
         state: 'pending', count: 0, updatedAt: Date.now(),
@@ -1252,8 +1429,7 @@ async function handlePlanReview(req, res, id, owner) {
       rerunReviews.add(controller);
       started = true;
       void runPlanReview({
-        workDirectory,
-        body: { note },
+        source,
         result,
         signal: controller.signal,
         updateReview: patch => importJobs.setReview(owner, id, patch),
@@ -1292,8 +1468,10 @@ async function serveStatic(req, res, pathname) {
     const realRoot = await fsp.realpath(ROOT);
     const realFile = await fsp.realpath(file);
     const importDir = await fsp.realpath(IMPORT_JOBS_DIR).catch(() => IMPORT_JOBS_DIR);
+    const taskDir = await fsp.realpath(TASK_JOBS_DIR).catch(() => TASK_JOBS_DIR);
     if ((realFile !== realRoot && !realFile.startsWith(realRoot + path.sep))
-        || realFile === importDir || realFile.startsWith(importDir + path.sep)) {
+        || realFile === importDir || realFile.startsWith(importDir + path.sep)
+        || realFile === taskDir || realFile.startsWith(taskDir + path.sep)) {
       return sendJson(res, 403, { error: '禁止访问（forbidden）' });
     }
   } catch {
@@ -1391,6 +1569,7 @@ async function shutdown(signal) {
   console.log(`收到 ${signal}，正在关闭…`);
   server.close();
   importJobs.close();
+  taskJobs.close();
   for (const controller of rerunReviews) controller.abort();
   rerunReviews.clear();
   reviewing.clear();

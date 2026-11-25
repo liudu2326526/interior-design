@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -252,4 +252,111 @@ test('setReview merges into the manifest atomically and is listed with the job',
   assert.equal(meta.review.state, 'running');
   assert.equal(meta.review.count, 3);
   assert.equal(await store.setReview('remote', job.id, { state: 'match' }), null);
+});
+
+async function writeDrawing(folder, body) {
+  const files = path.join(folder, 'files');
+  await mkdir(files, { mode: 0o700 });
+  await writeFile(path.join(files, 'drawing.png'), body.drawing, { mode: 0o600 });
+  await writeFile(path.join(folder, 'review-note.json'), JSON.stringify({ note: body.note }), { mode: 0o600 });
+}
+
+test('archives originals separately from work before success and keeps them after restart and history pruning', async t => {
+  const { store, open, directory } = await fixture(t, success, { writeSource: writeDrawing, history: 1 });
+  const body = { name: 'Archived plan', drawing: 'original bytes', note: 'keep the note' };
+  const first = await store.submit('remote', () => ({ body, name: body.name }));
+  const done = await until(async () => {
+    const job = await store.metadata('remote', first.id);
+    return job?.phase === 'done' && job;
+  });
+  assert.equal(done.sourceAvailable, true);
+  assert.ok(isImportJobPath('/api/jobs/' + first.id + '/source'));
+  assert.ok(!isImportJobPath('/api/jobs/' + first.id + '/source/files'));
+  assert.equal(await store.sourceDirectory('local', first.id), null);
+  assert.equal(await store.metadata('local', first.id), null);
+  const source = await store.sourceDirectory('remote', first.id);
+  assert.equal((await stat(source)).mode & 0o777, 0o700);
+  assert.equal(await readFile(path.join(source, 'files', 'drawing.png'), 'utf8'), body.drawing);
+  assert.equal(JSON.parse(await readFile(path.join(source, 'review-note.json'), 'utf8')).note, body.note);
+
+  const second = await store.submit('remote', () => ({ body, name: 'Second plan' }));
+  await until(async () => (await store.metadata('remote', second.id))?.phase === 'done');
+  const manifest = path.join(directory, first.id, 'job.json');
+  await until(() => stat(path.join(directory, first.id, 'input.json')).then(() => false, error => error.code === 'ENOENT'));
+  const previous = JSON.parse(await readFile(manifest, 'utf8'));
+  store.close();
+  await writeFile(manifest, JSON.stringify({ ...previous, finishedAt: Date.now() - 8 * 864e5 }));
+  const restored = open(() => assert.fail('archived import was analyzed again'));
+  assert.equal((await restored.list('remote')).length, 2);
+  assert.equal((await restored.metadata('remote', first.id)).sourceAvailable, true);
+  assert.equal(await restored.sourceDirectory('remote', first.id), source);
+  assert.equal(await restored.workDirectory('remote', first.id), null);
+});
+
+test('attaching legacy originals preserves the result and review, and rolls back a failed archive', async t => {
+  const { store, directory } = await fixture(t, success);
+  const legacy = await submit(store, 'local', 'Legacy plan');
+  await until(async () => (await store.metadata('local', legacy.id))?.phase === 'done');
+  const review = { state: 'match', summary: '一致', issues: [], updatedAt: Date.now() };
+  assert.equal(await store.saveReview('local', legacy.id, review), true);
+  await store.setReview('local', legacy.id, { state: 'match' });
+  const original = (await store.get('local', legacy.id, 0)).chunks;
+  store.close();
+  const reopened = createImportJobs({
+    directory,
+    execute: () => assert.fail('source attachment should not run recognition'),
+    writeSource: async (folder, body) => {
+      await writeDrawing(folder, body);
+      if (body.fail) throw new Error('could not finish archive');
+    },
+  });
+  t.after(() => reopened.close());
+  const body = { drawing: 'source' };
+  await assert.rejects(reopened.attachSource('remote', legacy.id, body, { result: { plan: {} } }), { status: 404 });
+  await assert.rejects(reopened.attachSource('local', legacy.id, { ...body, fail: true }), /could not finish archive/);
+  assert.equal(await reopened.sourceDirectory('local', legacy.id), null);
+  assert.deepEqual((await readdir(path.join(directory, legacy.id))).sort(), ['job.json', 'result.json', 'review.json']);
+
+  const attached = await reopened.attachSource('local', legacy.id, body, { result: { plan: { name: 'Wrong plan' } } });
+  assert.equal(attached.id, legacy.id);
+  assert.equal(attached.sourceAvailable, true);
+  assert.deepEqual((await reopened.get('local', legacy.id, 0)).chunks, original);
+  assert.deepEqual(await reopened.getReview('local', legacy.id), review);
+  await assert.rejects(reopened.attachSource('local', legacy.id, body), { status: 409 });
+});
+
+test('an expired task can be linked to a new owner-scoped archive without duplicates on retry', async t => {
+  let release, entered;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const inArchive = new Promise(resolve => { entered = resolve; });
+  const { store, open } = await fixture(t, success, {
+    writeSource: async (folder, body) => {
+      entered();
+      await blocked;
+      await writeDrawing(folder, body);
+    },
+  });
+  const expired = 'import-00000000-0000-4000-8000-000000000000';
+  const body = { drawing: 'original' };
+  const result = { plan: { name: 'Current browser plan' }, furniture: [] };
+  await assert.rejects(store.attachSource('remote', expired, body), { status: 404 });
+  const restoring = store.attachSource('remote', expired, body, { result });
+  await inArchive;
+  try {
+    assert.equal((await store.list('remote')).length, 0);
+    await assert.rejects(store.attachSource('remote', expired, body, { result }), { status: 409 });
+  } finally {
+    release();
+  }
+  const job = await restoring;
+  assert.notEqual(job.id, expired);
+  assert.equal(job.sourceAvailable, true);
+  assert.equal(job.replaces, expired);
+  assert.equal(await store.metadata('local', job.id), null);
+  assert.equal(await store.metadata('remote', expired), null);
+  assert.deepEqual(JSON.parse((await store.get('remote', job.id, 0)).chunks[0]), { ...result, id: job.id });
+  store.close();
+  const restored = open(() => assert.fail('restored task should not run recognition'));
+  assert.equal((await restored.attachSource('remote', expired, body, { result })).id, job.id);
+  assert.equal((await restored.list('remote')).length, 1);
 });

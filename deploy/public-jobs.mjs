@@ -16,9 +16,14 @@ const MAX_POLL_CHUNKS = 16;
 const MAX_ACTIVE = 4;
 const MAX_ACTIVE_PER_OWNER = 2;
 const MAX_JOBS = 32;
-const MAX_JOB_AGE = 15 * 60_000;
-const POLL_LEASE = 3 * 60_000;
-const FINISHED_TTL = 20 * 60_000;
+/* 轮询租期与总时限：租期只影响"浏览器离开后还等多久"，总时限是硬上限。
+ * V2 起租期从 3 分钟提高到 10 分钟，让刷新页面、切后台再回来仍能接上同一个任务（设计 §6.1）。
+ * 单独导出，便于测试和运维读取，不依赖启动参数。 */
+export const RELAY_LIMITS = Object.freeze({
+  POLL_LEASE: 10 * 60_000,
+  MAX_JOB_AGE: 15 * 60_000,
+  FINISHED_TTL: 20 * 60_000,
+});
 
 function sendJson(res, status, value, headers = {}) {
   if (res.destroyed || res.writableEnded) return;
@@ -91,7 +96,13 @@ async function consume(job, res) {
  * The gateway supplies the authenticated owner's identity. Browser headers
  * never reach the loopback service.
  */
-export function createPublicJobRelay({ origin = 'http://127.0.0.1:4173', bridgeToken } = {}) {
+export function createPublicJobRelay({
+  origin = 'http://127.0.0.1:4173',
+  bridgeToken,
+  pollLease = RELAY_LIMITS.POLL_LEASE,
+  maxJobAge = RELAY_LIMITS.MAX_JOB_AGE,
+  finishedTtl = RELAY_LIMITS.FINISHED_TTL,
+} = {}) {
   const upstreamOrigin = new URL(origin);
   if (upstreamOrigin.protocol !== 'http:' || upstreamOrigin.hostname !== '127.0.0.1') {
     throw new Error('The job relay requires a loopback HTTP origin');
@@ -122,10 +133,10 @@ export function createPublicJobRelay({ origin = 'http://127.0.0.1:4173', bridgeT
     const now = Date.now();
     for (const [id, job] of jobs) {
       if (job.finishedAt !== null) {
-        if (now - job.finishedAt >= FINISHED_TTL) jobs.delete(id);
-      } else if (now - job.startedAt >= MAX_JOB_AGE) {
+        if (now - job.finishedAt >= finishedTtl) jobs.delete(id);
+      } else if (now - job.startedAt >= maxJobAge) {
         finish(job, { status: 504, message: 'AI 任务超时，请重试。' });
-      } else if (now - job.lastPolledAt >= POLL_LEASE) {
+      } else if (now - job.lastPolledAt >= pollLease) {
         finish(job, { status: 410, message: '浏览器已长时间断开，任务已停止。' });
       }
     }

@@ -12,3 +12,6 @@ node_modules/
 
 # 本地设置（含个人权限规则）
 .claude/settings.local.json
+
+# 验收图纸样本含客户户型，未脱敏前不入库
+tests/fixtures/plans/*/source.*

@@ -27,6 +27,26 @@ header{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 1
 .brand{display:flex;flex-direction:column;margin-right:8px;line-height:1.25}
 .brand b{font-size:15px;letter-spacing:.5px}
 .brand span{color:var(--muted);font-size:12px}
+#checkStatus{color:#b5653a!important;font-weight:600;cursor:pointer;white-space:nowrap}
+#checkStatus[hidden]{display:none}
+#checkDone{border:1px solid var(--line);background:#fff;margin-left:8px}
+body.check-mode #stage{box-shadow:inset 0 0 0 2px rgba(181,101,58,.35)}
+.src-badge{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.3px;border-radius:999px;padding:1px 6px;margin-left:6px;vertical-align:middle;background:#eee7da;color:#7d7160}
+.src-user{background:#2b2824;color:#fffdf9}
+.src-drawing{background:#e3ddd0;color:#5c554a}
+.est-badge{display:inline-block;font-size:10px;font-weight:600;border-radius:999px;padding:1px 6px;margin-left:6px;background:#f3e2c8;color:#8a5a2b}
+.dim-compare{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.dim-compare div{background:#f6f2ea;border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;gap:2px}
+.dim-compare small{font-size:11px;color:var(--muted)}
+.dim-compare b{font-size:15px}
+.dim-choice{margin-top:8px;padding:8px;border:1px dashed #d6c3a5;border-radius:8px;background:#fbf7f0}
+.dim-choice small{color:#8a5a2b}
+.check-issue-box{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.check-issue{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#9a3b2c;background:#fbeeea;border-radius:8px;padding:6px 8px}
+.check-issue span{flex:1}
+.check-issue .btn{flex:none;padding:2px 8px;font-size:11px}
+#dimAdd.on{background:var(--ink);color:#fff}
+@media (max-width:1100px){ #checkStatus:not([hidden]){display:block!important} }   /* 窄屏保留待确认数量 */
 .grp{display:flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--line);border-radius:8px;background:#fff}
 .btn{border:0;background:transparent;padding:5px 9px;border-radius:6px;cursor:pointer;white-space:nowrap}
 .btn:hover{background:#f2ece2}
@@ -445,7 +465,7 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-head .imp-x:hover{color:var(--ink);background:#f2ece2}
 .imp-drop{border:1px dashed var(--line);border-radius:10px;padding:14px 10px;background:#faf6ef;text-align:center;
   color:var(--muted);font-size:12px;cursor:pointer;line-height:1.5}
-.imp-drop:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.imp-drop:is(:hover,:focus-visible,.drag-over){border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .imp-drop b{color:var(--ink);font-weight:500}
 .imp-files{display:flex;flex-direction:column;gap:4px}
 .imp-file{display:flex;align-items:center;gap:8px;font-size:12px;background:#fff;border:1px solid var(--line);
@@ -615,7 +635,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <button class="btn chip" id="tgLib" data-en="◧ Library">◧ 家具库</button>
       <button class="btn chip" id="tgPanel" data-en="Properties ◨">属性 ◨</button>
     </div>
-    <div class="brand"><b id="brandName" tabindex="0" role="button" title="点击重命名方案" data-en-title="Click to rename the plan">三室两厅两卫 · 装修设计</b><input id="brandEdit" hidden maxlength="60" spellcheck="false" aria-label="方案名称"><span id="subtitle">原始户型 1:60 · 尺寸单位 mm</span></div>
+    <div class="brand"><b id="brandName" tabindex="0" role="button" title="点击重命名方案" data-en-title="Click to rename the plan">三室两厅两卫 · 装修设计</b><input id="brandEdit" hidden maxlength="60" spellcheck="false" aria-label="方案名称"><span id="subtitle">原始户型 1:60 · 尺寸单位 mm</span><span id="checkStatus" role="status" hidden></span><button class="btn" id="checkDone" hidden data-en="Finish check">完成校核</button></div>
     <div class="grp seg" id="viewSeg" title="切换 2D / 3D (T)" data-en-title="Switch 2D / 3D (T)">
       <span class="pill"></span>
       <button class="btn" data-view="2d" data-en="2D Plan">2D 平面</button>
@@ -653,6 +673,8 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <button class="btn chip" data-layer="grid" data-en="Grid">网格</button>
       <button class="btn chip" data-layer="bearing" data-en="Bearing walls">承重墙</button>
       <button class="btn chip on" data-layer="wallSnap" title="拖动家具时贴墙吸附" data-en-title="Snap furniture to walls while dragging" data-en="Wall snap">贴墙吸附</button>
+      <button class="btn" id="dimAdd" hidden data-en="+ Dimension">+ 尺寸</button>
+      <button class="btn" id="dimCancel" hidden data-en="Cancel">取消</button>
     </div>
     <div class="grp only3d">
       <button class="btn chip on" data-cut="2.8" data-en="Full walls">全高墙</button>
@@ -721,6 +743,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <g id="gFurn"></g>
       <g id="gWalls"></g>
       <g id="gOpen"></g>
+      <g id="gCheck" pointer-events="none"></g>
       <g id="gLabels" pointer-events="none"></g>
       <g id="gDims" pointer-events="none"></g>
       <g id="gMeasure" pointer-events="none"></g>
@@ -853,8 +876,8 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
     <div class="imp-head"><b id="impTitle">导入图纸</b><button class="imp-x" id="impClose" type="button" title="关闭" data-en-title="Close">×</button></div>
 
     <div id="impPick">
-      <div class="imp-drop" id="impDrop" role="button" tabindex="0"><b id="impDropTitle">选择图纸文件</b><br><span id="impDropHint">支持图片、PDF、CAD 导出、JSON，不限格式</span></div>
-      <div class="imp-files" id="impFiles"></div>
+      <div class="imp-drop" id="impDrop" role="button" tabindex="0" aria-labelledby="impDropTitle" aria-describedby="impDropHint"><b id="impDropTitle">拖入图纸文件，或点击选择</b><br><span id="impDropHint">支持图片、PDF、CAD 导出、JSON，不限格式</span></div>
+      <div class="imp-files" id="impFiles" aria-live="polite"></div>
       <textarea class="imp-note" id="impNote" rows="2" spellcheck="false" placeholder="备注（可选，如：只识别一层）"></textarea>
       <p class="imp-sub" id="impPickHint">上传后会在后台识别，完成后可从「项目」打开新方案。</p>
       <div class="imp-foot"><span class="spacer"></span>
@@ -885,6 +908,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <p class="imp-sub" id="impResultHint">打开后会切换到这份新方案，当前项目会保存在「项目」列表中。</p>
       <div class="imp-foot"><span class="spacer"></span>
         <button class="btn" id="impCancelApply" type="button">关闭</button>
+        <button class="btn" id="impCheck" type="button">校核图纸</button>
         <button class="btn primary" id="impApply" type="button">打开新项目</button>
       </div>
     </div>
@@ -957,9 +981,10 @@ function applyStaticLang(){
 /* ============================================================
  *  户型方案 Plan（单位 mm，2D 的 y 轴向下；契约见 docs/contract.md §1）
  *  原点 = 左侧外墙内皮 / 顶部外墙内皮。
- *  运行时所有几何都由 PLAN 驱动：WALLS / WINS / DOORS / SLIDES / ROOMS / MATS
- *  只是 PLAN 各字段的别名，installPlan() 在换方案时整体重新赋值，
- *  因此下面既有的渲染 / 交互函数无需关心数据来自哪里。
+ *  运行时所有几何都由 PLAN（V2，带稳定 id 的对象）驱动：WALLS / WINS / DOORS /
+ *  SLIDES / ROOMS / MATS 只是 PLAN 各字段的别名，installPlan() 在换方案时整体重新赋值。
+ *  读取 V1 元组（旧 localStorage、旧导入结果、data/*.json）时由 sanitizePlan 迁移，
+ *  保存、导出、撤销快照一律写 V2。
  *  默认加载 data/empty-plan.json；125-C 示例见 data/125c-plan.json。
  * ============================================================ */
 
@@ -981,16 +1006,21 @@ const DEFAULT_MATERIALS = {
 };
 
 // 内置兜底空方案：file:// 打开（fetch 不可用）或服务不可用时用它启动，与 data/empty-plan.json 一致
+// Plan V2：墙体 / 窗 / 门 / 推拉门 / 房间都按稳定 id 认身份（契约 §1）。
 const FALLBACK_PLAN = {
-  version: 1,
+  version: 2,
   name: '空户型',
   bounds: {x:-1000, y:-1000, w:10240, h:8240},
   walls: [
-    [0,-240,8240,0,'e'], [8000,0,8240,6000,'e'], [0,6000,8240,6240,'e'], [-240,0,0,6000,'e'],
+    // id 避开 'w0' / 'wN' 形态：旧状态里的 demolished 下标迁移时不会与真实 id 相撞。
+    {id:'wN1', rect:[0,-240,8240,0], kind:'e', source:'drawing'},
+    {id:'wE1', rect:[8000,0,8240,6000], kind:'e', source:'drawing'},
+    {id:'wS1', rect:[0,6000,8240,6240], kind:'e', source:'drawing'},
+    {id:'wW1', rect:[-240,0,0,6000], kind:'e', source:'drawing'},
   ],
-  wins: [], doors: [], slides: [],
+  wins: [], doors: [], slides: [], dims: [],
   rooms: [
-    {id:'room1', name:'客厅', poly:[[0,0],[8000,0],[8000,6000],[0,6000]], mat:DEFAULT_ROOM_MAT, at:[4000,3000]},
+    {id:'room1', name:'客厅', poly:[[0,0],[8000,0],[8000,6000],[0,6000]], mat:DEFAULT_ROOM_MAT, at:[4000,3000], source:'drawing'},
   ],
   materials: deepCopy(DEFAULT_MATERIALS),
 };
@@ -1101,13 +1131,17 @@ function roomOutline(room){
   });
 }
 
-// 方案范围：墙体 / 窗 / 房间的外接矩形，四边留白
+// 方案范围：墙体 / 窗 / 房间的外接矩形，四边留白（Plan V2）
 function planExtentOf(plan){
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const grow = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
-  const growRect = ([x0,y0,x1,y1]) => { grow(x0, y0); grow(x1, y1); };
-  [...plan.walls, ...plan.wins].forEach(w => growRect(Array.isArray(w) ? w : curveBounds(curvedSpan(w))));
-  plan.rooms.forEach(room => {
+  const growRect = ([a,b,c,d]) => { grow(a, b); grow(c, d); };
+  [...(plan.walls || []), ...(plan.wins || [])].forEach(face => {
+    const curve = face && !face.rect ? curvedSpan(face) : null;
+    if (curve) growRect(curveBounds(curve));
+    else if (face && face.rect) growRect(face.rect);
+  });
+  (plan.rooms || []).forEach(room => {
     room.poly.forEach(p => grow(...p));
     roomCurves(room).forEach(curve => growRect(curveBounds(curve)));
   });
@@ -1116,13 +1150,213 @@ function planExtentOf(plan){
   return {x:x0 - pad, y:y0 - pad, w:Math.round(x1 - x0 + pad*2), h:Math.round(y1 - y0 + pad*2)};
 }
 
-/* ---------- Plan 校验 / 安装（与 lib/codex/plan.mjs 的 validatePlan 口径一致） ---------- */
+/* ---------- Plan V2：稳定 id、迁移与校验（与 lib/codex/plan.mjs 的 validatePlan 口径一致） ---------- */
+const PLAN_VERSION = 2;
 const WALL_KINDS = ['e', 'b', 'n', 'low'];
+const SOURCES = ['drawing', 'ai', 'user'];
+const DIM_FACES = ['axis', 'outer', 'inner', 'left', 'right'];
+const DIM_AXES = ['x', 'y'];
+const DIM_LOCKS = ['from', 'to', 'none'];
+const WINDOW_STYLES = ['casement', 'sliding', 'fixed', 'floor', 'bay'];
 const DEFAULT_WALL_HEIGHT = 2800, DEFAULT_LOW_WALL_HEIGHT = 1000;
-const wallHeight = wall => wall[5] ?? (wall[4] === 'low' ? DEFAULT_LOW_WALL_HEIGHT : DEFAULT_WALL_HEIGHT);
+const wallHeight = wall => wall.height ?? (wall.kind === 'low' ? DEFAULT_LOW_WALL_HEIGHT : DEFAULT_WALL_HEIGHT);
+const normalizeSource = value => SOURCES.includes(value) ? value : 'ai';
+
+// 迁移期稳定 id：顺序 + 几何指纹（FNV-1a 32 位），同一输入重复迁移得到同一 id。
+function geometryHash(parts){
+  const text = JSON.stringify(parts);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++){ hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return hash.toString(16).padStart(8, '0').slice(0, 6);
+}
+const stablePlanId = (prefix, index, parts) => `${prefix}${index + 1}-${geometryHash(parts)}`;
+function cleanPlanId(value){
+  if (typeof value !== 'string') return null;
+  const id = value.trim().replace(/[\u0000-\u001f\u007f]/g, '');
+  return id ? id.slice(0, 64) : null;
+}
+const uniqueObjectId = (prefix, exists) => {
+  let id;
+  do { id = prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6); }
+  while (exists(id));
+  return id;
+};
+function claimPlanId(used, preferred){
+  let id = preferred;
+  for (let suffix = 2; used.has(id); suffix++) id = `${preferred}_${suffix}`;
+  used.add(id);
+  return id;
+}
+function normalizeArcBand(raw){
+  if (!curvedSpan(raw)) return null;
+  return {from:[...raw.from], to:[...raw.to], sweep:raw.sweep, thickness:raw.thickness};
+}
+function normalizeWall(raw, index, used){
+  if (!raw || typeof raw !== 'object') return null;
+  if (isCurvedSpan(raw)){
+    const arc = normalizeArcBand(raw);
+    if (!arc) return null;
+    const wall = {
+      id: claimPlanId(used, (Array.isArray(raw) ? null : cleanPlanId(raw.id)) ??
+        stablePlanId('w', index, ['arc', arc.from, arc.to, arc.sweep, arc.thickness])),
+      ...arc,
+      kind: WALL_KINDS.includes(raw.kind) ? raw.kind : 'n',
+      source: normalizeSource(Array.isArray(raw) ? 'ai' : raw.source),
+    };
+    if (Number.isFinite(raw.height) && raw.height > 0) wall.height = raw.height;
+    return wall;
+  }
+  const tuple = Array.isArray(raw);
+  const rect = normRect(tuple ? raw : raw.rect);
+  if (!rect) return null;
+  const kind = tuple ? raw[4] : raw.kind, height = tuple ? raw[5] : raw.height;
+  const wall = {
+    id: claimPlanId(used, (tuple ? null : cleanPlanId(raw.id)) ?? stablePlanId('w', index, ['seg', ...rect])),
+    rect, kind: WALL_KINDS.includes(kind) ? kind : 'n',
+    source: normalizeSource(tuple ? 'ai' : raw.source),
+  };
+  if (Number.isFinite(height) && height > 0) wall.height = height;
+  return wall;
+}
+// V1 直窗元组只有矩形；迁移期 sill/h/style 置空（契约 §1 迁移规则）。
+function normalizeWin(raw, index, used){
+  if (!raw || typeof raw !== 'object') return null;
+  if (isCurvedSpan(raw)){
+    const arc = normalizeArcBand(raw);
+    if (!arc) return null;
+    return {
+      id: claimPlanId(used, (Array.isArray(raw) ? null : cleanPlanId(raw.id)) ??
+        stablePlanId('win', index, ['arc', arc.from, arc.to, arc.sweep, arc.thickness])),
+      ...arc, source: normalizeSource(Array.isArray(raw) ? 'ai' : raw.source),
+      ...windowProps(raw, Array.isArray(raw)),
+    };
+  }
+  const tuple = Array.isArray(raw);
+  const rect = normRect(tuple ? raw : raw.rect);
+  if (!rect) return null;
+  return {
+    id: claimPlanId(used, (tuple ? null : cleanPlanId(raw.id)) ?? stablePlanId('win', index, ['seg', ...rect])),
+    rect, source: normalizeSource(tuple ? 'ai' : raw.source),
+    ...windowProps(raw, tuple),
+  };
+}
+function windowProps(raw, tuple){
+  if (tuple) return {};
+  const out = {};
+  if (Number.isFinite(raw.sill) && raw.sill >= 0 && raw.sill <= 3000) out.sill = raw.sill;
+  if (Number.isFinite(raw.h) && raw.h >= 200 && raw.h <= 6000) out.h = raw.h;
+  if (WINDOW_STYLES.includes(raw.style)) out.style = raw.style;
+  return out;
+}
+function normalizeDoor(raw, index, used){
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const rect = normRect(raw.rect);
+  if (!rect) return null;
+  const hinge = normPoint(raw.h) || [rect[0], rect[1]];
+  const door = {
+    id: claimPlanId(used, cleanPlanId(raw.id) ?? stablePlanId('d', index, ['door', ...rect])),
+    name: typeof raw.name === 'string' && raw.name ? raw.name : '门',
+    rect, h:hinge,
+    c:normPoint(raw.c) || [0, -1], o:normPoint(raw.o) || [1, 0],
+    len:Number.isFinite(+raw.len) && +raw.len > 0 ? +raw.len : Math.max(rect[2] - rect[0], rect[3] - rect[1]),
+    source: normalizeSource(raw.source),
+  };
+  if (raw.entry === true) door.entry = true;
+  return door;
+}
+function normalizeSlide(raw, index, used){
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const rect = normRect(raw.rect);
+  if (!rect) return null;
+  return {
+    id: claimPlanId(used, cleanPlanId(raw.id) ?? stablePlanId('s', index, ['slide', ...rect])),
+    rect, v: raw.v === true, source: normalizeSource(raw.source),
+  };
+}
+function normalizeCeiling(raw){
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const ceiling = {};
+  if (Number.isFinite(raw.h) && raw.h > 0 && raw.h <= 6000) ceiling.h = raw.h;
+  if (Array.isArray(raw.drops)) ceiling.drops = raw.drops.slice(0, 64).map(drop => normRect(drop?.rect))
+    .map((rect, i) => rect && Number.isFinite(raw.drops[i]?.depth) && raw.drops[i].depth > 0 && raw.drops[i].depth <= 2000
+      ? {rect, depth:raw.drops[i].depth} : null).filter(Boolean);
+  if (!ceiling.drops?.length) delete ceiling.drops;
+  if (raw.cove === 'none' || raw.cove === 'perimeter') ceiling.cove = raw.cove;
+  if (typeof raw.box === 'boolean') ceiling.box = raw.box;
+  return Object.keys(ceiling).length ? ceiling : null;
+}
+// 缺省 point 时的量测点：直墙取面或中心，弧墙取起点，房间边取中点（契约 §1.1）。
+function wallAnchorPoint(wall, face){
+  if (wall.rect){
+    const [x0, y0, x1, y1] = wall.rect, cy = (y0 + y1) / 2;
+    if (face === 'left') return [x0, cy];
+    if (face === 'right') return [x1, cy];
+    return [(x0 + x1) / 2, cy];
+  }
+  return Array.isArray(wall.from) ? [...wall.from] : null;
+}
+function edgeMidpoint(points, edge){
+  const from = points[edge], to = points[(edge + 1) % points.length];
+  return from && to ? [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2] : null;
+}
+function normalizeDimAnchor(raw, context){
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (raw.kind === 'wall'){
+    const wall = context.walls.get(cleanPlanId(raw.id));
+    if (!wall) return null;
+    const face = DIM_FACES.includes(raw.face) ? raw.face : 'axis';
+    const anchorPoint = normPoint(raw.point) || wallAnchorPoint(wall, face);
+    return anchorPoint ? {kind:'wall', id:wall.id, face, point:anchorPoint} : null;
+  }
+  if (raw.kind === 'room'){
+    const room = context.rooms.get(cleanPlanId(raw.id));
+    if (!room || (raw.face !== undefined && raw.face !== 'inner')) return null;
+    const edge = Number.isInteger(raw.edge) ? raw.edge : -1;
+    if (edge < 0 || edge >= room.poly.length) return null;
+    const anchorPoint = normPoint(raw.point) || edgeMidpoint(room.poly, edge);
+    return anchorPoint ? {kind:'room', id:room.id, edge, face:'inner', point:anchorPoint} : null;
+  }
+  return null;
+}
+function normalizeDim(raw, index, context, used){
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const from = normalizeDimAnchor(raw.from, context), to = normalizeDimAnchor(raw.to, context);
+  if (!from || !to) return null;
+  const dim = {
+    id: claimPlanId(used, cleanPlanId(raw.id) ?? stablePlanId('dim', index, [
+      from.kind, from.id, from.face, from.edge ?? null, to.kind, to.id, to.face, to.edge ?? null,
+    ])),
+    source: normalizeSource(raw.source),
+    from, to,
+    offset: Number.isFinite(raw.offset) ? raw.offset : 0,
+    axis: DIM_AXES.includes(raw.axis) ? raw.axis :
+      (Math.abs(to.point[0] - from.point[0]) >= Math.abs(to.point[1] - from.point[1]) ? 'x' : 'y'),
+    locked: DIM_LOCKS.includes(raw.locked) ? raw.locked : 'none',
+  };
+  if (Number.isFinite(raw.drawingValue) && raw.drawingValue >= 0) dim.drawingValue = raw.drawingValue;
+  if (typeof raw.chain === 'string' && raw.chain.trim()) dim.chain = raw.chain.trim().slice(0, 64);
+  if (typeof raw.note === 'string' && raw.note.trim()) dim.note = raw.note.trim().slice(0, 200);
+  // 估算标记（校核 §5.5）：AI 推测的尺寸带 ≈，用户确认 / 编辑后清除。
+  if (raw.estimated === true) dim.estimated = true;
+  return dim;
+}
+function normalizeRoomArcs(rawArcs, original, points){
+  const arcs = [];
+  if (!original.every(p => normPoint(p))) return arcs;      // 顶点被过滤会让弧段落到别的边上
+  const seen = new Set();
+  for (const arc of rawArcs){
+    const {edge, sweep} = arc || {};
+    if (!Number.isInteger(edge) || edge < 0 || edge >= points.length || seen.has(edge)) continue;
+    if (!arcGeometry(points[edge], points[(edge + 1) % points.length], sweep)) continue;
+    seen.add(edge);
+    arcs.push({edge, sweep});
+  }
+  return arcs;
+}
 
 /**
- * 校验并规整 Plan（契约 §1）。宽容：能修的字段就地修，没有房间视为无效。
+ * 校验并规整 Plan（契约 §1，读 V1 元组时迁移为 V2，写出一律 V2）。
+ * 宽容：能修的字段就地修，没有房间视为无效。
  * @returns {{ok:boolean, plan:object|null, errors:string[]}}
  */
 function sanitizePlan(input){
@@ -1143,96 +1377,67 @@ function sanitizePlan(input){
     }
   }
   for (const [k, v] of Object.entries(DEFAULT_MATERIALS)) if (!materials[k]) materials[k] = {...v};
-  const matKeys = Object.keys(materials);
-  const pickMat = k => materials[k] ? k : matKeys[0];
 
-  const walls = [];
+  const walls = [], wallIds = new Set();
   if (Array.isArray(raw.walls)) raw.walls.forEach((w, i) => {
-    if (isCurvedSpan(w)){
-      if (!curvedSpan(w)){ errors.push(tr(`弧形墙体 ${i} 数据无效`, `Curved wall ${i} is invalid`)); return; }
-      const wall = {...arcFields(w), kind:WALL_KINDS.includes(w.kind) ? w.kind : 'n'};
-      if (Number.isFinite(w.height) && w.height > 0) wall.height = w.height;
-      walls.push(wall);
-      return;
-    }
-    const r = Array.isArray(w) ? normRect(w) : w && typeof w === 'object' ? normRect(w.rect) : null;
-    if (!r){ errors.push(tr(`墙体 ${i} 数据无效`, `Wall ${i} is invalid`)); return; }
-    const kind = Array.isArray(w) ? w[4] : w.kind;
-    const height = Array.isArray(w) ? w[5] : w.height;
-    const wall = [...r, WALL_KINDS.includes(kind) ? kind : 'n'];
-    if (Number.isFinite(height) && height > 0) wall.push(height);
-    walls.push(wall);
+    const wall = normalizeWall(w, walls.length, wallIds);
+    if (wall) walls.push(wall);
+    else errors.push(tr(`墙体 ${i} 数据无效`, `Wall ${i} is invalid`));
   });
 
-  const wins = [];
+  const wins = [], winIds = new Set();
   if (Array.isArray(raw.wins)) raw.wins.forEach((w, i) => {
-    if (isCurvedSpan(w)){
-      if (curvedSpan(w)) wins.push(arcFields(w));
-      else errors.push(tr(`弧形窗 ${i} 数据无效`, `Curved window ${i} is invalid`));
-      return;
-    }
-    const r = normRect(Array.isArray(w) ? w : w && w.rect);
-    if (r) wins.push(r);
+    const win = normalizeWin(w, wins.length, winIds);
+    if (win) wins.push(win);
+    else errors.push(tr(`弧形窗 ${i} 数据无效`, `Curved window ${i} is invalid`));
   });
 
-  const doors = [];
+  const doors = [], doorIds = new Set();
   if (Array.isArray(raw.doors)) raw.doors.forEach(d => {
-    if (!d || typeof d !== 'object') return;
-    const r = normRect(d.rect); if (!r) return;
-    const door = {
-      name: typeof d.name === 'string' && d.name ? d.name : tr('门', 'Door'),
-      rect: r,
-      h: normPoint(d.h) || [r[0], r[1]],
-      c: normPoint(d.c) || [0, -1],
-      o: normPoint(d.o) || [1, 0],
-      len: Number.isFinite(+d.len) && +d.len > 0 ? +d.len : Math.max(r[2] - r[0], r[3] - r[1]),
-    };
-    if (d.entry === true) door.entry = true;
-    doors.push(door);
+    const door = normalizeDoor(d, doors.length, doorIds);
+    if (door) doors.push(door);
   });
 
-  const slides = [];
+  const slides = [], slideIds = new Set();
   if (Array.isArray(raw.slides)) raw.slides.forEach(s => {
-    if (!s || typeof s !== 'object') return;
-    const r = normRect(s.rect);
-    if (r) slides.push({rect:r, v:s.v === true});
+    const slide = normalizeSlide(s, slides.length, slideIds);
+    if (slide) slides.push(slide);
   });
 
-  const rooms = [], ids = new Set();
+  const rooms = [], roomIds = new Set();
   if (Array.isArray(raw.rooms)) raw.rooms.forEach((r, i) => {
     if (!r || typeof r !== 'object') return;
     let poly = normPoly(r.poly);
     if (!poly){ const q = normRect(r.rect); if (q) poly = [[q[0],q[1]],[q[2],q[1]],[q[2],q[3]],[q[0],q[3]]]; }
     if (!poly){ errors.push(tr(`房间 ${i} 缺少有效轮廓`, `Room ${i} has no valid outline`)); return; }
-    let id = String(r.id ?? 'room' + (i + 1)).trim() || 'room' + (i + 1);
-    while (ids.has(id)) id += '_2';
-    ids.add(id);
+    const id = claimPlanId(roomIds, cleanPlanId(r.id) ?? `room${rooms.length + 1}`);
     const room = {
       id,
       name: typeof r.name === 'string' && r.name.trim() ? r.name.trim() : tr('房间', 'Room') + ' ' + (rooms.length + 1),
       poly,
-      mat: pickMat(typeof r.mat === 'string' ? r.mat : DEFAULT_ROOM_MAT),
+      mat: typeof r.mat === 'string' && r.mat ? r.mat : DEFAULT_ROOM_MAT,
+      at: normPoint(r.at) || polyCenter(poly),
+      source: normalizeSource(r.source),
     };
-    room.at = normPoint(r.at) || polyCenter(poly);
     if (r.counted === false) room.counted = false;
+    // 飘窗属性（校核 §5.3）：窗台高与是否带垫，仅对不计面积的飘窗房间有意义。
+    if (r.bay && typeof r.bay === 'object' && !Array.isArray(r.bay)){
+      const bay = {};
+      if (Number.isFinite(r.bay.sill) && r.bay.sill >= 0 && r.bay.sill <= 3000) bay.sill = r.bay.sill;
+      if (typeof r.bay.cushion === 'boolean') bay.cushion = r.bay.cushion;
+      if (Object.keys(bay).length) room.bay = bay;
+    }
     if (r.arcs !== undefined){
-      const edges = new Set(), arcs = [];
       if (!Array.isArray(r.arcs) || !Array.isArray(r.poly) || !r.poly.every(p => normPoint(p))){
         errors.push(tr(`房间 ${id} 圆弧轮廓无效`, `Room ${id} has an invalid curved outline`));
-      } else for (const arc of r.arcs){
-        const {edge, sweep} = arc || {};
-        if (!Number.isInteger(edge) || edge < 0 || edge >= poly.length || edges.has(edge) ||
-            !arcGeometry(poly[edge], poly[(edge + 1) % poly.length], sweep)){
-          errors.push(tr(`房间 ${id} 圆弧边无效`, `Room ${id} has an invalid curved edge`));
-          continue;
-        }
-        edges.add(edge); arcs.push({edge, sweep});
-      }
-      if (Array.isArray(r.arcs)) room.arcs = arcs;
+      } else room.arcs = normalizeRoomArcs(r.arcs, r.poly, poly);
     }
+    const ceiling = normalizeCeiling(r.ceiling);
+    if (ceiling) room.ceiling = ceiling;
     rooms.push(room);
   });
   if (!rooms.length) return {ok:false, plan:null, errors:errors.concat(tr('方案至少需要一个房间', 'A plan needs at least one room'))};
+  for (const room of rooms) if (!materials[room.mat]) materials[room.mat] = {name:room.mat, price:0, sw:'#e5e0d6'};
 
   let bounds = null;
   if (raw.bounds && typeof raw.bounds === 'object'){
@@ -1240,11 +1445,22 @@ function sanitizePlan(input){
     if (b.every(Number.isFinite) && b[2] > 0 && b[3] > 0) bounds = {x:b[0], y:b[1], w:b[2], h:b[3]};
   }
 
+  // dims：锚点必须引用存在的墙 / 房间；无效条目丢弃并说明，不拒绝整个方案。
+  const dims = [], dimIds = new Set();
+  if (Array.isArray(raw.dims)){
+    const context = {walls:new Map(walls.map(w => [w.id, w])), rooms:new Map(rooms.map(r => [r.id, r]))};
+    for (const d of raw.dims.slice(0, 2000)){
+      const dim = normalizeDim(d, dims.length, context, dimIds);
+      if (dim) dims.push(dim);
+      else errors.push(tr('尺寸锚点无效，已忽略该尺寸', 'Invalid dimension anchors; the dimension was ignored'));
+    }
+  }
+
   const plan = {
-    version: 1,
+    version: PLAN_VERSION,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : tr('未命名方案', 'Untitled plan'),
     bounds: bounds || planExtentOf({walls, wins, rooms}),
-    walls, wins, doors, slides, rooms, materials,
+    walls, wins, doors, slides, rooms, materials, dims,
   };
   return {ok:true, plan, errors};
 }
@@ -1252,37 +1468,39 @@ function sanitizePlan(input){
 // PLAN 各字段同步成模块级别名；planRev 变化会让 3D 顶层重建
 function installPlan(plan){
   PLAN = plan; planRev++;
-  WALLS = plan.walls.map(w => {
-    if (Array.isArray(w)) return w;
-    const curve = curvedSpan(w);
-    return [...curveBounds(curve), w.kind, w.height, curve];
-  });
-  WINS = plan.wins.map(w => {
-    if (Array.isArray(w)) return w;
-    const curve = curvedSpan(w);
-    return [...curveBounds(curve), curve];
-  });
-  DOORS = plan.doors; SLIDES = plan.slides;
+  WALLS = plan.walls; WINS = plan.wins; DOORS = plan.doors; SLIDES = plan.slides;
   ROOMS = plan.rooms.map(r => r.arcs?.length ? {...r, vertices:r.poly, poly:roomOutline(r)} : r);
   MATS = plan.materials; BOUNDS = plan.bounds;
   matPat = {};
 }
 
+// 读旧 localStorage：迁移出 V2 后立刻写回一次（迁移只发生一次，契约 §4.5）。
 function readStoredPlan(){
   try {
     const raw = localStorage.getItem(PLAN_KEY);
     if (!raw) return null;
-    const res = sanitizePlan(JSON.parse(raw));
-    return res.ok ? res.plan : null;
+    const parsed = JSON.parse(raw);
+    const res = sanitizePlan(parsed);
+    return res.ok ? {plan:res.plan, migrated:parsed?.version !== PLAN_VERSION} : null;
   } catch(e){ return null; }
 }
 
-/* ---------- 房间 / 墙体查找（Plan 与 state 的桥） ---------- */
-const validWallId = id => typeof id === 'string' && /^w\d+$/.test(id) && +id.slice(1) < WALLS.length;
+/* ---------- 房间 / 墙体查找（Plan 与 state 的桥，Plan V2 按 id 认身份） ---------- */
+const validWallId = id => typeof id === 'string' && WALLS.some(w => w.id === id);
 const matKey = k => (MATS && MATS[k]) ? k : (Object.keys(MATS || {})[0] || DEFAULT_ROOM_MAT);
 const matInfo = k => (MATS && MATS[k]) || {name: String(k || '—'), price: 0, sw: '#e5e0d6'};
 const roomDef = id => ROOMS.find(r => r.id === id) || null;
-const wallOf = id => validWallId(id) ? WALLS[+id.slice(1)] : null;
+const wallOf = id => validWallId(id) ? WALLS.find(w => w.id === id) : null;
+const wallCurve = wall => wall && !wall.rect ? curvedSpan(wall) : null;
+const windowCurve = win => win && !win.rect ? curvedSpan(win) : null;
+const wallRect = wall => wall ? (wall.rect || curveBounds(wallCurve(wall))) : null;
+// 旧状态里的拆除标记是数组下标（'w0'）；迁移到 V2 后按同一位置换成墙体 id。
+function wallIdFromLegacy(value){
+  const text = String(value ?? '');
+  if (WALLS.some(w => w.id === text)) return text;
+  const legacy = /^w(\d+)$/.exec(text);
+  return legacy && WALLS[+legacy[1]] ? WALLS[+legacy[1]].id : null;
+}
 const patURL = k => `url(#${matPat[matKey(k)] || 'm-tile800'})`;
 
 // 房间的当前状态（名称 / 地面），缺失时按 Plan 补上
@@ -1338,7 +1556,7 @@ const uid = () => 'f' + Date.now().toString(36) + (_n++);
 const F = (type,name,cx,cy,w,d,rot=0,color) => ({id:uid(),type,name,cx,cy,w,d,rot,color:color||typeColor(type)});
 
 function defaultState(){
-  return {furniture:[], rooms:reconcileRooms({}), demolished:[], measures:[]};
+  return {furniture:[], rooms:reconcileRooms({}), demolished:[], measures:[], checkIgnores:[]};
 }
 function wrapRotation(angle){
   const rot = Number.isFinite(angle) ? angle % 360 : 0;
@@ -1420,8 +1638,10 @@ function fixState(s){
   s = (s && typeof s === 'object') ? s : {};
   s.furniture = (Array.isArray(s.furniture) ? s.furniture : []).map(normalizeFurn).filter(Boolean);
   s.rooms = reconcileRooms(s.rooms);
-  s.demolished = (Array.isArray(s.demolished) ? s.demolished : []).map(String).filter(validWallId);
+  // V1 状态的 'w0' 是墙体下标；迁移时换成迁移后同一位置的墙体 id（契约 §4.5）。
+  s.demolished = [...new Set((Array.isArray(s.demolished) ? s.demolished : []).map(wallIdFromLegacy).filter(Boolean))];
   s.measures = (Array.isArray(s.measures) ? s.measures : []).filter(m => m && m.a && m.b && [m.a.x, m.a.y, m.b.x, m.b.y].every(Number.isFinite));
+  s.checkIgnores = [...new Set((Array.isArray(s.checkIgnores) ? s.checkIgnores : []).filter(x => typeof x === 'string' && x))].slice(0, 500);
   s.renders = (Array.isArray(s.renders) ? s.renders : readRenders()).filter(r => r && typeof r.url === 'string').slice(-30);
   return s;
 }
@@ -1440,7 +1660,8 @@ const svg = $('#plan');
 
 /* ======================= 状态 / 历史 / 存储 ======================= */
 // 方案加载顺序：本地方案（interior-plan-v1）→ data/empty-plan.json（页尾 hydrateDefaultPlan）→ 内置空方案
-installPlan(readStoredPlan() || sanitizePlan(FALLBACK_PLAN).plan);
+const storedPlan = readStoredPlan();
+installPlan(storedPlan?.plan || sanitizePlan(FALLBACK_PLAN).plan);
 
 let state = load() || fixState(defaultState());
 const ui = {tool:'select', sel:null, mA:null, mCur:null,
@@ -1459,6 +1680,7 @@ function save(){
   } catch(e) {}
   onProjectSave();
 }
+if (storedPlan?.migrated) save();          // 旧本地方案迁移后立即写回 V2
 const snap = () => JSON.stringify({plan: PLAN, state: {...state, renders: undefined}});
 function restore(snapshot){
   let o; try { o = JSON.parse(snapshot); } catch(e){ return; }
@@ -1476,6 +1698,10 @@ function selOk(sel){
   if (sel.kind === 'furn') return !!getF(sel.id);
   if (sel.kind === 'room') return !!roomDef(sel.id);
   if (sel.kind === 'wall') return !!wallOf(sel.id);
+  if (sel.kind === 'win') return WINS.some(w => w.id === sel.id);
+  if (sel.kind === 'door') return DOORS.some(d => d.id === sel.id);
+  if (sel.kind === 'slide') return SLIDES.some(s => s.id === sel.id);
+  if (sel.kind === 'dim') return (PLAN.dims || []).some(d => d.id === sel.id);
   return false;
 }
 function validateSel(){ if (ui.sel && !selOk(ui.sel)) ui.sel = null; }
@@ -1503,9 +1729,15 @@ const bbox = poly => { const xs = poly.map(p=>p[0]), ys = poly.map(p=>p[1]); ret
 function aabb(f){ const a = f.rot*Math.PI/180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a)); return {hw:f.w/2*c + f.d/2*s, hh:f.w/2*s + f.d/2*c}; }
 const fmt = (n, d=2) => n.toFixed(d);
 const norm = a => ((Math.round(a) % 360) + 360) % 360;
-const wallLength = w => w[6] ? w[6].radius * Math.abs(w[6].sweep) : Math.max(w[2]-w[0], w[3]-w[1]);
-function snapRects(){ return WALLS.filter((w,i) => !w[6] && !state.demolished.includes('w'+i)).concat(WINS.filter(w => !w[4])); }
-function snapCurves(){ return WALLS.filter((w,i) => w[6] && !state.demolished.includes('w'+i)).map(w => w[6]).concat(WINS.map(w => w[4]).filter(Boolean)); }
+const wallLength = w => { const curve = wallCurve(w); return curve ? curve.radius * Math.abs(curve.sweep) : Math.max(w.rect[2]-w.rect[0], w.rect[3]-w.rect[1]); };
+function snapRects(){
+  return WALLS.filter(w => w.rect && !state.demolished.includes(w.id)).map(w => w.rect)
+    .concat(WINS.filter(w => w.rect).map(w => w.rect));
+}
+function snapCurves(){
+  return WALLS.filter(w => !w.rect && !state.demolished.includes(w.id)).map(wallCurve).filter(Boolean)
+    .concat(WINS.map(windowCurve).filter(Boolean));
+}
 
 /* ======================= 颜色 / 材质图案 ======================= */
 function hex2rgb(h){ h = h.replace('#',''); if (h.length===3) h = h.split('').map(c=>c+c).join(''); const n = parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255]; }
@@ -1717,9 +1949,11 @@ function roomShape(room, attrs){
   });
   return `<path d="${path}Z" ${attrs}/>`;
 }
-function wallShape([x0,y0,x1,y1,,,curve], attrs){
-  return curve ? `<path d="${curveBandPath(curve)}" ${attrs}/>`
-    : `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" ${attrs}/>`;
+function wallShape(wall, attrs){
+  const curve = wallCurve(wall);
+  if (curve) return `<path d="${curveBandPath(curve)}" ${attrs}/>`;
+  const [x0, y0, x1, y1] = wall.rect;
+  return `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" ${attrs}/>`;
 }
 function renderRooms(){
   let s = '';
@@ -1745,25 +1979,26 @@ function renderFurn(){
 }
 
 function renderWalls(){
-  $('#gWalls').innerHTML = WALLS.map((w,i) => {
-    const k = w[4], id = 'w'+i, dem = state.demolished.includes(id);
+  $('#gWalls').innerHTML = WALLS.map(w => {
+    const k = w.kind, dem = state.demolished.includes(w.id);
     let fill = k==='b' ? (ui.layers.bearing ? '#b8412c' : '#26241f') : k==='low' ? '#e9e3d8' : k==='e' ? '#8f897d' : '#a7a195';
     let ex = k==='low' ? 'stroke="#8f897d" stroke-width="1" vector-effect="non-scaling-stroke"' : '';
     if (dem){ fill = 'rgba(198,91,58,.12)'; ex = 'stroke="#c65b3a" stroke-width="1.2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"'; }
-    return wallShape(w, `class="wall" data-wall="${id}" fill="${fill}" ${ex}`);
+    return wallShape(w, `class="wall" data-wall="${esc(w.id)}" fill="${fill}" ${ex}`);
   }).join('');
 }
 
 function renderOpenings(){
   const WS = 'stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"';
   let s = '';
-  WINS.forEach(([x0,y0,x1,y1,curve]) => {
+  WINS.forEach(win => {
+    const curve = windowCurve(win);
     if (curve){
       s += `<path d="${curveBandPath(curve)}" fill="#f7fbfd" ${WS}/>`;
       for (const t of [-1/6, 1/6]) s += `<path d="${curveLinePath(curve, curve.thickness * t)}" fill="none" ${WS}/>`;
       return;
     }
-    const w = x1-x0, h = y1-y0;
+    const [x0, y0, x1, y1] = win.rect, w = x1-x0, h = y1-y0;
     s += `<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#f7fbfd" ${WS}/>`;
     if (w >= h) [1/3,2/3].forEach(t => s += `<line x1="${x0}" y1="${y0+h*t}" x2="${x1}" y2="${y0+h*t}" ${WS}/>`);
     else [1/3,2/3].forEach(t => s += `<line x1="${x0+w*t}" y1="${y0}" x2="${x0+w*t}" y2="${y1}" ${WS}/>`);
@@ -1808,9 +2043,54 @@ function renderLabels(){
 
 // 方案外接矩形（墙体 / 窗 / 门），用于尺寸标注
 function planExtent(){
-  const rs = WALLS.map(w => w.slice(0, 4)).concat(WINS, DOORS.map(d => d.rect), SLIDES.map(s => s.rect));
+  const rs = WALLS.map(wallRect).concat(WINS.map(w => w.rect || curveBounds(windowCurve(w))),
+    DOORS.map(d => d.rect), SLIDES.map(s => s.rect)).filter(Boolean);
   if (!rs.length) return null;
   return [Math.min(...rs.map(r => r[0])), Math.min(...rs.map(r => r[1])), Math.max(...rs.map(r => r[2])), Math.max(...rs.map(r => r[3]))];
+}
+
+/* ---------- 标注尺寸（Plan.dims）：绘制、数值与联动（校核 §5.2 / §5.4） ---------- */
+function dimValueOf(dim){
+  const a = dim?.from?.point, b = dim?.to?.point;
+  if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+  return Math.abs(dim.axis === 'y' ? b[1] - a[1] : b[0] - a[0]);
+}
+function dimGeometry(dim){
+  const a = dim.from.point, b = dim.to.point, off = Number.isFinite(dim.offset) ? dim.offset : 0;
+  if (dim.axis === 'y'){
+    const x = (a[0] + b[0]) / 2 + off;
+    return {x1:x, y1:a[1], x2:x, y2:b[1], horiz:false};
+  }
+  const y = (a[1] + b[1]) / 2 + off;
+  return {x1:a[0], y1:y, x2:b[0], y2:y, horiz:true};
+}
+function dimLabelOf(dim){ return (dim.estimated ? '≈' : '') + Math.round(dimValueOf(dim)); }
+function dimSourceName(dim){
+  return dim.source === 'user' ? tr('用户', 'User') : dim.source === 'drawing' ? tr('图纸', 'Drawing') : tr('AI', 'AI');
+}
+// 按锚点定义重算量测点（墙移动、房间边更新后保持尺寸贴在同一量测面上）。
+function syncDimAnchors(){
+  const used = new Set();
+  for (const dim of PLAN.dims || []){
+    for (const key of ['from', 'to']){
+      const anchor = dim[key];
+      if (!anchor) continue;
+      let point = null;
+      if (anchor.kind === 'wall'){
+        const wall = wallOf(anchor.id);
+        if (wall) point = wall.rect && anchor.face !== 'left' && anchor.face !== 'right'
+          ? wallAnchorPoint(wall, anchor.face)
+          : wall.rect ? wallAnchorPoint(wall, anchor.face) : curvePoint(wallCurve(wall), 0);
+      } else if (anchor.kind === 'room'){
+        const room = roomDef(anchor.id);
+        if (room && room.poly[anchor.edge]) point = edgeMidpoint(room.poly, anchor.edge);
+      }
+      if (point) anchor.point = point;
+    }
+    dim.axis = dim.from?.point && dim.to?.point &&
+      Math.abs(dim.to.point[1] - dim.from.point[1]) > Math.abs(dim.to.point[0] - dim.from.point[0]) ? 'y' : 'x';
+    used.add(dim.id);
+  }
 }
 
 function renderDims(){
@@ -1831,8 +2111,33 @@ function renderDims(){
   const W = Math.round(b[2] - b[0]), Hh = Math.round(b[3] - b[1]);
   const oT = Math.max(160, Math.min(700, (b[1] - BOUNDS.y) * .55));
   const oL = Math.max(160, Math.min(700, (b[0] - BOUNDS.x) * .55));
-  g.innerHTML = chain(true, b[1] - oT, b[0], [W]) + chain(false, b[0] - oL, b[1], [Hh]);
+  let s = chain(true, b[1] - oT, b[0], [W]) + chain(false, b[0] - oL, b[1], [Hh]);
+  // plan.dims：图纸 / AI 来源为中性灰，用户新增为深色，估算项带 ≈（设计 §5.2）。
+  const k = 1/view.s, r = 9*k;
+  for (const dim of PLAN.dims || []){
+    if (!dim?.from?.point || !dim?.to?.point) continue;
+    const geo = dimGeometry(dim), v = Math.round(dimValueOf(dim));
+    const col = dim.source === 'user' ? '#2b2824' : '#8f8778';
+    const S = `stroke="${col}" stroke-width="1.2" vector-effect="non-scaling-stroke"`;
+    const a = dim.from.point, c = dim.to.point, mid = geo.horiz ? [(geo.x1+geo.x2)/2, geo.y1] : [geo.x1, (geo.y1+geo.y2)/2];
+    const label = (dim.estimated ? '≈' : '') + v;
+    const selected = ui.sel?.kind === 'dim' && ui.sel.id === dim.id;
+    s += `<g data-dim="${esc(dim.id)}" class="${selected ? 'dim-sel' : ''}">
+      <line x1="${a[0]}" y1="${a[1]}" x2="${geo.horiz?a[0]:geo.x1}" y2="${geo.horiz?geo.y1:a[1]}" ${S} opacity=".55"/>
+      <line x1="${c[0]}" y1="${c[1]}" x2="${geo.horiz?c[0]:geo.x2}" y2="${geo.horiz?geo.y2:c[1]}" ${S} opacity=".55"/>
+      <line x1="${geo.x1}" y1="${geo.y1}" x2="${geo.x2}" y2="${geo.y2}" ${S} ${selected ? 'stroke-width="2.4"' : ''}/>
+      ${geo.horiz ? `<line x1="${geo.x1}" y1="${geo.y1-140*k}" x2="${geo.x1}" y2="${geo.y1+140*k}" ${S}/><line x1="${geo.x2}" y1="${geo.y2-140*k}" x2="${geo.x2}" y2="${geo.y2+140*k}" ${S}/>`
+        : `<line x1="${geo.x1-140*k}" y1="${geo.y1}" x2="${geo.x1+140*k}" y2="${geo.y1}" ${S}/><line x1="${geo.x2-140*k}" y1="${geo.y2}" x2="${geo.x2+140*k}" y2="${geo.y2}" ${S}/>`}
+      <text x="${mid[0]}" y="${mid[1]-(geo.horiz?70*k:0)}" font-size="${190}" font-weight="${dim.source==='user'?'600':'400'}" text-anchor="middle" fill="${col}"
+        ${geo.horiz?'':`transform="rotate(-90 ${mid[0]} ${mid[1]})"`} stroke="#fbf9f4" stroke-width="55" paint-order="stroke" pointer-events="none">${label}</text>
+      ${checkMode ? `<line x1="${geo.x1}" y1="${geo.y1}" x2="${geo.x2}" y2="${geo.y2}" stroke="transparent" stroke-width="${16*k}" style="cursor:move"/>
+        <circle data-dim-handle="from" cx="${geo.x1}" cy="${geo.y1}" r="${r}" fill="#fff" stroke="${col}" stroke-width="${1.5*k}"/>
+        <circle data-dim-handle="to" cx="${geo.x2}" cy="${geo.y2}" r="${r}" fill="#fff" stroke="${col}" stroke-width="${1.5*k}"/>` : ''}
+    </g>`;
+  }
+  g.innerHTML = s;
   g.setAttribute('display', ui.layers.dims ? 'inline' : 'none');
+  g.setAttribute('pointer-events', checkMode ? 'all' : 'none');
 }
 
 function renderGrid(){
@@ -1882,13 +2187,675 @@ function renderSel(){
     if (r) s += roomShape(r, 'fill="rgba(181,101,58,.08)" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"');
   } else if (ui.sel?.kind === 'wall'){
     const w = wallOf(ui.sel.id);
-    if (w) s += wallShape(w, 'fill="none" stroke="#b5653a" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"');
+    if (w){
+      s += wallShape(w, 'fill="none" stroke="#b5653a" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"');
+      if (checkMode){
+        const h = 9*k, col = '#b5653a', A = `stroke="${col}" stroke-width="${1.5*k}"`;
+        if (w.rect){
+          const [x0,y0,x1,y1] = w.rect, vertical = (x1-x0) < (y1-y0);
+          const ends = vertical ? [[(x0+x1)/2,y0],[(x0+x1)/2,y1]] : [[x0,(y0+y1)/2],[x1,(y0+y1)/2]];
+          s += ends.map((p, i) => `<circle data-wall-handle="${i ? 'to' : 'from'}" cx="${p[0]}" cy="${p[1]}" r="${h}" fill="#fff" ${A} style="cursor:move"/>`).join('');
+        } else {
+          s += [w.from, w.to].map((p, i) => `<circle data-wall-handle="${i ? 'to' : 'from'}" cx="${p[0]}" cy="${p[1]}" r="${h}" fill="#fff" ${A} style="cursor:move"/>`).join('');
+        }
+      }
+    }
+  } else if (ui.sel?.kind === 'win'){
+    const win = WINS.find(v => v.id === ui.sel.id);
+    if (win){
+      const at = 'fill="rgba(181,101,58,.10)" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"';
+      s += win.rect ? `<rect x="${win.rect[0]}" y="${win.rect[1]}" width="${win.rect[2]-win.rect[0]}" height="${win.rect[3]-win.rect[1]}" ${at}/>`
+        : `<path d="${curveBandPath(windowCurve(win))}" ${at}/>`;
+    }
+  } else if (ui.sel?.kind === 'door'){
+    const d = DOORS.find(v => v.id === ui.sel.id);
+    if (d) s += `<rect x="${d.rect[0]}" y="${d.rect[1]}" width="${d.rect[2]-d.rect[0]}" height="${d.rect[3]-d.rect[1]}"
+      fill="rgba(181,101,58,.10)" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
+  } else if (ui.sel?.kind === 'slide'){
+    const d = SLIDES.find(v => v.id === ui.sel.id);
+    if (d) s += `<rect x="${d.rect[0]}" y="${d.rect[1]}" width="${d.rect[2]-d.rect[0]}" height="${d.rect[3]-d.rect[1]}"
+      fill="rgba(181,101,58,.10)" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
+  } else if (ui.sel?.kind === 'dim'){
+    const dim = (PLAN.dims || []).find(v => v.id === ui.sel.id);
+    if (dim){ const geo = dimGeometry(dim), mid = geo.horiz ? [(geo.x1+geo.x2)/2, geo.y1] : [geo.x1, (geo.y1+geo.y2)/2];
+      s += `<circle cx="${mid[0]}" cy="${mid[1]}" r="${7*k}" fill="none" stroke="#b5653a" stroke-width="${1.5*k}" pointer-events="none"/>`;
+    }
   }
   $('#gSel').innerHTML = s;
 }
 
+/* ======================= 确定性检查（设计 §4.4：六条规则，纯几何，客户端即时重算） =======================
+ * 结果 {code, severity, objects:[{kind,id}], key, message}；state.checkIgnores 保存被忽略的 key。
+ * code: opening-join 洞口衔接 · opening-overlap 洞口重叠 · room-edge 房间贴边
+ *       dim-chain 尺寸链 · arc-join 弧段衔接 · bay-window 飘窗完整性
+ * =========================================================================================== */
+const CHECK_JOIN = 1;        // 洞口 / 弧段端点衔接，mm
+const CHECK_FACE = 2;        // 房间贴边，mm
+const CHECK_CHAIN = 5;       // 尺寸链求和，mm
+const CHECK_OVERLAP = 1;     // 洞口重叠，mm
+
+function rectSpanOf(rect){
+  const [x0, y0, x1, y1] = rect;
+  const horiz = (x1 - x0) >= (y1 - y0);
+  return {horiz, a0:horiz?x0:y0, a1:horiz?x1:y1, c0:horiz?y0:x0, c1:horiz?y1:x1};
+}
+const rectCenter = ([x0,y0,x1,y1]) => [(x0+x1)/2, (y0+y1)/2];
+const samePoint = (a, b, tol) => Math.hypot(a[0]-b[0], a[1]-b[1]) <= tol;
+
+// 门窗 / 推拉门（含弧形洞口）的几何列表；弧形洞口几何非法时在这里报告。
+function planOpenings(plan, add){
+  const list = [];
+  for (const [kind, coll] of [['win', plan.wins], ['door', plan.doors], ['slide', plan.slides]]){
+    for (const item of Array.isArray(coll) ? coll : []){
+      if (!item || typeof item !== 'object' || !item.id) continue;
+      if (item.rect) list.push({kind, id:item.id, rect:item.rect, span:rectSpanOf(item.rect)});
+      else {
+        const curve = curvedSpan(item);
+        if (!curve){ add('arc-join', 'error', [[kind, item.id]], tr('弧形洞口几何无效（半径或厚度不合法）', 'Invalid curved opening geometry')); continue; }
+        list.push({kind, id:item.id, curve, from:item.from, to:item.to});
+      }
+    }
+  }
+  return list;
+}
+
+// 洞口一端是否真的搭在围护结构上：同一条边界上的墙端 / 门窗端，或垂直墙、垂直洞口的端面。
+function endAbuts(opening, end, walls, openings){
+  const s = opening.span, mid = (s.c0 + s.c1) / 2, thickness = s.c1 - s.c0;
+  const hits = other => {
+    const q = other.span;
+    if (q.horiz === s.horiz){
+      return (Math.abs(q.a0 - end) <= CHECK_JOIN || Math.abs(q.a1 - end) <= CHECK_JOIN) &&
+        Math.abs((q.c0 + q.c1) / 2 - mid) <= CHECK_JOIN && Math.abs((q.c1 - q.c0) - thickness) <= CHECK_JOIN;
+    }
+    return (Math.abs(q.c0 - end) <= CHECK_JOIN || Math.abs(q.c1 - end) <= CHECK_JOIN) &&
+      Math.min(q.a1, s.c1) - Math.max(q.a0, s.c0) >= -CHECK_JOIN;
+  };
+  if (walls.some(w => w.rect && hits({span:rectSpanOf(w.rect)}))) return true;
+  return openings.some(other => other !== opening && other.span && hits(other));
+}
+
+function checkOpeningJoin(plan, walls, add){
+  const openings = planOpenings(plan, add);
+  for (const opening of openings){
+    if (opening.curve){
+      for (const end of [opening.from, opening.to]){
+        const joined = walls.some(other => {
+          if (other.rect){
+            const [x0,y0,x1,y1] = other.rect;
+            return [[x0,y0],[x1,y0],[x0,y1],[x1,y1]].some(p => samePoint(p, end, CHECK_JOIN));
+          }
+          return samePoint(other.from, end, CHECK_JOIN) || samePoint(other.to, end, CHECK_JOIN);
+        }) || openings.some(other => other !== opening && !other.span &&
+          (samePoint(other.from, end, CHECK_JOIN) || samePoint(other.to, end, CHECK_JOIN)));
+        if (!joined) add('opening-join', 'error', [[opening.kind, opening.id]],
+          tr('弧形洞口端点未与相邻墙段衔接', 'A curved opening endpoint does not meet the adjacent wall'));
+      }
+      continue;
+    }
+    if (!endAbuts(opening, opening.span.a0, walls, openings) ||
+        !endAbuts(opening, opening.span.a1, walls, openings)){
+      add('opening-join', 'error', [[opening.kind, opening.id]],
+        tr('门窗洞口两端未与同一条围护边界上的墙段对齐', 'An opening does not line up with wall ends on the same boundary'));
+    }
+  }
+}
+
+function checkOpeningOverlap(plan, add){
+  const groups = new Map();
+  for (const opening of planOpenings(plan, add)){
+    if (!opening.span) continue;
+    const s = opening.span;
+    const key = `${s.horiz ? 'h' : 'v'}:${Math.round((s.c0 + s.c1) / 2)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(opening);
+  }
+  for (const list of groups.values()){
+    list.sort((a, b) => a.span.a0 - b.span.a0);
+    for (let i = 1; i < list.length; i++){
+      const prev = list[i - 1], cur = list[i];
+      if (cur.span.a0 < prev.span.a1 - CHECK_OVERLAP){
+        add('opening-overlap', 'error', [[prev.kind, prev.id], [cur.kind, cur.id]],
+          tr('同一围护边界上的门窗洞口重叠', 'Openings on the same boundary overlap'));
+      }
+    }
+  }
+}
+
+// 某条线上（axis='h' 时 y=coord）可用的墙 / 洞口贴边区间。
+function faceIntervals(plan, walls, axis, coord){
+  const out = [];
+  for (const w of walls){
+    if (!w.rect) continue;
+    const [x0, y0, x1, y1] = w.rect;
+    if (axis === 'h'){ if (Math.abs(y0 - coord) <= CHECK_FACE || Math.abs(y1 - coord) <= CHECK_FACE) out.push([x0, x1]); }
+    else if (Math.abs(x0 - coord) <= CHECK_FACE || Math.abs(x1 - coord) <= CHECK_FACE) out.push([y0, y1]);
+  }
+  for (const item of [...(plan.wins || []), ...(plan.doors || []), ...(plan.slides || [])]){
+    if (!item?.rect) continue;
+    const [x0, y0, x1, y1] = item.rect;
+    if (axis === 'h'){ if (Math.abs(y0 - coord) <= CHECK_FACE || Math.abs(y1 - coord) <= CHECK_FACE) out.push([x0, x1]); }
+    else if (Math.abs(x0 - coord) <= CHECK_FACE || Math.abs(x1 - coord) <= CHECK_FACE) out.push([y0, y1]);
+  }
+  return out;
+}
+function uncoveredGaps(intervals, a0, a1){
+  const list = intervals.filter(([s, e]) => e >= a0 - CHECK_FACE && s <= a1 + CHECK_FACE)
+    .map(([s, e]) => [Math.max(s, a0), Math.min(e, a1)]).filter(([s, e]) => e >= s)
+    .sort((p, q) => p[0] - q[0]);
+  const gaps = [];
+  let at = a0;
+  for (const [s, e] of list){
+    if (s > at + CHECK_FACE) gaps.push([at, s]);
+    at = Math.max(at, e);
+    if (at >= a1) break;
+  }
+  if (at < a1 - CHECK_FACE) gaps.push([at, a1]);
+  return gaps;
+}
+function checkRoomFaces(plan, walls, add){
+  for (const room of Array.isArray(plan.rooms) ? plan.rooms : []){
+    const poly = room.poly;
+    if (!Array.isArray(poly) || poly.length < 3 || room.counted === false) continue;   // 飘窗内沿本就是洞口
+    const arcs = new Set((room.arcs || []).map(a => a.edge));
+    let gapTotal = 0, through = false;
+    for (let i = 0; i < poly.length; i++){
+      if (arcs.has(i)) continue;
+      const p = poly[i], q = poly[(i + 1) % poly.length];
+      const horiz = Math.abs(p[1] - q[1]) <= .5, vert = Math.abs(p[0] - q[0]) <= .5;
+      if (!horiz && !vert) continue;
+      const coord = horiz ? (p[1] + q[1]) / 2 : (p[0] + q[0]) / 2;
+      const a0 = Math.min(horiz ? p[0] : p[1], horiz ? q[0] : q[1]);
+      const a1 = Math.max(horiz ? p[0] : p[1], horiz ? q[0] : q[1]);
+      if (a1 - a0 <= CHECK_FACE) continue;
+      const gaps = uncoveredGaps(faceIntervals(plan, walls, horiz ? 'h' : 'v', coord), a0, a1);
+      gapTotal += gaps.reduce((sum, [s, e]) => sum + (e - s), 0);
+      // 边穿过墙体实体（不是贴在内 / 外表面）
+      through ||= walls.some(w => {
+        if (!w.rect) return false;
+        const [x0, y0, x1, y1] = w.rect;
+        if (horiz) return y0 + CHECK_FACE < coord && coord < y1 - CHECK_FACE && Math.max(a0, x0) < Math.min(a1, x1) - CHECK_FACE;
+        return x0 + CHECK_FACE < coord && coord < x1 - CHECK_FACE && Math.max(a0, y0) < Math.min(a1, y1) - CHECK_FACE;
+      });
+    }
+    if (gapTotal > CHECK_FACE) add('room-edge', 'warn', [['room', room.id]],
+      tr(`房间「${room.name}」约 ${Math.round(gapTotal)} mm 的边未落在墙面上`, `About ${Math.round(gapTotal)} mm of the room outline is off the walls`));
+    if (through) add('room-edge', 'warn', [['room', room.id]],
+      tr(`房间「${room.name}」有边穿过墙体实体`, `A room edge passes through a wall body`));
+  }
+}
+
+function checkDimChains(plan, add){
+  const groups = new Map();
+  for (const dim of Array.isArray(plan.dims) ? plan.dims : []){
+    if (!dim?.from?.point || !dim?.to?.point) continue;
+    const axis = dim.axis === 'y' ? 'y' : 'x';
+    const along = point => axis === 'x' ? point[0] : point[1];
+    const across = point => axis === 'x' ? point[1] : point[0];
+    const pa = across(dim.from.point), pb = across(dim.to.point);
+    const chain = typeof dim.chain === 'string' && dim.chain ? `c:${dim.chain}`
+      : (Math.abs(pa - pb) <= CHECK_CHAIN ? `a:${axis}:${Math.round(((pa + pb) / 2) / CHECK_CHAIN) * CHECK_CHAIN}` : `d:${dim.id}`);
+    const start = Math.min(along(dim.from.point), along(dim.to.point));
+    const end = Math.max(along(dim.from.point), along(dim.to.point));
+    if (!groups.has(chain)) groups.set(chain, {explicit:!!dim.chain, dims:[]});
+    groups.get(chain).dims.push({dim, start, end, value:end - start});
+  }
+  for (const group of groups.values()){
+    const list = group.dims.sort((a, b) => a.start - b.start);
+    // 总尺寸 = 若干相邻分段之和：偏差超过公差时报告总尺寸与相关分段。
+    for (const total of list){
+      const parts = list.filter(item => item !== total && item.start >= total.start - CHECK_CHAIN && item.end <= total.end + CHECK_CHAIN);
+      if (parts.length < 2) continue;
+      const span = parts.reduce((sum, item) => sum + item.value, 0);
+      if (Math.abs(total.value - span) > CHECK_CHAIN){
+        add('dim-chain', 'warn', [['dim', total.dim.id], ...parts.map(item => ['dim', item.dim.id])],
+          tr(`总尺寸 ${Math.round(total.value)} mm 与分段之和 ${Math.round(span)} mm 相差 ${Math.round(total.value - span)} mm`,
+            `Total ${Math.round(total.value)} mm differs from the sum of segments ${Math.round(span)} mm`));
+      }
+    }
+    if (!group.explicit) continue;
+    for (let i = 1; i < list.length; i++){
+      const prev = list[i - 1], cur = list[i];
+      if (cur.start > prev.end + CHECK_CHAIN){
+        add('dim-chain', 'warn', [['dim', prev.dim.id], ['dim', cur.dim.id]],
+          tr(`相邻尺寸之间有 ${Math.round(cur.start - prev.end)} mm 未标注`, `${Math.round(cur.start - prev.end)} mm is missing between adjacent dimensions`));
+      } else if (cur.start < prev.end - CHECK_CHAIN){
+        add('dim-chain', 'warn', [['dim', prev.dim.id], ['dim', cur.dim.id]],
+          tr('相邻尺寸互相重叠', 'Adjacent dimensions overlap'));
+      }
+    }
+  }
+}
+
+function checkArcs(walls, add){
+  for (const wall of walls){
+    if (wall.rect) continue;
+    const curve = curvedSpan(wall);
+    if (!curve){
+      add('arc-join', 'error', [['wall', wall.id]], tr('弧墙几何无效（半径或厚度不合法）', 'Invalid curved wall geometry'));
+      continue;
+    }
+    for (const end of [wall.from, wall.to]){
+      const joined = walls.some(other => {
+        if (other === wall) return false;
+        if (other.rect){
+          const [x0,y0,x1,y1] = other.rect;
+          return [[x0,y0],[x1,y0],[x0,y1],[x1,y1]].some(p => samePoint(p, end, CHECK_JOIN));
+        }
+        return samePoint(other.from, end, CHECK_JOIN) || samePoint(other.to, end, CHECK_JOIN);
+      });
+      if (!joined) add('arc-join', 'error', [['wall', wall.id]],
+        tr('弧墙端点未与相邻墙段衔接', 'A curved wall endpoint does not meet the adjacent wall'));
+    }
+  }
+}
+
+function bayHasWindow(plan, room){
+  const poly = room.poly;
+  if (!Array.isArray(poly) || poly.length < 3) return false;
+  const wins = (plan.wins || []).filter(w => w?.rect);
+  for (let i = 0; i < poly.length; i++){
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    const horiz = Math.abs(p[1] - q[1]) <= .5, vert = Math.abs(p[0] - q[0]) <= .5;
+    if (!horiz && !vert) continue;
+    const coord = horiz ? (p[1] + q[1]) / 2 : (p[0] + q[0]) / 2;
+    const a0 = Math.min(horiz ? p[0] : p[1], horiz ? q[0] : q[1]);
+    const a1 = Math.max(horiz ? p[0] : p[1], horiz ? q[0] : q[1]);
+    if (a1 - a0 <= CHECK_FACE) continue;
+    let cover = 0;
+    for (const win of wins){
+      const [x0, y0, x1, y1] = win.rect;
+      const near = horiz ? Math.abs(y0 - coord) <= CHECK_FACE || Math.abs(y1 - coord) <= CHECK_FACE
+        : Math.abs(x0 - coord) <= CHECK_FACE || Math.abs(x1 - coord) <= CHECK_FACE;
+      if (!near) continue;
+      cover += Math.max(0, Math.min(a1, horiz ? x1 : y1) - Math.max(a0, horiz ? x0 : y0));
+    }
+    if (cover >= (a1 - a0) * .6) return true;
+  }
+  return false;
+}
+function checkBays(plan, add){
+  for (const room of Array.isArray(plan.rooms) ? plan.rooms : []){
+    if (room.counted !== false) continue;
+    if (!bayHasWindow(plan, room)) add('bay-window', 'error', [['room', room.id]],
+      tr(`飘窗房间「${room.name}」外沿缺少窗段`, `Bay room "${room.name}" has no window on its outer edge`));
+  }
+}
+
+/** 纯几何检查：不读全局状态，返回全部问题（忽略集合由调用方过滤）。 */
+function checkPlan(plan){
+  const issues = [], seen = new Set();
+  const add = (code, severity, refs, message) => {
+    const objects = refs.filter(Boolean).map(([kind, id]) => ({kind, id:String(id)}));
+    if (!objects.length) return;
+    const key = code + '|' + objects.map(o => o.kind + ':' + o.id).sort().join(',');
+    if (seen.has(key)) return;
+    seen.add(key);
+    issues.push({code, severity, objects, key, message});
+  };
+  if (!plan || typeof plan !== 'object') return issues;
+  const walls = Array.isArray(plan.walls) ? plan.walls : [];
+  checkOpeningJoin(plan, walls, add);
+  checkOpeningOverlap(plan, add);
+  checkRoomFaces(plan, walls, add);
+  checkDimChains(plan, add);
+  checkArcs(walls, add);
+  checkBays(plan, add);
+  return issues;
+}
+
+const checkState = {all:[], active:[], byObject:new Map()};
+function refreshChecks(){
+  const all = checkPlan(PLAN);
+  const ignores = new Set(state.checkIgnores || []);
+  checkState.all = all;
+  checkState.active = all.filter(issue => !ignores.has(issue.key));
+  const byObject = new Map();
+  for (const issue of checkState.active) for (const o of issue.objects){
+    const key = o.kind + ':' + o.id;
+    const entry = byObject.get(key) || {issues:[], anchor:null};
+    entry.issues.push(issue);
+    byObject.set(key, entry);
+  }
+  checkState.byObject = byObject;
+}
+function checkAnchor(kind, id){
+  if (kind === 'wall'){ const w = wallOf(id); return w ? (w.rect ? rectCenter(w.rect) : curvePoint(wallCurve(w), .5)) : null; }
+  if (kind === 'win'){ const w = WINS.find(v => v.id === id); return w ? (w.rect ? rectCenter(w.rect) : curvePoint(windowCurve(w), .5)) : null; }
+  if (kind === 'door'){ const d = DOORS.find(v => v.id === id); return d ? rectCenter(d.rect) : null; }
+  if (kind === 'slide'){ const s = SLIDES.find(v => v.id === id); return s ? rectCenter(s.rect) : null; }
+  if (kind === 'room'){ const r = roomDef(id); return r ? (r.at || polyCenter(r.poly)) : null; }
+  if (kind === 'dim'){ const d = (PLAN.dims || []).find(v => v.id === id);
+    return d ? [(d.from.point[0] + d.to.point[0]) / 2, (d.from.point[1] + d.to.point[1]) / 2] : null; }
+  return null;
+}
+function renderChecks(){
+  const g = $('#gCheck'); if (!g) return;
+  const k = 1/view.s, parts = [];
+  for (const [key, entry] of checkState.byObject){
+    const at = key.indexOf(':');
+    const anchor = checkAnchor(key.slice(0, at), key.slice(at + 1));
+    if (!anchor) continue;
+    const error = entry.issues.some(issue => issue.severity === 'error');
+    const cx = anchor[0] + 14*k, cy = anchor[1] - 14*k, r = (error ? 10 : 9)*k, count = entry.issues.length;
+    parts.push(`<g><circle cx="${cx}" cy="${cy}" r="${r}" fill="${error ? '#b3372a' : '#b5653a'}" stroke="#fffdf9" stroke-width="${1.5*k}"/>` +
+      `<text x="${cx}" y="${cy}" font-size="${11*k}" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#fff">${count > 9 ? '9+' : count}</text></g>`);
+  }
+  g.innerHTML = parts.join('');
+}
+// 估算项：source 为 ai / drawing 且尚未被用户确认的尺寸（设计 §5.5）。
+const estimateDims = () => (PLAN.dims || []).filter(dim => dim.estimated);
+function updateCheckStatus(){
+  const el = $('#checkStatus'); if (!el) return;
+  const count = checkState.active.length, est = estimateDims().length;
+  el.hidden = !count && !est && !checkMode;
+  el.textContent = [
+    count ? tr(`${count} 处待确认`, `${count} to review`) : '',
+    est ? tr(`${est} 处估算`, `${est} estimated`) : '',
+    (count || est || checkMode) ? tr('下一步 →', 'Next →') : '',
+  ].filter(Boolean).join(' · ');
+  el.title = checkState.active.slice(0, 3).map(issue => issue.message).join('\n');
+}
+// 点状态带：依次循环定位到问题对象；门窗洞口 / 尺寸也能选中，便于直接修正。
+let checkCycleIndex = 0;
+function cycleCheckIssue(){
+  const issues = checkState.active;
+  if (!issues.length){
+    const est = estimateDims();
+    if (est.length) return select({kind:'dim', id:est[0].id});
+    return toast(tr('没有待确认的问题', 'No open checks'));
+  }
+  for (let n = 0; n < issues.length; n++){
+    const issue = issues[(checkCycleIndex + n) % issues.length];
+    const target = issue.objects.find(o => ['wall', 'room', 'win', 'door', 'slide', 'dim'].includes(o.kind) && selOk({kind:o.kind, id:o.id}));
+    if (!target){ continue; }
+    checkCycleIndex = (checkCycleIndex + n + 1) % issues.length;
+    return select({kind:target.kind, id:target.id});
+  }
+  checkCycleIndex = 0;
+  toast(issues[0].message);
+}
+
+/* ======================= 校核图层（设计 §5：画布图层 + 选中态 + 属性面板分区） ======================= */
+let checkMode = false;
+const inCheck = () => checkMode;
+
+function enterCheck(){
+  if (is3D()) setView('2d');
+  checkMode = true;
+  document.body.classList.add('check-mode');
+  ui.layers.dims = true;
+  document.querySelector('[data-layer="dims"]')?.classList.add('on');
+  setTool('select');
+  const done = $('#checkDone'), add = $('#dimAdd'), cancel = $('#dimCancel');
+  if (done) done.hidden = false;
+  if (add) add.hidden = false;
+  if (cancel) cancel.hidden = false;
+  refreshChecks();
+  renderDims(); renderChecks(); renderAll();
+  toast(tr('校核图层已打开：点选墙体 / 门窗 / 尺寸可直接修改', 'Check layer on — select walls, openings or dimensions to edit'));
+}
+
+function exitCheck(force){
+  const count = checkState.active.length, est = estimateDims().length;
+  if (!force && (count || est)){
+    const msg = tr(`还有 ${count} 处待确认、${est} 处估算。退出校核不会丢修改，可以随时回来继续。确定退出？`,
+      `${count} checks and ${est} estimates are still open. Your edits are kept — you can return anytime. Leave the check layer?`);
+    if (!confirm(msg)) return false;
+  }
+  checkMode = false;
+  document.body.classList.remove('check-mode');
+  const done = $('#checkDone'), add = $('#dimAdd'), cancel = $('#dimCancel');
+  if (done) done.hidden = true;
+  if (add) add.hidden = true;
+  if (cancel) cancel.hidden = true;
+  ui.dimDraft = null;
+  renderDims(); renderChecks(); renderAll();
+  toast(tr('已退出校核，修改已保存', 'Check layer closed — edits are saved'));
+  return true;
+}
+
+// 退化几何：即时拒绝（设计 §5.3.1）。返回第一条原因，合法时返回 null。
+function degeneratePlan(plan){
+  for (const wall of plan.walls || []){
+    if (wall.rect){
+      const [x0, y0, x1, y1] = wall.rect;
+      if (x1 - x0 <= 1 || y1 - y0 <= 1) return tr('墙长为 0', 'A wall has zero length');
+    } else {
+      const curve = curvedSpan(wall);
+      if (!curve) return tr('弧墙几何无效', 'Invalid curved wall geometry');
+      if (wall.thickness >= curve.radius * 2) return tr('弧墙厚度不能大于等于直径', 'Arc wall thickness must be less than its diameter');
+    }
+  }
+  for (const door of plan.doors || []) if (!(door.len > 0)) return tr('门扇长度为 0', 'A door leaf has zero length');
+  return null;
+}
+
+// 结构编辑统一走这里：非法几何整体回退；合法则进入撤销栈并保存。
+function editStructure(fn){
+  const before = snap();
+  let result;
+  try { result = fn(); } catch(e){ restore(before); renderDims(); renderOpenings(); renderAll(); return {ok:false, error:e.message || String(e)}; }
+  const bad = degeneratePlan(PLAN);
+  if (bad){ restore(before); renderDims(); renderOpenings(); renderAll(); toast(bad); return {ok:false, error:bad}; }
+  syncDimAnchors();
+  commit(before); buildDefs(); renderDims(); renderOpenings(); renderAll();
+  return {ok:true, result};
+}
+
+/* ---------- 尺寸锚点吸附 ---------- */
+function nearestAnchor(p, tolerance){
+  const tol = tolerance || Math.max(60, 140 / view.s);
+  let best = null, bestD = tol;
+  const consider = (anchor, point) => {
+    const d = Math.hypot(point[0] - p.x, point[1] - p.y);
+    if (d < bestD){ bestD = d; best = {...anchor, point:[point[0], point[1]]}; }
+  };
+  for (const wall of WALLS){
+    if (!wall.rect){
+      const curve = wallCurve(wall);
+      if (!curve) continue;
+      for (const offset of [-curve.thickness/2, curve.thickness/2, 0]){
+        consider({kind:'wall', id:wall.id, face:'axis'}, closestCurvePoint(curve, p.x, p.y, offset));
+      }
+      continue;
+    }
+    const [x0, y0, x1, y1] = wall.rect, cx = Math.max(x0, Math.min(x1, p.x)), cy = Math.max(y0, Math.min(y1, p.y));
+    const edges = [
+      {point:[cx, y0], face:(x1-x0) >= (y1-y0) ? 'axis' : (Math.abs(cx-x0) < Math.abs(cx-x1) ? 'left' : 'right')},
+      {point:[cx, y1], face:(x1-x0) >= (y1-y0) ? 'axis' : (Math.abs(cx-x0) < Math.abs(cx-x1) ? 'left' : 'right')},
+      {point:[x0, cy], face:(x1-x0) >= (y1-y0) ? (Math.abs(cy-y0) < Math.abs(cy-y1) ? 'axis' : 'axis') : 'left'},
+      {point:[x1, cy], face:(x1-x0) >= (y1-y0) ? 'axis' : 'right'},
+    ];
+    // 只在最近的边上吸附
+    const nearest = edges.map(e => ({e, d:Math.hypot(e.point[0]-p.x, e.point[1]-p.y)})).sort((a,b) => a.d-b.d)[0];
+    if (nearest) consider({kind:'wall', id:wall.id, face:nearest.e.face}, nearest.e.point);
+  }
+  for (const room of ROOMS){
+    if (room.counted === false) continue;
+    const poly = room.poly;
+    for (let i = 0; i < poly.length; i++){
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const dx = b[0]-a[0], dy = b[1]-a[1], len2 = dx*dx + dy*dy;
+      if (!len2) continue;
+      const t = Math.max(0, Math.min(1, ((p.x-a[0])*dx + (p.y-a[1])*dy) / len2));
+      const point = [a[0]+dx*t, a[1]+dy*t];
+      if (Math.hypot(point[0]-p.x, point[1]-p.y) > 80) continue;
+      consider({kind:'room', id:room.id, edge:i, face:'inner'}, point);
+    }
+  }
+  return best;
+}
+
+/* ---------- 改尺寸 = 移墙（设计 §5.4） ---------- */
+function moveWallSegment(wall, axis, delta){
+  if (!wall || !Number.isFinite(delta) || !delta) return false;
+  if (!wall.rect){
+    wall.from = axis === 'x' ? [wall.from[0]+delta, wall.from[1]] : [wall.from[0], wall.from[1]+delta];
+    wall.to = axis === 'x' ? [wall.to[0]+delta, wall.to[1]] : [wall.to[0], wall.to[1]+delta];
+    return true;
+  }
+  const old = wall.rect.slice(), tol = 2;
+  if (axis === 'x'){ wall.rect[0] += delta; wall.rect[2] += delta; }
+  else { wall.rect[1] += delta; wall.rect[3] += delta; }
+  const vertical = (old[2]-old[0]) < (old[3]-old[1]);
+  // 与移动墙垂直相接的墙延长 / 缩短，保持 L / T 接缝闭合。
+  for (const other of WALLS){
+    if (other === wall || !other.rect) continue;
+    const r = other.rect, otherVertical = (r[2]-r[0]) < (r[3]-r[1]);
+    if (axis === 'x' && vertical && !otherVertical){
+      if (r[3] < old[1]-tol || r[1] > old[3]+tol) continue;
+      if (Math.abs(r[0]-old[0]) <= tol) r[0] = wall.rect[0];
+      if (Math.abs(r[2]-old[0]) <= tol) r[2] = wall.rect[0];
+      if (Math.abs(r[0]-old[2]) <= tol) r[0] = wall.rect[2];
+      if (Math.abs(r[2]-old[2]) <= tol) r[2] = wall.rect[2];
+    } else if (axis === 'y' && !vertical && otherVertical){
+      if (r[2] < old[0]-tol || r[0] > old[2]+tol) continue;
+      if (Math.abs(r[1]-old[1]) <= tol) r[1] = wall.rect[1];
+      if (Math.abs(r[3]-old[1]) <= tol) r[3] = wall.rect[1];
+      if (Math.abs(r[1]-old[3]) <= tol) r[1] = wall.rect[3];
+      if (Math.abs(r[3]-old[3]) <= tol) r[3] = wall.rect[3];
+    }
+  }
+  // 墙上的门窗随墙移动。
+  const inOld = rect => {
+    const cx = (rect[0]+rect[2])/2, cy = (rect[1]+rect[3])/2;
+    return cx >= Math.min(old[0],old[2])-tol && cx <= Math.max(old[0],old[2])+tol &&
+      cy >= Math.min(old[1],old[3])-tol && cy <= Math.max(old[1],old[3])+tol;
+  };
+  const shiftRect = rect => { if (axis === 'x'){ rect[0]+=delta; rect[2]+=delta; } else { rect[1]+=delta; rect[3]+=delta; } };
+  for (const item of [...WINS, ...DOORS, ...SLIDES]){
+    if (item.rect && inOld(item.rect)){
+      shiftRect(item.rect);
+      if (item.h) item.h = axis === 'x' ? [item.h[0]+delta, item.h[1]] : [item.h[0], item.h[1]+delta];
+    }
+  }
+  // 落在该墙面上的房间边同步更新。
+  for (const room of ROOMS){
+    for (const point of room.poly){
+      const across = axis === 'x' ? point[1] : point[0];
+      const spanA = axis === 'x' ? old[1] : old[0], spanB = axis === 'x' ? old[3] : old[2];
+      if (across < spanA-tol || across > spanB+tol) continue;
+      const coord = axis === 'x' ? point[0] : point[1];
+      const faces = axis === 'x' ? [old[0], old[2]] : [old[1], old[3]];
+      if (faces.some(face => Math.abs(coord-face) <= tol)){
+        if (axis === 'x') point[0] += delta; else point[1] += delta;
+      }
+    }
+  }
+  return true;
+}
+
+function moveRoomEdge(room, edge, axis, delta){
+  const a = room.poly[edge], b = room.poly[(edge + 1) % room.poly.length];
+  if (!a || !b) return false;
+  if (axis === 'x'){ a[0] += delta; b[0] += delta; } else { a[1] += delta; b[1] += delta; }
+  return true;
+}
+
+// 改尺寸值：end 指定移动哪一端；locked 决定默认端，none 时返回 needChoice 让用户点选。
+function setDimValue(dimId, value, opts = {}){
+  const dim = (PLAN.dims || []).find(d => d.id === dimId);
+  if (!dim) return {ok:false, error:tr('尺寸不存在', 'Dimension not found')};
+  const target = Math.round(+value);
+  if (!(target > 0)) return {ok:false, error:tr('尺寸必须大于 0', 'The dimension must be greater than 0')};
+  const current = dimValueOf(dim);
+  if (Math.abs(current - target) < .5){
+    if (dim.source !== 'user' && opts.confirm !== false) return confirmDim(dimId);
+    return {ok:true, unchanged:true};
+  }
+  let end = opts.end;
+  if (!['from', 'to'].includes(end)) end = dim.locked === 'from' ? 'to' : dim.locked === 'to' ? 'from' : null;
+  if (!end){
+    return {ok:false, needChoice:true,
+      error:tr('两端都可移动，请先选择移动哪一面墙', 'Both ends can move — choose which side to move')};
+  }
+  const anchor = dim[end];
+  if (!anchor || !['wall', 'room'].includes(anchor.kind)) return {ok:false, error:tr('这一端没有可移动的墙', 'This end has no movable wall')};
+  const axis = dim.axis === 'y' ? 'y' : 'x';
+  const fromC = dim.from.point[axis === 'x' ? 0 : 1], toC = dim.to.point[axis === 'x' ? 0 : 1];
+  const sign = toC >= fromC ? 1 : -1;
+  const delta = (end === 'to' ? 1 : -1) * (target - current) * sign;
+  const keepDrawing = dim.drawingValue;
+  const wasUser = dim.source === 'user';
+  const edited = editStructure(() => {
+    if (anchor.kind === 'wall'){
+      const wall = wallOf(anchor.id);
+      if (!wall) throw new Error(tr('尺寸引用的墙不存在', 'The referenced wall is missing'));
+      moveWallSegment(wall, axis, delta);
+    } else {
+      const room = roomDef(anchor.id);
+      if (!room) throw new Error(tr('尺寸引用的房间不存在', 'The referenced room is missing'));
+      moveRoomEdge(room, anchor.edge, axis, delta);
+    }
+    dim.source = 'user';
+    delete dim.estimated;
+    if (!wasUser && keepDrawing === undefined) dim.drawingValue = Math.round(current);
+  });
+  return edited.ok ? {ok:true, value:target} : edited;
+}
+
+// 用户确认估算值（≈ 消失），进入撤销栈并持久化。
+function confirmDim(dimId){
+  const dim = (PLAN.dims || []).find(d => d.id === dimId);
+  if (!dim) return {ok:false, error:tr('尺寸不存在', 'Dimension not found')};
+  if (!dim.estimated && dim.source === 'user') return {ok:true, unchanged:true};
+  mutate(() => { dim.source = 'user'; delete dim.estimated; });
+  return {ok:true};
+}
+
+function deleteDim(dimId){
+  const before = snap();
+  PLAN.dims = (PLAN.dims || []).filter(d => d.id !== dimId);
+  if (ui.sel?.kind === 'dim' && ui.sel.id === dimId) ui.sel = null;
+  commit(before); save(); renderDims(); renderAll();
+  return true;
+}
+
+// 新建尺寸：两端吸附到墙面 / 房间边。
+function addDim(fromPoint, toPoint, opts = {}){
+  const from = opts.from || nearestAnchor(fromPoint), to = opts.to || nearestAnchor(toPoint);
+  if (!from || !to) return {ok:false, error:tr('请点在墙面或房间边上', 'Pick points on a wall or room edge')};
+  const axis = Math.abs(to.point[1] - from.point[1]) > Math.abs(to.point[0] - from.point[0]) ? 'y' : 'x';
+  const dim = {
+    id: 'dim-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+    source: 'user', from, to, axis, locked: 'none',
+    offset: Number.isFinite(opts.offset) ? opts.offset : 320,
+  };
+  if (Number.isFinite(opts.drawingValue)) dim.drawingValue = opts.drawingValue;
+  const before = snap();
+  PLAN.dims.push(dim);
+  commit(before); save(); renderDims(); renderAll();
+  ui.sel = {kind:'dim', id:dim.id};
+  renderSel(); renderPanel();
+  return {ok:true, dim:deepCopy(dim)};
+}
+
+/* ---------- 校核合法性：导出 / 效果图前确认未解决项（设计 §5.3.1） ---------- */
+function unresolvedMessages(limit = 8){
+  refreshChecks();
+  return checkState.active.slice(0, limit).map(issue => issue.message);
+}
+function confirmCheckGate(action){
+  refreshChecks();
+  const issues = checkState.active;
+  if (!issues.length) return true;
+  const head = tr(`还有 ${issues.length} 处未解决项：`, `${issues.length} unresolved checks:`);
+  const body = unresolvedMessages().map((m, i) => `${i + 1}. ${m}`).join('\n');
+  const tail = tr(`\n仍要${action}吗？非法状态会随方案保存，但导出结果可能不准确。`,
+    `\n${action} anyway? The invalid state stays saved, but output may be inaccurate.`);
+  return confirm(head + '\n' + body + tail);
+}
+function exportGate(){
+  refreshChecks();
+  return {ok:!checkState.active.length, requiresConfirm:checkState.active.length > 0,
+    count:checkState.active.length, issues:unresolvedMessages(200)};
+}
+
 function renderAll(){
-  renderGrid(); renderRooms(); renderFurn(); renderWalls(); renderLabels(); renderMeasure(); renderSel(); renderPanel(); updateHeader();
+  refreshChecks();
+  renderGrid(); renderRooms(); renderFurn(); renderWalls(); renderLabels(); renderMeasure(); renderSel();
+  renderChecks(); renderPanel(); updateHeader();
   window.View3D?.sync();
 }
 
@@ -1897,6 +2864,7 @@ function updateHeader(){
   const tot = ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + roomArea(r), 0);
   if (!renaming) $('#brandName').textContent = `${PLAN.name} · ${tr('装修设计', 'Interior Design')}`;
   $('#subtitle').textContent = tr(`套内使用面积约 ${fmt(tot)} m² · 尺寸单位 mm · 原图比例 1:60`, `Net floor area ≈ ${fmt(tot)} m² · Units: mm · Original scale 1:60`);
+  updateCheckStatus();
   const components = componentCount(state.furniture) > 0;
   const layoutLabel = components ? tr('家具 / 构件', 'Furniture / Components') : tr('家具', 'Furniture');
   document.querySelectorAll('[data-layer="furn"], [data-t="furn"]').forEach(b => { b.textContent = layoutLabel; });
@@ -1931,6 +2899,15 @@ $('#brandEdit').onkeydown = e => {
   else if (e.key === 'Escape'){ e.preventDefault(); endRename(false); }
 };
 $('#brandEdit').onblur = () => endRename(true);
+$('#checkStatus').onclick = () => cycleCheckIssue();
+$('#checkDone').onclick = () => exitCheck();
+$('#dimAdd').onclick = () => {
+  if (!checkMode) enterCheck();
+  ui.dimDraft = {from:null};
+  renderDims();
+  toast(tr('点两个量测点（吸附到墙面）来添加尺寸', 'Pick two points (snaps to walls) to add a dimension'));
+};
+$('#dimCancel').onclick = () => { ui.dimDraft = null; toast(tr('已取消添加尺寸', 'Dimension cancelled')); };
 
 /* ======================= 右侧面板 ======================= */
 /* CHAT_ESC_BEGIN */
@@ -1943,26 +2920,381 @@ function renderPanel(){
   if (ui.sel?.kind === 'furn'){ const f = getF(ui.sel.id); if (f){ p.innerHTML = furnPanel(f); bindFurnPanel(f); return; } }
   if (ui.sel?.kind === 'room'){ const r = roomDef(ui.sel.id); if (r){ p.innerHTML = roomPanel(r); bindRoomPanel(); return; } }
   if (ui.sel?.kind === 'wall'){ const w = wallOf(ui.sel.id); if (w){ p.innerHTML = wallPanel(ui.sel.id); bindWallPanel(ui.sel.id); return; } }
+  if (ui.sel?.kind === 'win'){ const w = WINS.find(v => v.id === ui.sel.id); if (w){ p.innerHTML = winPanel(w); bindWinPanel(w); return; } }
+  if (ui.sel?.kind === 'door'){ const d = DOORS.find(v => v.id === ui.sel.id); if (d){ p.innerHTML = doorPanel(d); bindDoorPanel(d); return; } }
+  if (ui.sel?.kind === 'slide'){ const d = SLIDES.find(v => v.id === ui.sel.id); if (d){ p.innerHTML = slidePanel(d); bindSlidePanel(d); return; } }
+  if (ui.sel?.kind === 'dim'){ const d = (PLAN.dims || []).find(v => v.id === ui.sel.id); if (d){ p.innerHTML = dimPanel(d); bindDimPanel(d); return; } }
   p.innerHTML = overviewPanel(); bindOverview();
 }
 
+const wallThicknessOf = w => wallCurve(w)?.thickness ?? Math.min(w.rect[2]-w.rect[0], w.rect[3]-w.rect[1]);
+const wallIsVertical = w => w.rect ? (w.rect[2]-w.rect[0]) < (w.rect[3]-w.rect[1]) : Math.abs(w.to[0]-w.from[0]) < Math.abs(w.to[1]-w.from[1]);
+function sourceBadge(source){
+  const label = source === 'user' ? tr('用户', 'User') : source === 'drawing' ? tr('图纸', 'Drawing') : tr('AI', 'AI');
+  return `<span class="src-badge src-${esc(source || 'ai')}">${label}</span>`;
+}
+function issuesFor(kind, id){
+  return checkState.active.filter(issue => issue.objects.some(o => o.kind === kind && o.id === id));
+}
+function checkIssuesBox(kind, id){
+  const list = issuesFor(kind, id);
+  if (!list.length) return '';
+  return `<div class="check-issue-box">${list.map(issue => `<div class="check-issue"><span>${esc(issue.message)}</span>
+    <button class="btn" data-ignore-check="${esc(issue.key)}">${tr('忽略', 'Ignore')}</button></div>`).join('')}</div>`;
+}
+function bindCheckIssues(){
+  document.querySelectorAll('#panel [data-ignore-check]').forEach(b => b.onclick = () => {
+    Studio.ignoreCheck(b.dataset.ignoreCheck);
+    renderAll();
+  });
+}
+
 function wallPanel(id){
-  const w = wallOf(id), dem = state.demolished.includes(id);
+  const w = wallOf(id), dem = state.demolished.includes(id), arc = !w.rect, curve = wallCurve(w);
   const KINDS = {e:tr('外墙','Exterior'), b:tr('承重墙','Load-bearing'), n:tr('非承重墙','Partition'), low:tr('矮墙','Low wall')};
-  const canDem = w[4] === 'n' || w[4] === 'low';
-  return `<section><h3>${tr('墙体','Wall')} <small>${esc(id)}</small></h3>
+  const canDem = w.kind === 'n' || w.kind === 'low';
+  const thickness = wallThicknessOf(w);
+  const ends = arc
+    ? `${tr('起点','From')} (${Math.round(w.from[0])}, ${Math.round(w.from[1])}) · ${tr('终点','To')} (${Math.round(w.to[0])}, ${Math.round(w.to[1])})`
+    : tr(`端点 (${Math.round(w.rect[0])}, ${Math.round(w.rect[1])}) → (${Math.round(w.rect[2])}, ${Math.round(w.rect[3])})`,
+      `Ends (${Math.round(w.rect[0])}, ${Math.round(w.rect[1])}) → (${Math.round(w.rect[2])}, ${Math.round(w.rect[3])})`);
+  const kindOptions = Object.entries(KINDS).map(([k, label]) => `<option value="${k}" ${w.kind === k ? 'selected' : ''}>${label}</option>`).join('');
+  const arcFields = arc ? `
+      <div class="stats" style="margin-top:8px"><div><small>${tr('半径','Radius')}</small><span class="big">${Math.round(curve.radius)}</span> mm</div>
+        <div><small>${tr('扫角','Sweep')}</small><span class="big">${fmt(Math.abs(w.sweep), 1)}</span>°</div></div>
+      <div class="form" style="margin-top:8px">
+        <label>${tr('半径','Radius')} (mm)<input type="number" id="wRadius" value="${Math.round(curve.radius)}" min="${Math.ceil(w.thickness/2)+1}" step="10"></label>
+        <label>${tr('起止角（扫角）','Start/end sweep')} (°)<input type="number" id="wSweep" value="${w.sweep}" min="-180" max="180" step="1"></label>
+        <label>${tr('起始角','Start angle')} (°)<input type="number" id="wStart" value="${Math.round(curve.start*180/Math.PI)}" step="1"></label>
+        <label>${tr('终止角','End angle')} (°)<input type="number" id="wEnd" value="${Math.round((curve.start+curve.sweep)*180/Math.PI)}" step="1"></label>
+      </div>` : '';
+  return `<section><h3>${tr('墙体','Wall')} <small>${esc(id)}</small> ${sourceBadge(w.source)}</h3>
     <div class="stats">
-      <div><small>${tr('类型','Kind')}</small><span class="big" style="font-size:15px">${esc(KINDS[w[4]] || w[4])}</span></div>
+      <div><small>${tr('类型','Kind')}</small><span class="big" style="font-size:15px">${esc(KINDS[w.kind] || w.kind)}</span></div>
       <div><small>${tr('长度','Length')}</small><span class="big">${fmt(wallLength(w)/1000, 1)}</span> m</div></div>
-    <div class="muted" style="font-size:12px;margin-top:6px">${tr('厚度','Thickness')} ${Math.round(w[6]?.thickness ?? Math.min(w[2]-w[0], w[3]-w[1]))} mm · ${tr('高度','Height')} ${wallHeight(w)} mm</div>
+    <div class="form" style="margin-top:8px">
+      <label>${tr('类型','Kind')}<select id="wKind">${kindOptions}</select></label>
+      <label>${tr('高度','Height')} (mm)<input type="number" id="wHeight" value="${wallHeight(w)}" min="100" max="6000" step="50"></label>
+      <label>${tr('厚度','Thickness')} (mm)<input type="number" id="wThick" value="${Math.round(thickness)}" min="40" max="600" step="10"></label>
+      <label class="full">${tr('端点','Endpoints')}<span class="muted" style="font-size:12px">${ends}</span></label>
+      ${arc ? '' : `<label>${tr('起点 X','From X')}<input type="number" id="wX0" value="${w.rect[0]}" step="10"></label>
+        <label>${tr('起点 Y','From Y')}<input type="number" id="wY0" value="${w.rect[1]}" step="10"></label>
+        <label>${tr('终点 X','To X')}<input type="number" id="wX1" value="${w.rect[2]}" step="10"></label>
+        <label>${tr('终点 Y','To Y')}<input type="number" id="wY1" value="${w.rect[3]}" step="10"></label>`}
+    </div>${arcFields}
+    ${checkIssuesBox('wall', id)}
     <div class="actions">
+      <button class="btn" id="wOpen">${tr('实墙开窗','Add window')}</button>
+      <button class="btn" id="wConvertArc">${arc ? tr('转为直墙','Convert to straight') : tr('转为弧墙','Convert to arc')}</button>
       ${canDem ? `<button class="btn ${dem ? '' : 'danger'}" id="wToggle">${dem ? tr('恢复墙体','Restore wall') : tr('标记拆除','Mark for removal')}</button>`
                : `<span class="muted">${tr('承重墙与外墙不可拆除','Bearing and exterior walls cannot be removed')}</span>`}
       <button class="btn" id="back">${tr('← 返回','← Back')}</button></div></section>`;
 }
 function bindWallPanel(id){
+  const upd = fn => editStructure(() => { const w = wallOf(id); if (!w) throw new Error(tr('墙体不存在', 'Wall not found')); fn(w); });
+  const num = (sel, fn) => { const el = $(sel); if (el) el.onchange = e => { const v = e.target.valueAsNumber; if (Number.isFinite(v)) upd(w => fn(w, v)); }; };
+  $('#wKind').onchange = e => upd(w => { w.kind = e.target.value; });
+  num('#wHeight', (w, v) => { w.height = Math.max(100, Math.min(6000, v)); });
+  num('#wThick', (w, v) => {
+    const t = Math.max(40, Math.min(600, Math.round(v)));
+    if (w.rect){
+      const vertical = wallIsVertical(w), [x0,y0,x1,y1] = w.rect;
+      if (vertical){ const cx = (x0+x1)/2; w.rect[0] = cx-t/2; w.rect[2] = cx+t/2; }
+      else { const cy = (y0+y1)/2; w.rect[1] = cy-t/2; w.rect[3] = cy+t/2; }
+    } else w.thickness = t;
+  });
+  num('#wX0', (w, v) => { w.rect[0] = v; }); num('#wY0', (w, v) => { w.rect[1] = v; });
+  num('#wX1', (w, v) => { w.rect[2] = v; }); num('#wY1', (w, v) => { w.rect[3] = v; });
+  if ($('#wRadius') && wallCurve(wallOf(id))){
+    $('#wRadius').onchange = e => {
+      const radius = e.target.valueAsNumber, w = wallOf(id), chord = Math.hypot(w.to[0]-w.from[0], w.to[1]-w.from[1]);
+      if (!(radius > w.thickness/2) || !(chord > 0) || chord > 2*radius + 1) return toast(tr('半径必须大于厚度的一半，且不小于弦长的一半', 'Radius must exceed half the thickness and cover half the chord'));
+      upd(g => { g.sweep = Math.sign(g.sweep || 1) * 2 * Math.asin(Math.min(1, chord / (2*radius))) * 180/Math.PI; });
+    };
+    $('#wSweep').onchange = e => { const v = e.target.valueAsNumber; if (Number.isFinite(v) && Math.abs(v) >= .5 && Math.abs(v) <= 180) upd(w => { w.sweep = v; }); };
+    // 起始 / 终止角：保持弦不变，只改端点在弧上的角度（无法同时满足时以扫角为准）。
+    const angleEdit = () => {
+      const w = wallOf(id), curve = wallCurve(w);
+      const start = $('#wStart').valueAsNumber, end = $('#wEnd').valueAsNumber;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+      const sweep = end - start;
+      if (Math.abs(sweep) < .5 || Math.abs(sweep) > 180) return toast(tr('起止角差必须在 0.5–180° 之间', 'The sweep must be between 0.5 and 180 degrees'));
+      const radius = curve.radius;
+      const a = start*Math.PI/180, b = end*Math.PI/180;
+      const from = [curve.cx + radius*Math.cos(a), curve.cy + radius*Math.sin(a)];
+      const to = [curve.cx + radius*Math.cos(b), curve.cy + radius*Math.sin(b)];
+      upd(g => { g.from = from; g.to = to; g.sweep = sweep; });
+    };
+    $('#wStart').onchange = angleEdit; $('#wEnd').onchange = angleEdit;
+  }
   if ($('#wToggle')) $('#wToggle').onclick = () => toggleWall(id);
+  $('#wOpen').onclick = () => createWindowOnWall(id);
+  $('#wConvertArc').onclick = () => convertWallArc(id);
+  bindCheckIssues();
   $('#back').onclick = () => select(null);
+}
+
+// 在实墙上开窗：墙体在洞口处断开成两段，窗填在中间（新窗 source:'user'）。
+function createWindowOnWall(wallId){
+  const wall = wallOf(wallId);
+  if (!wall || !wall.rect) return toast(tr('弧墙暂不支持直接开窗', 'Adding a window to an arc wall is not supported yet'));
+  const [x0,y0,x1,y1] = wall.rect, vertical = (x1-x0) < (y1-y0);
+  const spanA = vertical ? y0 : x0, spanB = vertical ? y1 : x1, length = spanB - spanA;
+  if (length < 400) return toast(tr('墙段太短，无法开窗', 'The wall is too short for a window'));
+  const open = Math.round(Math.min(length * .6, 2400));
+  const mid = (spanA + spanB) / 2, a = Math.round(mid - open/2), b = Math.round(mid + open/2);
+  const rect = vertical ? [x0, a, x1, b] : [a, y0, b, y1];
+  const win = {id:'win-' + Date.now().toString(36), rect, source:'user', style:'casement'};
+  editStructure(() => {
+    WALLS.splice(WALLS.indexOf(wall), 1);
+    if (a - spanA > 20) WALLS.push({id:wall.id, rect:vertical ? [x0, spanA, x1, a] : [spanA, y0, a, y1],
+      kind:wall.kind, height:wall.height, source:'user'});
+    if (spanB - b > 20) WALLS.push({id:uniqueObjectId('w', id => WALLS.some(v => v.id === id)),
+      rect:vertical ? [x0, b, x1, spanB] : [b, y0, spanB, y1], kind:wall.kind, height:wall.height, source:'user'});
+    WINS.push(win);
+    ui.sel = {kind:'win', id:win.id};
+  });
+  toast(tr('已在墙上开窗', 'Window added to the wall'));
+}
+
+function convertWallArc(wallId){
+  const w = wallOf(wallId);
+  if (!w) return;
+  if (!w.rect){
+    editStructure(() => {
+      const t = w.thickness, minX = Math.min(w.from[0], w.to[0]) - t/2, maxX = Math.max(w.from[0], w.to[0]) + t/2;
+      const minY = Math.min(w.from[1], w.to[1]) - t/2, maxY = Math.max(w.from[1], w.to[1]) + t/2;
+      const next = {id:w.id, rect:[minX, minY, maxX, maxY], kind:w.kind, source:'user'};
+      if (w.height) next.height = w.height;
+      WALLS.splice(WALLS.indexOf(w), 1, next);
+      ui.sel = {kind:'wall', id:next.id};
+    });
+    return;
+  }
+  const [x0,y0,x1,y1] = w.rect, vertical = (x1-x0) < (y1-y0), cy = (y0+y1)/2, cx = (x0+x1)/2;
+  const from = vertical ? [cx, y0] : [x0, cy], to = vertical ? [cx, y1] : [x1, cy];
+  editStructure(() => {
+    const next = {id:w.id, from, to, sweep:90, thickness:wallThicknessOf(w), kind:w.kind, source:'user'};
+    if (w.height) next.height = w.height;
+    WALLS.splice(WALLS.indexOf(w), 1, next);
+    ui.sel = {kind:'wall', id:next.id};
+  });
+}
+
+/* ---------- 窗 / 门 / 推拉门属性（设计 §5.3） ---------- */
+function hostWallOfOpening(rect, axis){
+  let best = null, bestD = Infinity;
+  for (const wall of WALLS){
+    if (!wall.rect) continue;
+    const [x0,y0,x1,y1] = wall.rect, r = rect;
+    const vertical = (x1-x0) < (y1-y0);
+    if ((axis === 'y') === vertical) continue;
+    const d = vertical
+      ? Math.max(0, Math.max(x0-r[0], r[2]-x1)) + Math.max(0, Math.min(y1,r[3]) < Math.max(y0,r[1]) ? 1e9 : 0)
+      : Math.max(0, Math.max(y0-r[1], r[3]-y1));
+    if (d < bestD){ bestD = d; best = wall; }
+  }
+  return best;
+}
+
+const WIN_STYLES = {casement:tr('平开窗','Casement'), sliding:tr('推拉窗','Sliding'), fixed:tr('固定窗','Fixed'), floor:tr('落地窗','Floor-to-ceiling'), bay:tr('飘窗','Bay')};
+function winPanel(win){
+  const arc = !win.rect, host = win.rect ? hostWallOfOpening(win.rect, (win.rect[2]-win.rect[0]) < (win.rect[3]-win.rect[1]) ? 'y' : 'x') : null;
+  const styles = Object.entries(WIN_STYLES).map(([k, label]) => `<option value="${k}" ${win.style === k ? 'selected' : ''}>${label}</option>`).join('');
+  const [x0,y0,x1,y1] = win.rect || [0,0,0,0];
+  const winMid = arc ? win.from[0] : ((x1-x0) < (y1-y0) ? (y0+y1)/2 : (x0+x1)/2);
+  return `<section><h3>${tr('窗','Window')} <small>${esc(win.id)}</small> ${sourceBadge(win.source)}</h3>
+    <div class="form">
+      <label>${tr('位置','Position')} (mm)<input type="number" id="winPos" value="${Math.round(winMid)}" step="10"></label>
+      <label>${tr('宽度','Width')} (mm)<input type="number" id="winWidth" value="${Math.round(arc ? Math.hypot(win.to[0]-win.from[0], win.to[1]-win.from[1]) : Math.max(x1-x0, y1-y0))}" min="100" step="10"></label>
+      <label>${tr('窗台高','Sill')} (mm)<input type="number" id="winSill" value="${win.sill ?? ''}" placeholder="—" min="0" max="3000" step="10"></label>
+      <label>${tr('窗高','Height')} (mm)<input type="number" id="winH" value="${win.h ?? ''}" placeholder="—" min="200" max="6000" step="10"></label>
+      <label class="full">${tr('样式','Style')}<select id="winStyle"><option value="">${tr('未指定','Unspecified')}</option>${styles}</select></label>
+    </div>
+    ${host ? `<div class="muted" style="font-size:12px;margin-top:6px">${tr('所在墙','Host wall')} ${esc(host.id)} · ${tr('墙厚','Thickness')} ${Math.round(wallThicknessOf(host))} mm</div>` : ''}
+    ${checkIssuesBox('win', win.id)}
+    <div class="actions"><button class="btn" id="winSolid">${tr('转为实墙','Convert to solid wall')}</button>
+      <button class="btn danger" id="winDel">${tr('删除','Delete')}</button>
+      <button class="btn" id="back">${tr('← 返回','← Back')}</button></div></section>`;
+}
+function bindWinPanel(win){
+  const upd = fn => editStructure(() => { const w = WINS.find(v => v.id === win.id); if (!w) throw new Error(tr('窗不存在','Window not found')); fn(w); });
+  $('#winPos').onchange = e => {
+    const v = e.target.valueAsNumber; if (!Number.isFinite(v)) return;
+    upd(w => {
+      if (!w.rect) return;
+      const vertical = (w.rect[2]-w.rect[0]) < (w.rect[3]-w.rect[1]);
+      const length = vertical ? w.rect[3]-w.rect[1] : w.rect[2]-w.rect[0], offset = v - (vertical ? (w.rect[1]+w.rect[3])/2 : (w.rect[0]+w.rect[2])/2);
+      if (vertical){ w.rect[1] += offset; w.rect[3] += offset; } else { w.rect[0] += offset; w.rect[2] += offset; }
+      void length;
+    });
+  };
+  $('#winWidth').onchange = e => {
+    const v = e.target.valueAsNumber; if (!(v > 0)) return;
+    upd(w => {
+      if (!w.rect) return;
+      const vertical = (w.rect[2]-w.rect[0]) < (w.rect[3]-w.rect[1]), mid = vertical ? (w.rect[1]+w.rect[3])/2 : (w.rect[0]+w.rect[2])/2;
+      if (vertical){ w.rect[1] = mid - v/2; w.rect[3] = mid + v/2; } else { w.rect[0] = mid - v/2; w.rect[2] = mid + v/2; }
+    });
+  };
+  $('#winSill').onchange = e => { const v = e.target.valueAsNumber; upd(w => { if (Number.isFinite(v)) w.sill = Math.max(0, Math.min(3000, v)); else delete w.sill; }); };
+  $('#winH').onchange = e => { const v = e.target.valueAsNumber; upd(w => { if (Number.isFinite(v)) w.h = Math.max(200, Math.min(6000, v)); else delete w.h; }); };
+  $('#winStyle').onchange = e => upd(w => { if (e.target.value) w.style = e.target.value; else delete w.style; });
+  $('#winSolid').onclick = () => {
+    const hostId = win.id, target = WINS.find(v => v.id === hostId); if (!target) return;
+    editStructure(() => {
+      WINS.splice(WINS.indexOf(target), 1);
+      if (target.rect) WALLS.push({id:uniqueObjectId('w', id => WALLS.some(v => v.id === id)), rect:target.rect.slice(), kind:'n', source:'user'});
+      ui.sel = null;
+    });
+    toast(tr('窗已转为实墙', 'Window converted to a solid wall'));
+  };
+  $('#winDel').onclick = () => { const id = win.id; editStructure(() => { WINS.splice(WINS.findIndex(v => v.id === id), 1); ui.sel = null; }); };
+  bindCheckIssues();
+  $('#back').onclick = () => select(null);
+}
+
+function doorPanel(door){
+  const [x0,y0,x1,y1] = door.rect, vertical = (x1-x0) < (y1-y0);
+  const host = hostWallOfOpening(door.rect, vertical ? 'y' : 'x');
+  return `<section><h3>${tr('门','Door')} <small>${esc(door.id)}</small> ${sourceBadge(door.source)}</h3>
+    <div class="form">
+      <label class="full">${tr('名称','Name')}<input id="doorName" value="${esc(door.name)}"></label>
+      <label>${tr('位置','Position')} (mm)<input type="number" id="doorPos" value="${Math.round(vertical ? (y0+y1)/2 : (x0+x1)/2)}" step="10"></label>
+      <label>${tr('宽度','Width')} (mm)<input type="number" id="doorLen" value="${door.len}" min="100" step="10"></label>
+      <label>${tr('开向','Open toward')}<select id="doorO">
+        <option value="1" ${(vertical ? door.o[0] : door.o[1]) >= 0 ? 'selected' : ''}>${tr('一侧','Side A')}</option>
+        <option value="-1" ${(vertical ? door.o[0] : door.o[1]) < 0 ? 'selected' : ''}>${tr('另一侧','Side B')}</option></select></label>
+      <label>${tr('铰链侧','Hinge')}<select id="doorH">
+        <option value="0" selected>${tr('起点端','Start end')}</option><option value="1">${tr('终点端','End end')}</option></select></label>
+      <label class="full"><span><input type="checkbox" id="doorEntry" ${door.entry ? 'checked' : ''} style="width:auto"> ${tr('入户门','Entry door')}</span></label>
+    </div>
+    ${host ? `<div class="muted" style="font-size:12px;margin-top:6px">${tr('所在墙','Host wall')} ${esc(host.id)}</div>` : ''}
+    ${checkIssuesBox('door', door.id)}
+    <div class="actions"><button class="btn" id="doorFlip">${tr('翻转开向','Flip swing')}</button>
+      <button class="btn" id="doorHinge">${tr('切换铰链侧','Swap hinge')}</button>
+      <button class="btn danger" id="doorDel">${tr('删除','Delete')}</button>
+      <button class="btn" id="back">${tr('← 返回','← Back')}</button></div></section>`;
+}
+function bindDoorPanel(door){
+  const upd = fn => editStructure(() => { const d = DOORS.find(v => v.id === door.id); if (!d) throw new Error(tr('门不存在','Door not found')); fn(d); });
+  $('#doorName').onchange = e => upd(d => { d.name = e.target.value.trim() || d.name; });
+  $('#doorPos').onchange = e => {
+    const v = e.target.valueAsNumber; if (!Number.isFinite(v)) return;
+    upd(d => {
+      const vertical = (d.rect[2]-d.rect[0]) < (d.rect[3]-d.rect[1]);
+      const mid = vertical ? (d.rect[1]+d.rect[3])/2 : (d.rect[0]+d.rect[2])/2, off = v - mid;
+      if (vertical){ d.rect[1] += off; d.rect[3] += off; d.h[1] += off; } else { d.rect[0] += off; d.rect[2] += off; d.h[0] += off; }
+    });
+  };
+  $('#doorLen').onchange = e => {
+    const v = e.target.valueAsNumber; if (!(v > 0)) return;
+    upd(d => {
+      const vertical = (d.rect[2]-d.rect[0]) < (d.rect[3]-d.rect[1]), mid = vertical ? (d.rect[1]+d.rect[3])/2 : (d.rect[0]+d.rect[2])/2;
+      if (vertical){ d.rect[1] = mid - v/2; d.rect[3] = mid + v/2; } else { d.rect[0] = mid - v/2; d.rect[2] = mid + v/2; }
+      d.len = v;
+    });
+  };
+  $('#doorO').onchange = e => { const s = e.target.value === '-1' ? -1 : 1; upd(d => { d.o = [d.o[0]*s, d.o[1]*s]; if (d.o[0] === 0) d.o = [0, d.o[1]]; }); };
+  $('#doorH').onchange = e => { if (e.target.value === '0') return; upd(d => swapDoorHinge(d)); };
+  $('#doorEntry').onchange = e => upd(d => { if (e.target.checked) d.entry = true; else delete d.entry; });
+  $('#doorFlip').onclick = () => upd(d => { d.o = [-d.o[0], -d.o[1]]; });
+  $('#doorHinge').onclick = () => upd(d => swapDoorHinge(d));
+  $('#doorDel').onclick = () => { const id = door.id; editStructure(() => { DOORS.splice(DOORS.findIndex(v => v.id === id), 1); ui.sel = null; }); };
+  bindCheckIssues();
+  $('#back').onclick = () => select(null);
+}
+// 铰链换到洞口另一端：铰链点移到对侧，c/o 方向取反。
+function swapDoorHinge(d){
+  const [x0,y0,x1,y1] = d.rect, vertical = (x1-x0) < (y1-y0);
+  d.h = vertical ? [d.h[0], y0+y1-d.h[1]] : [x0+x1-d.h[0], d.h[1]];
+  d.c = [-d.c[0], -d.c[1]];
+}
+
+function slidePanel(slide){
+  return `<section><h3>${tr('推拉门','Sliding door')} <small>${esc(slide.id)}</small> ${sourceBadge(slide.source)}</h3>
+    <div class="muted">${tr('竖向','Vertical')}: ${slide.v ? tr('是','Yes') : tr('否','No')} · ${Math.round(slide.rect[2]-slide.rect[0])} × ${Math.round(slide.rect[3]-slide.rect[1])} mm</div>
+    ${checkIssuesBox('slide', slide.id)}
+    <div class="actions"><button class="btn" id="slideDir">${tr('切换方向','Toggle direction')}</button>
+      <button class="btn danger" id="slideDel">${tr('删除','Delete')}</button>
+      <button class="btn" id="back">${tr('← 返回','← Back')}</button></div></section>`;
+}
+function bindSlidePanel(slide){
+  const upd = fn => editStructure(() => { const s = SLIDES.find(v => v.id === slide.id); if (!s) throw new Error(tr('推拉门不存在','Sliding door not found')); fn(s); });
+  $('#slideDir').onclick = () => upd(s => { s.v = !s.v; if (s.v && (s.rect[2]-s.rect[0]) > (s.rect[3]-s.rect[1])) s.rect = [s.rect[0], s.rect[1], s.rect[0] + (s.rect[3]-s.rect[1]), s.rect[1] + (s.rect[2]-s.rect[0])]; });
+  $('#slideDel').onclick = () => { const id = slide.id; editStructure(() => { SLIDES.splice(SLIDES.findIndex(v => v.id === id), 1); ui.sel = null; }); };
+  bindCheckIssues();
+  $('#back').onclick = () => select(null);
+}
+
+/* ---------- 尺寸面板：原图 / 模型 / 差（设计 §5.2、§5.4） ---------- */
+function dimPanel(dim){
+  const model = Math.round(dimValueOf(dim));
+  const drawing = Number.isFinite(dim.drawingValue) ? Math.round(dim.drawingValue) : null;
+  const diff = drawing === null ? null : model - drawing;
+  const diffText = diff === null ? '—' : (diff > 0 ? '+' : '') + diff;
+  const anchorText = a => a?.point ? `${a.kind === 'wall' ? tr('墙','Wall') : tr('房间边','Room edge')} ${esc(a.id)}${a.face ? ' · ' + a.face : ''}` : '—';
+  const at = value => `<span class="${value > 0 ? 'pos' : value < 0 ? 'neg' : ''}">${value === null ? '—' : value}</span>`;
+  return `<section><h3>${tr('尺寸','Dimension')} <small>${esc(dim.id)}</small> ${sourceBadge(dim.source)}${dim.estimated ? ` <span class="est-badge">≈ ${tr('估算','Estimated')}</span>` : ''}</h3>
+    <div class="dim-compare">
+      <div><small>${tr('原图','Drawing')}</small><b>${drawing === null ? '—' : drawing}</b></div>
+      <div><small>${tr('模型','Model')}</small><b>${model}</b></div>
+      <div><small>${tr('差','Diff')}</small><b>${diffText}</b></div>
+    </div>
+    <div class="muted" style="font-size:12px;margin:6px 0 2px">${tr('量测面','Measured faces')}：${anchorText(dim.from)} → ${anchorText(dim.to)}</div>
+    <div class="form" style="margin-top:6px">
+      <label>${tr('目标值','Target')} (mm)<input type="number" id="dimValue" value="${model}" min="1" step="10"></label>
+      <label>${tr('固定端','Locked end')}<select id="dimLocked">
+        <option value="none" ${dim.locked === 'none' ? 'selected' : ''}>${tr('不固定（先点选移动哪面）','None (pick a side)')}</option>
+        <option value="from" ${dim.locked === 'from' ? 'selected' : ''}>${tr('固定起点','Lock from')}</option>
+        <option value="to" ${dim.locked === 'to' ? 'selected' : ''}>${tr('固定终点','Lock to')}</option></select></label>
+      <label>${tr('偏移','Offset')} (mm)<input type="number" id="dimOffset" value="${Math.round(dim.offset || 0)}" step="10"></label>
+      <label>${tr('方向','Axis')}<select id="dimAxis"><option value="x" ${dim.axis === 'x' ? 'selected' : ''}>X</option><option value="y" ${dim.axis === 'y' ? 'selected' : ''}>Y</option></select></label>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="dimApply">${tr('应用数值','Apply value')}</button>
+      ${drawing !== null ? `<button class="btn" id="dimRestore">${tr('恢复图上值','Restore drawing value')}</button>` : ''}
+      ${dim.estimated ? `<button class="btn" id="dimConfirm">${tr('确认此尺寸','Confirm estimate')}</button>` : ''}
+      <button class="btn danger" id="dimDel">${tr('删除','Delete')}</button>
+      <button class="btn" id="back">${tr('← 返回','← Back')}</button></div>
+    <div class="dim-choice" id="dimChoice" hidden>
+      <small>${tr('两端都可移动：先选择移动哪一面墙','Both ends can move — choose which side to move')}</small>
+      <div class="actions"><button class="btn" data-dim-move="from">${tr('移动起点侧','Move from side')}</button>
+        <button class="btn" data-dim-move="to">${tr('移动终点侧','Move to side')}</button></div>
+    </div>
+    ${checkIssuesBox('dim', dim.id)}</section>`;
+}
+function bindDimPanel(dim){
+  let pending = null;
+  const applyValue = (end) => {
+    const v = $('#dimValue').valueAsNumber;
+    if (!Number.isFinite(v)) return;
+    const res = setDimValue(dim.id, v, end ? {end} : {});
+    if (!res.ok && res.needChoice){
+      pending = v; $('#dimChoice').hidden = false;
+      return toast(res.error);
+    }
+    if (!res.ok) return toast(res.error);
+    $('#dimChoice').hidden = true; pending = null;
+    renderAll();
+  };
+  $('#dimApply').onclick = () => applyValue();
+  $('#dimLocked').onchange = e => { const v = e.target.value; editStructure(() => { const d = (PLAN.dims || []).find(x => x.id === dim.id); if (d) d.locked = v; }); };
+  $('#dimOffset').onchange = e => { const v = e.target.valueAsNumber; editStructure(() => { const d = (PLAN.dims || []).find(x => x.id === dim.id); if (d && Number.isFinite(v)) d.offset = v; }); };
+  $('#dimAxis').onchange = e => editStructure(() => { const d = (PLAN.dims || []).find(x => x.id === dim.id); if (d) d.axis = e.target.value; });
+  if ($('#dimRestore')) $('#dimRestore').onclick = () => {
+    const v = dim.drawingValue;
+    if (!Number.isFinite(v)) return;
+    const res = setDimValue(dim.id, v, {});
+    if (!res.ok && res.needChoice){ pending = v; $('#dimChoice').hidden = false; }
+    renderAll();
+  };
+  if ($('#dimConfirm')) $('#dimConfirm').onclick = () => { confirmDim(dim.id); renderAll(); };
+  $('#dimDel').onclick = () => { deleteDim(dim.id); select(null); };
+  document.querySelectorAll('#panel [data-dim-move]').forEach(b => b.onclick = () => applyValue(b.dataset.dimMove));
+  bindCheckIssues();
+  $('#back').onclick = () => select(null);
+  void pending;
 }
 
 function overviewPanel(){
@@ -2097,6 +3429,16 @@ function roomPanel(r){
   const shotHtml = latest
     ? `<button class="roomshot" id="roomThumb" title="${esc(tr('点击放大','Click to enlarge'))}"><img src="${esc(renderAssetUrl(latest.url))}" alt=""><span>${esc(rRecTitle(latest))}</span></button>`
     : `<div class="muted" style="font-size:12px">${tr('进入房间后可在顶部标题条生成房间效果图','Enter the room, then generate a room render from the top bar')}</div>`;
+  // 结构 / 飘窗（校核 §5.3）：飘窗作为房间编辑，面积即时更新。
+  const bay = r.bay || {}, isBay = r.counted === false;
+  const edgeOptions = r.poly.map((p, i) => {
+    const q = r.poly[(i + 1) % r.poly.length];
+    const horiz = Math.abs(p[1] - q[1]) <= .5, vert = Math.abs(p[0] - q[0]) <= .5;
+    if (!horiz && !vert) return '';
+    const length = Math.round(Math.hypot(q[0]-p[0], q[1]-p[1]));
+    if (length < 300) return '';
+    return `<option value="${i}">#${i + 1} · ${Math.round(p[0])},${Math.round(p[1])} → ${Math.round(q[0])},${Math.round(q[1])} · ${length} mm</option>`;
+  }).join('');
   return `<section><h3>${tr('房间','Room')}</h3>
     <div class="form"><label class="full">${tr('名称','Name')}<input id="rName" value="${esc(nm(st.name))}"></label></div>
     <div class="stats" style="margin-top:10px">
@@ -2105,7 +3447,21 @@ function roomPanel(r){
       <div><small>${tr('开间','Width')}</small><span class="big">${x1-x0}</span> mm</div>
       <div><small>${tr('进深','Depth')}</small><span class="big">${y1-y0}</span> mm</div></div>
     <div class="muted">${tr(`墙面面积（层高 2.8m，未扣门窗）约 ${fmt(roomPerimeter(r)*2.8,1)} m²`, `Wall area (2.8m ceiling, openings not deducted) ≈ ${fmt(roomPerimeter(r)*2.8,1)} m²`)}</div>
+    ${checkIssuesBox('room', r.id)}
     <div class="actions"><button class="btn primary" id="enterRoomBtn">${tr('进入房间','Enter room')}</button></div></section>
+  <section><h3>${isBay ? tr('飘窗结构','Bay window') : tr('结构','Structure')}</h3>
+    <div class="form">
+      <label class="full"><span><input type="checkbox" id="roomCounted" ${isBay ? '' : 'checked'} style="width:auto"> ${tr('计入使用面积','Count in floor area')}</span></label>
+      <label>${tr('窗台高','Sill height')} (mm)<input type="number" id="baySill" value="${bay.sill ?? ''}" placeholder="—" min="0" max="3000" step="10"></label>
+      <label class="full"><span><input type="checkbox" id="bayCushion" ${bay.cushion ? 'checked' : ''} style="width:auto"> ${tr('带飘窗垫','With cushion')}</span></label>
+      <label class="full">${tr('轮廓顶点（每行 x,y）','Outline vertices (x,y per line)')}
+        <textarea id="roomPoly" rows="4" spellcheck="false">${r.poly.map(p => `${Math.round(p[0])},${Math.round(p[1])}`).join('\n')}</textarea></label>
+    </div>
+    ${isBay ? '' : `<div class="form" style="margin-top:8px">
+      <label>${tr('外沿','Outer edge')}<select id="bayEdge">${edgeOptions || `<option value="">${tr('暂无可用直边','No straight edges')}</option>`}</select></label>
+      <label>${tr('进深','Depth')} (mm)<input type="number" id="bayDepth" value="600" min="200" max="2000" step="50"></label>
+    </div><div class="actions"><button class="btn" id="bayAdd">${tr('新增飘窗模块','Add bay window')}</button></div>`}
+  </section>
   <section><h3>${tr('地面材料','Flooring')}</h3><div class="mats">${mats}</div>
     <div class="total"><span>${tr('材料估价','Estimated cost')}</span><b>¥${Math.round(a*info.price*1.05).toLocaleString()}</b></div></section>
   <section><h3>${tr('房间效果图','Room render')} ${latest ? `<small>${tr('最近一张','Latest')}</small>` : ''}</h3>${shotHtml}</section>
@@ -2120,7 +3476,65 @@ function bindRoomPanel(){
   document.querySelectorAll('#panel tr[data-fid]').forEach(tr => tr.onclick = () => select({kind:'furn', id:tr.dataset.fid}));
   if ($('#enterRoomBtn')) $('#enterRoomBtn').onclick = () => { closeDrawers(); studioEnterRoom(id); };
   if ($('#roomThumb')) $('#roomThumb').onclick = () => { const rec = roomLatestRender(id); if (rec) openLightbox(rec.url, rRecTitle(rec), rec); };
+  $('#roomCounted').onchange = e => editStructure(() => {
+    const room = roomDef(id); if (!room) return;
+    if (e.target.checked) delete room.counted; else room.counted = false;
+  });
+  const bayEdit = fn => editStructure(() => { const room = roomDef(id); if (!room) return; const bay = room.bay || (room.bay = {}); fn(room, bay); });
+  $('#baySill').onchange = e => { const v = e.target.valueAsNumber; bayEdit((room, bay) => { if (Number.isFinite(v)) bay.sill = Math.max(0, Math.min(3000, v)); else delete bay.sill; }); };
+  $('#bayCushion').onchange = e => bayEdit((room, bay) => { bay.cushion = e.target.checked; });
+  $('#roomPoly').onchange = e => {
+    const points = e.target.value.split(/\n+/).map(line => line.split(/[,\s]+/).map(Number).slice(0, 2))
+      .filter(p => p.length === 2 && p.every(Number.isFinite));
+    if (points.length < 3) return toast(tr('至少需要 3 个顶点', 'At least 3 vertices are required'));
+    editStructure(() => { const room = roomDef(id); if (room){ room.poly = points; room.at = polyCenter(points); room.arcs = []; } });
+  };
+  if ($('#bayAdd')) $('#bayAdd').onclick = () => {
+    const edge = +$('#bayEdge').value, depth = $('#bayDepth').valueAsNumber;
+    if (!Number.isInteger(edge)) return toast(tr('请选择房间外沿', 'Choose an outer edge'));
+    const res = addBayWindow(id, edge, Number.isFinite(depth) ? depth : 600);
+    if (!res.ok) toast(res.error);
+  };
+  bindCheckIssues();
   $('#back').onclick = () => select(null);
+}
+
+// 新增飘窗模块：沿房间外沿生成「不计面积房间 + 三面窗段」（设计 §5.3）。
+function addBayWindow(roomId, edge, depth){
+  const room = roomDef(roomId);
+  if (!room) return {ok:false, error:tr('房间不存在', 'Room not found')};
+  const p = room.poly[edge], q = room.poly[(edge + 1) % room.poly.length];
+  if (!p || !q) return {ok:false, error:tr('房间边无效', 'Invalid room edge')};
+  const dx = q[0]-p[0], dy = q[1]-p[1];
+  const horiz = Math.abs(dy) <= .5, vert = Math.abs(dx) <= .5;
+  if (!horiz && !vert) return {ok:false, error:tr('只支持水平 / 垂直外沿', 'Only horizontal or vertical edges are supported')};
+  depth = Math.max(200, Math.min(2000, Math.round(depth || 600)));
+  const mx = (p[0]+q[0])/2, my = (p[1]+q[1])/2;
+  // 找到指向房间外的法线
+  const normal = horiz ? [0, 1] : [1, 0];
+  const probe = [mx + normal[0]*20, my + normal[1]*20];
+  const out = pointInPoly(probe[0], probe[1], room.poly) ? [-normal[0], -normal[1]] : normal;
+  const p2 = [p[0] + out[0]*depth, p[1] + out[1]*depth], q2 = [q[0] + out[0]*depth, q[1] + out[1]*depth];
+  const bay = {
+    id: 'bay-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 5),
+    name: tr('飘窗', 'Bay window'), poly:[p, q, q2, p2], mat: room.mat,
+    at: [Math.round((p[0]+q[0]+p2[0]+q2[0])/4), Math.round((p[1]+q[1]+p2[1]+q2[1])/4)],
+    counted:false, source:'user', bay:{sill:450},
+  };
+  const side = (a, b) => {
+    const x0 = Math.min(a[0], b[0]) - 40, x1 = Math.max(a[0], b[0]) + 40;
+    const y0 = Math.min(a[1], b[1]) - 40, y1 = Math.max(a[1], b[1]) + 40;
+    return {id:'win-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 5),
+      rect:[x0, y0, x1, y1], source:'user', style:'bay'};
+  };
+  const wins = [side(p, p2), side(p2, q2), side(q2, q)];
+  const before = snap();
+  PLAN.rooms.push(bay);
+  WINS.push(...wins);
+  ROOMS = PLAN.rooms.map(r => r.arcs?.length ? {...r, vertices:r.poly, poly:roomOutline(r)} : r);
+  syncDimAnchors();
+  commit(before); save(); renderDims(); renderOpenings(); renderAll();
+  return {ok:true, room:bay, wins};
 }
 
 function furnPanel(f){
@@ -2188,7 +3602,7 @@ function bindFurnPanel(f){
 /* ======================= 操作 ======================= */
 function select(sel){
   ui.sel = selOk(sel) ? {kind:sel.kind, id:sel.id} : null;
-  renderSel(); renderPanel();
+  renderSel(); renderDims(); renderPanel();
 }
 function rotateSel(d){ if (ui.sel?.kind==='furn') mutate(() => { const f = getF(ui.sel.id); f.rot = norm(f.rot + d); }); }
 function deleteSel(){ if (ui.sel?.kind==='furn'){ const id = ui.sel.id; ui.sel = null; mutate(() => state.furniture = state.furniture.filter(f => f.id !== id)); } }
@@ -2221,8 +3635,8 @@ function addItem(it, x, y){
 function toggleWall(id){
   const w = wallOf(id);
   if (!w) return toast(tr('墙体不存在', 'Wall not found'));
-  if (w[4]==='b') return toast(tr('承重墙（黑色）不可拆除', 'Load-bearing walls (black) cannot be removed'));
-  if (w[4]==='e') return toast(tr('外墙属于建筑外围护结构，不建议拆除', 'Exterior walls are part of the building envelope and should not be removed'));
+  if (w.kind==='b') return toast(tr('承重墙（黑色）不可拆除', 'Load-bearing walls (black) cannot be removed'));
+  if (w.kind==='e') return toast(tr('外墙属于建筑外围护结构，不建议拆除', 'Exterior walls are part of the building envelope and should not be removed'));
   const on = state.demolished.includes(id);
   mutate(() => state.demolished = on ? state.demolished.filter(x => x!==id) : [...state.demolished, id]);
   const length = Math.round(wallLength(w));
@@ -2253,7 +3667,7 @@ function applyView(){
   const nice = [100,200,500,1000,2000,5000].find(v => v*view.s >= 60) || 5000;
   $('#sbBar').style.width = nice*view.s + 'px';
   $('#sbText').textContent = nice >= 1000 ? `${nice/1000} m` : `${nice} mm`;
-  renderSel(); renderMeasure();
+  renderSel(); renderMeasure(); renderChecks();
 }
 function fitView(){
   const W = svg.clientWidth, H = svg.clientHeight;
@@ -2327,7 +3741,15 @@ function endDrag(cancel){
     if (!cancel && !d.moved && ui.tool === 'select') select(d.room ? {kind:'room', id:d.room} : null);
     return;
   }
-  if (d.moved){ commit(d.before); renderAll(); }
+  if (d.moved){
+    if (['dim-line', 'dim-end', 'wall-end'].includes(d.kind)){
+      const bad = degeneratePlan(PLAN);
+      if (bad){ restore(d.before); renderAll(); toast(bad); return; }
+      syncDimAnchors();
+      commit(d.before); buildDefs(); renderDims(); renderOpenings(); renderAll(); return;
+    }
+    commit(d.before); renderAll();
+  }
 }
 
 svg.addEventListener('pointerdown', e => {
@@ -2345,6 +3767,19 @@ svg.addEventListener('pointerdown', e => {
   }
   if (pinch) return;
   const p = toMM(e), t = e.target;
+  if (checkMode && ui.dimDraft){
+    const anchor = nearestAnchor(p);
+    if (!anchor) return toast(tr('请点在墙面或房间边上', 'Pick a point on a wall or room edge'));
+    if (!ui.dimDraft.from){
+      ui.dimDraft.from = anchor;
+      toast(tr('再点第二个量测点', 'Pick the second measurement point'));
+    } else {
+      const from = ui.dimDraft.from; ui.dimDraft = null;
+      const res = addDim(null, null, {from, to:anchor});
+      if (!res.ok) toast(res.error);
+    }
+    return;
+  }
   if (ui.tool === 'measure'){
     const q = snapPoint(p, e.shiftKey);
     if (!ui.mA){ ui.mA = q; ui.mCur = q; drag = {kind:'measure', sx:e.clientX, sy:e.clientY, moved:false}; svg.setPointerCapture(e.pointerId); }
@@ -2354,6 +3789,19 @@ svg.addEventListener('pointerdown', e => {
   const h = t.closest('[data-handle]');
   if (h && ui.sel?.kind === 'furn'){
     drag = {kind:h.dataset.handle, id:ui.sel.id, sx:e.clientX, sy:e.clientY, before:snap(), moved:false};
+  } else if (checkMode && t.closest('[data-dim-handle]')){
+    const dimEl = t.closest('[data-dim]');
+    if (!dimEl) return;
+    select({kind:'dim', id:dimEl.dataset.dim});
+    drag = {kind:'dim-end', id:dimEl.dataset.dim, end:t.closest('[data-dim-handle]').dataset.dimHandle,
+      sx:e.clientX, sy:e.clientY, before:snap(), moved:false};
+  } else if (checkMode && t.closest('[data-dim]')){
+    const dimEl = t.closest('[data-dim]');
+    select({kind:'dim', id:dimEl.dataset.dim});
+    drag = {kind:'dim-line', id:dimEl.dataset.dim, sx:e.clientX, sy:e.clientY, before:snap(), moved:false};
+  } else if (checkMode && t.closest('[data-wall-handle]') && ui.sel?.kind === 'wall'){
+    drag = {kind:'wall-end', id:ui.sel.id, end:t.closest('[data-wall-handle]').dataset.wallHandle,
+      sx:e.clientX, sy:e.clientY, before:snap(), moved:false};
   } else if (ui.tool === 'demolish' && t.closest('[data-wall]')){
     toggleWall(t.closest('[data-wall]').dataset.wall); return;
   } else if (ui.tool === 'select' && t.closest('[data-fid]')){
@@ -2392,6 +3840,49 @@ svg.addEventListener('pointermove', e => {
     if (!drag.moved && !far) return;
     drag.moved = true; svg.classList.add('panning');
     view.x0 = drag.x0 - (e.clientX-drag.sx)/view.s; view.y0 = drag.y0 - (e.clientY-drag.sy)/view.s; applyView(); return;
+  }
+  if (drag.kind === 'dim-line'){
+    if (!drag.moved && !far) return;
+    drag.moved = true;
+    const dim = (PLAN.dims || []).find(d => d.id === drag.id);
+    if (dim){
+      const geo = dimGeometry({...dim, offset:0});
+      const offset = dim.axis === 'y' ? p.x - geo.x1 : p.y - geo.y1;
+      dim.offset = Math.round(offset / 10) * 10;
+      renderDims();
+    }
+    return;
+  }
+  if (drag.kind === 'dim-end'){
+    if (!drag.moved && !far) return;
+    drag.moved = true;
+    const dim = (PLAN.dims || []).find(d => d.id === drag.id);
+    if (dim){
+      const anchor = nearestAnchor(p);
+      if (anchor){
+        dim[drag.end] = anchor;
+        dim.axis = Math.abs(dim.to.point[1] - dim.from.point[1]) > Math.abs(dim.to.point[0] - dim.from.point[0]) ? 'y' : 'x';
+        renderDims(); renderSel();
+      }
+    }
+    return;
+  }
+  if (drag.kind === 'wall-end'){
+    if (!drag.moved && !far) return;
+    drag.moved = true;
+    const wall = wallOf(drag.id);
+    if (wall){
+      const q = {x:Math.round(p.x/10)*10, y:Math.round(p.y/10)*10};
+      if (wall.rect){
+        if (wallIsVertical(wall)){
+          if (drag.end === 'from') wall.rect[1] = q.y; else wall.rect[3] = q.y;
+        } else {
+          if (drag.end === 'from') wall.rect[0] = q.x; else wall.rect[2] = q.x;
+        }
+      } else if (drag.end === 'from') wall.from = [q.x, q.y]; else wall.to = [q.x, q.y];
+      renderWalls(); renderSel();
+    }
+    return;
   }
   const f = getF(drag.id); if (!f) return;
   if (!drag.moved && !far) return;             // 轻点家具不应让它抖动一下
@@ -2449,7 +3940,17 @@ document.addEventListener('keydown', e => {
   else if (k === 'x') setTool('demolish');
   else if (k === 'f') fitView();
   else if (k === 'r') rotateSel(e.shiftKey ? -90 : 90);
-  else if (k === 'delete' || k === 'backspace'){ e.preventDefault(); deleteSel(); }
+  else if (k === 'delete' || k === 'backspace'){
+    e.preventDefault();
+    if (ui.sel?.kind === 'dim') deleteDim(ui.sel.id);
+    else if (ui.sel?.kind === 'win' || ui.sel?.kind === 'door' || ui.sel?.kind === 'slide'){
+      editStructure(() => {
+        const list = ui.sel.kind === 'win' ? WINS : ui.sel.kind === 'door' ? DOORS : SLIDES;
+        list.splice(list.findIndex(v => v.id === ui.sel.id), 1);
+        ui.sel = null;
+      });
+    } else deleteSel();
+  }
   else if (k === 'escape'){
     // 室内视角优先退出：清除裁切、回到鸟瞰；其次才是测量 / 选择
     if (window.View3D?.roomViewing?.()) window.View3D.exitRoom();
@@ -2555,6 +4056,7 @@ function planSnapshotURL(opts = {}){
       clone.setAttribute('width', W); clone.setAttribute('height', H);
       const q = s => clone.querySelector(s);
       if (q('#gSel')) q('#gSel').innerHTML = '';
+      if (q('#gCheck')) q('#gCheck').innerHTML = '';       // 校核角标不进入导出图
       if (clean) ['#gLabels', '#gMeasure', '#gDims', '#gSel'].forEach(s => { const el = q(s); if (el) el.innerHTML = ''; });
       if (q('#gGrid')) q('#gGrid').innerHTML = `<rect x="${b.x-8000}" y="${b.y-8000}" width="${b.w+16000}" height="${b.h+16000}" fill="${ui.layers.grid && !clean ? 'url(#grid)' : 'transparent'}"/>`;
       const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -2579,6 +4081,7 @@ async function studioShot(opts = {}){
 }
 
 async function exportPNG(){
+  if (!confirmCheckGate(tr('导出图片', 'export the image'))) return;
   const url = await studioShot({scale:is3D() ? 2 : 1, clean:is3D()});
   if (!url) return toast(tr('导出失败', 'Export failed'));
   download(tr('户型装修方案', 'floor-plan-design') + '.png', dataURLBlob(url));
@@ -2669,14 +4172,18 @@ drawer(null);                                  // 恢复上次的面板收起状
 $('#exportPng').onclick = exportPNG;
 // 项目文件：plan + state + 效果图记录，换机 / 备份时完整带走
 $('#exportProj').onclick = () => {
+  if (!confirmCheckGate(tr('导出项目', 'export the project'))) return;
   const {renders, ...rest} = state;
   const doc = {version:2, plan:deepCopy(PLAN), state:deepCopy(rest), renders:deepCopy(renders || [])};
   download(tr('户型装修项目', 'floor-plan-project') + '.json',
     new Blob([JSON.stringify(doc, null, 2)], {type:'application/json'}));
 };
 $('#importProj').onclick = () => $('#fileIn').click();
-$('#exportJson').onclick = () => download(tr('户型装修方案', 'floor-plan-design') + '.json',
+$('#exportJson').onclick = () => {
+  if (!confirmCheckGate(tr('导出方案', 'export the plan'))) return;
+  download(tr('户型装修方案', 'floor-plan-design') + '.json',
   new Blob([JSON.stringify({version:2, plan:PLAN, state}, null, 2)], {type:'application/json'}));
+};
 $('#importJson').onclick = () => $('#fileIn').click();
 $('#fileIn').onchange = e => {
   const file = e.target.files[0]; if (!file) return;
@@ -2874,14 +4381,26 @@ function patchSceneValue(draft, change){
 }
 
 // 允许模型省略能自动补全的字段，但不能让宽容的导入校验悄悄丢掉用户请求的改动。
-function sceneDataRetained(input, normalized){
+// collection 标明递归所在的集合，用来把 V1 元组（[..rect, kind, height]）与迁移后的 V2 对象对照。
+function sceneDataRetained(input, normalized, collection){
   if (Array.isArray(input)){
-    return Array.isArray(normalized) && input.length === normalized.length &&
-      input.every((item, i) => sceneDataRetained(item, normalized[i]));
+    if (!Array.isArray(normalized)){
+      if (!isSceneRecord(normalized)) return false;
+      const rect = normRect(input);
+      if (!rect || JSON.stringify(rect) !== JSON.stringify(normalized.rect)) return false;
+      if (collection === 'walls'){
+        const kind = input[4] === undefined ? 'n' : (WALL_KINDS.includes(input[4]) ? input[4] : 'n');
+        return kind === normalized.kind && (input[5] === undefined || input[5] === normalized.height);
+      }
+      return collection === 'wins';            // 窗元组只有矩形
+    }
+    return input.length === normalized.length &&
+      input.every((item, i) => sceneDataRetained(item, normalized[i], collection));
   }
   if (isSceneRecord(input)){
     return isSceneRecord(normalized) && Object.entries(input).every(([key, item]) =>
-      Object.hasOwn(normalized, key) && sceneDataRetained(item, normalized[key]));
+      Object.hasOwn(normalized, key) && sceneDataRetained(item, normalized[key],
+        ['walls', 'wins', 'doors', 'slides', 'rooms', 'dims'].includes(key) ? key : collection));
   }
   return input === normalized;
 }
@@ -2925,26 +4444,40 @@ function applySceneEdit(changes){
   }
   const plan = normalized.plan;
   const oldWallValues = new Set(PLAN.walls.map(w => JSON.stringify(w)));
-  if (plan.walls.some(w => Array.isArray(w) && (w[0] === w[2] || w[1] === w[3]) && !oldWallValues.has(JSON.stringify(w))) ||
+  if (plan.walls.some(w => w.rect && (w.rect[0] === w.rect[2] || w.rect[1] === w.rect[3]) && !oldWallValues.has(JSON.stringify(w))) ||
       plan.rooms.some(r => unsafeSceneKeys.has(r.id) || !Object.hasOwn(plan.materials, r.mat))){
     throw new Error(tr('墙体尺寸、房间编号或材料无效', 'Invalid wall dimensions, room identifier or material'));
   }
-  const remapWall = id => {
-    const wall = oldWalls[Number(id.slice(1))], index = draft.plan.walls?.indexOf(wall) ?? -1;
-    return index < 0 ? null : 'w' + index;
+  // 拆除标记、选中墙体都按 id 认身份；插入 / 删除墙体时按同一位置换到新 id。
+  const remapWallId = value => {
+    const text = String(value);
+    if (plan.walls.some(w => w.id === text)) return text;
+    const legacy = /^w(\d+)$/.exec(text);
+    if (legacy && plan.walls[+legacy[1]]) return plan.walls[+legacy[1]].id;
+    const index = oldWalls.findIndex(w => w && w.id === text);
+    return index >= 0 && plan.walls[index] ? plan.walls[index].id : null;
   };
   const explicitDemolished = changes.some(({path}) => path[0] === 'state' && path[1] === 'demolished');
   const stateDraft = draft.state;
   const furniture = Object.hasOwn(stateDraft, 'furniture') ? stateDraft.furniture : [];
   const measures = Object.hasOwn(stateDraft, 'measures') ? stateDraft.measures : [];
   const rooms = Object.hasOwn(stateDraft, 'rooms') ? stateDraft.rooms : {};
-  const demolished = explicitDemolished
+  const rawDemolished = explicitDemolished
     ? (Object.hasOwn(stateDraft, 'demolished') ? stateDraft.demolished : [])
-    : state.demolished.map(remapWall).filter(Boolean);
-  if (!Array.isArray(furniture) || !Array.isArray(measures) || !Array.isArray(demolished) || !isSceneRecord(rooms) ||
-      measures.some(m => !m || ![m.a?.x, m.a?.y, m.b?.x, m.b?.y].every(Number.isFinite)) ||
-      demolished.some(id => typeof id !== 'string' || !/^w(?:0|[1-9]\d*)$/.test(id) || +id.slice(1) >= plan.walls.length)){
+    : state.demolished;
+  if (!Array.isArray(furniture) || !Array.isArray(measures) || !Array.isArray(rawDemolished) || !isSceneRecord(rooms) ||
+      measures.some(m => !m || ![m.a?.x, m.a?.y, m.b?.x, m.b?.y].every(Number.isFinite))){
     throw new Error(tr('家具、房间、拆除标记或测量数据无效', 'Invalid furniture, rooms, wall removal marks or measurements'));
+  }
+  const demolished = [];
+  for (const value of rawDemolished){
+    if (typeof value !== 'string') throw new Error(tr('拆除标记无效', 'Invalid wall removal mark'));
+    const id = remapWallId(value);
+    if (!id){
+      if (explicitDemolished) throw new Error(tr('拆除标记无效', 'Invalid wall removal mark'));
+      continue;
+    }
+    if (!demolished.includes(id)) demolished.push(id);
   }
 
   const ids = new Set();
@@ -2980,7 +4513,7 @@ function applySceneEdit(changes){
     ids.add(item.id);
   }
 
-  const selectedWall = ui.sel?.kind === 'wall' ? remapWall(ui.sel.id) : null;
+  const selectedWall = ui.sel?.kind === 'wall' ? remapWallId(ui.sel.id) : null;
   const boundsChanged = JSON.stringify(plan.bounds) !== JSON.stringify(PLAN.bounds);
   if (JSON.stringify(plan) !== JSON.stringify(PLAN)) installPlan(plan);
   state = fixState({...stateDraft, furniture:items, measures, rooms, demolished, renders:state.renders});
@@ -3039,12 +4572,12 @@ const OPS = {
     return true;
   },
   demolishWall(op){
-    const id = op.id; if (!validWallId(id)) return null;
+    const id = wallIdFromLegacy(op.id); if (!id) return null;
     if (!state.demolished.includes(id)) state.demolished.push(id);
     return true;
   },
   restoreWall(op){
-    const id = op.id; if (!validWallId(id) || !state.demolished.includes(id)) return null;
+    const id = wallIdFromLegacy(op.id); if (!id || !state.demolished.includes(id)) return null;
     state.demolished = state.demolished.filter(x => x !== id);
     return true;
   },
@@ -3096,6 +4629,38 @@ window.Studio = {
   shot: opts => studioShot(opts || {}),
   // 任务 1 额外的便利方法（非契约）：导出工程 JSON、撤销重做
   projectJSON: () => ({version:2, plan:deepCopy(PLAN), state:deepCopy(state)}),
+  // 确定性检查（设计 §4.4）：all 含被忽略项，issues 为当前待确认项，ignores 为忽略集合。
+  getChecks: () => {
+    refreshChecks();
+    return {issues:[...checkState.active], all:[...checkState.all], ignores:[...(state.checkIgnores || [])],
+      count:checkState.active.length, objects:checkState.byObject.size};
+  },
+  // 校验 / 迁移任意 Plan（V1 → V2），不安装；供测试与下一个 agent 读取。
+  normalizePlan: raw => sanitizePlan(raw),
+  checkPlan: raw => { const result = sanitizePlan(raw); return result.ok ? checkPlan(result.plan) : []; },
+  ignoreCheck: key => {
+    if (typeof key !== 'string' || !key) return false;
+    const ignores = state.checkIgnores || [];
+    if (!ignores.includes(key)) mutate(() => { state.checkIgnores = [...ignores, key]; });
+    return true;
+  },
+  restoreCheck: key => {
+    const ignores = state.checkIgnores || [];
+    if (!ignores.includes(key)) return false;
+    mutate(() => { state.checkIgnores = ignores.filter(item => item !== key); });
+    return true;
+  },
+  // 校核图层（设计 §5）：进入 / 退出、尺寸增删改、导出前门禁。
+  enterCheck: () => { enterCheck(); return true; },
+  exitCheck: force => exitCheck(force === true),
+  isChecking: () => checkMode,
+  setDimValue: (id, value, opts) => setDimValue(id, value, opts || {}),
+  addDim: (from, to, opts) => addDim(from, to, opts || {}),
+  confirmDim: id => confirmDim(id),
+  deleteDim: id => deleteDim(id),
+  addBayWindow: (roomId, edge, depth) => addBayWindow(roomId, edge, depth),
+  exportGate,
+  // 结构对象选中入口：{kind:'wall'|'room'|'win'|'door'|'slide'|'dim', id}
   undo, redo,
 };
 
@@ -3187,7 +4752,7 @@ async function* aiTextChunks(kind, init){
 const IMP_MAX_BYTES = 25 * 1024 * 1024;    // 服务端上限 40 MiB，给 base64 留余量
 const IMP_MAX_FILES = 20;
 const IMP_UPLOAD_TIMEOUT = 5 * 60_000;
-const impState = {files:[], result:null, onApply:null, retryId:null, submission:null, applying:false,
+const impState = {files:[], result:null, onApply:null, retryId:null, attachSource:null, submission:null, applying:false,
   review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null,
   reviewVariant:'fixed', reviewBase:null, reviewApplied:false, reviewTimer:0,
   reviewRerun:true, reviewGen:0, reviewSince:0};
@@ -3211,6 +4776,7 @@ function impShow(view){
   impEls.pick.hidden = view !== 'pick';
   impEls.prog.hidden = view !== 'prog';
   impEls.body.hidden = view !== 'preview';
+  impEls.drop.classList.remove('drag-over');
 }
 
 function impShowDialog(view){
@@ -3240,7 +4806,10 @@ function impFail(msg){
 
 function impUpdateStart(){
   impEls.start.disabled = Boolean(impState.submission) || !impState.files.length;
-  impEls.start.textContent = tr('上传并识别', 'Upload and analyze');
+  const source = impState.attachSource;
+  impEls.start.textContent = !source ? tr('上传并识别', 'Upload and analyze')
+    : source.reviewEnabled === false ? tr('保存原图', 'Save original')
+    : tr('上传并复核', 'Upload and review');
 }
 
 function impRenderFiles(){
@@ -3273,12 +4842,15 @@ function impAddFiles(list){
   else if (empty) impErrShow(tr('选中的文件是空的。', 'The selected file is empty.'));
 }
 
-function impOpen({retryId, note} = {}){
+function impOpen({retryId, note, attachRow} = {}){
   if (impState.submission || impState.applying) return false;
   const menu = $('#importPlanFile').closest('details');
   if (menu) menu.open = false;
   impState.files = []; impState.result = impState.onApply = null;
   impState.retryId = typeof retryId === 'string' ? retryId : null;
+  impState.attachSource = attachRow ? {
+    id:attachRow.id, jobId:attachRow.jobId, name:attachRow.name, reviewEnabled:attachRow.reviewEnabled,
+  } : null;
   impReviewReset();
   impEls.note.value = typeof note === 'string' ? note : '';
   impEls.file.value = '';
@@ -3293,7 +4865,9 @@ function impClose(){
   if (impState.submission) impAbort();
   impViewClose();
   impState.files = []; impState.result = impState.onApply = impState.retryId = null;
+  impState.attachSource = null;
   impReviewReset();
+  impEls.drop.classList.remove('drag-over');
   impEls.wrap.classList.remove('on');
   impEls.wrap.setAttribute('aria-hidden', 'true');
 }
@@ -3339,6 +4913,11 @@ async function impStart(){
   const xhr = new XMLHttpRequest();
   const note = impEls.note.value.trim();
   const retryId = impState.retryId;
+  const attachment = impState.attachSource;
+  const target = attachment && projectRowForJob(attachment);
+  if (attachment && !target){
+    return impFail(tr('项目任务已变更，请从项目列表重新打开。', 'The project task changed. Reopen it from Projects.'));
+  }
   const name = files[0].name;
   submission.xhr = xhr;
   xhr.upload.onprogress = e => {
@@ -3346,10 +4925,29 @@ async function impStart(){
     impStatus(tr('正在上传图纸…', 'Uploading the drawing…'), Math.round(e.loaded / e.total * 100));
   };
   xhr.upload.onload = () => {
-    if (impState.submission === submission) impStatus(tr('正在提交识别任务…', 'Submitting the recognition job…'));
+    if (impState.submission === submission) impStatus(attachment
+      ? tr('正在保存原图…', 'Saving the original drawing…')
+      : tr('正在提交识别任务…', 'Submitting the recognition job…'));
   };
   xhr.onload = async () => {
     if (impState.submission !== submission) return;
+    if (attachment){
+      if (xhr.status !== 200) return impFail(aiResponseMessage(xhr.status, xhr.responseText));
+      let saved;
+      try { saved = JSON.parse(xhr.responseText); } catch(e){}
+      if (!saved?.sourceAvailable || typeof saved.id !== 'string' || !/^import-[a-f0-9-]{36}$/.test(saved.id)){
+        return impFail(tr('服务未确认原图已保存。', 'The service did not confirm the original drawing was saved.'));
+      }
+      submission.jobId = saved.id;
+      impEls.cancel.disabled = true;
+      impEls.close.disabled = true;
+      const row = await projectSourceAttached(attachment, saved);
+      impUploadReady();
+      impClose();
+      if (row && row.reviewEnabled !== false) await projectReviewAgain(row, {sourceSaved:true});
+      else toast(tr('原图已保存。', 'The original drawing was saved.'));
+      return;
+    }
     if (xhr.status !== 202) return impFail(aiResponseMessage(xhr.status, xhr.responseText));
     let jobId;
     try { jobId = JSON.parse(xhr.responseText).id; } catch(e){}
@@ -3382,13 +4980,20 @@ async function impStart(){
   };
 
   try {
-    xhr.open('POST', projectEndpoint);
+    const payload = {files, note};
+    if (target){
+      const data = projectReviewSnapshot(target);
+      if (data) payload.result = data.result;
+      payload.name = target.name || name;
+    }
+    xhr.open('POST', target ? projectSourceURL(target.jobId) : projectEndpoint);
     xhr.setRequestHeader('content-type', 'application/json');
     xhr.timeout = IMP_UPLOAD_TIMEOUT;
     impStatus(tr('正在上传图纸…', 'Uploading the drawing…'), 0);
-    xhr.send(JSON.stringify({files, note}));
+    xhr.send(JSON.stringify(payload));
   } catch(e){
-    impFail(tr('无法提交图纸识别任务。', 'Could not submit the drawing job.'));
+    impFail(attachment ? tr('无法保存原图。', 'Could not save the original drawing.')
+      : tr('无法提交图纸识别任务。', 'Could not submit the drawing job.'));
   }
 }
 
@@ -3399,6 +5004,7 @@ function impOpenResult(data, onApply, meta = {}){
     toast(tr('识别结果不是有效户型。', 'The result is not a valid floor plan.'));
     return false;
   }
+  impState.attachSource = null;
   impState.result = {
     plan:result.plan,
     furniture:drawingFurniture(data.furniture),
@@ -3525,13 +5131,11 @@ function impReviewPoll(jobId, gen){
 }
 
 async function impReviewRetry(){
-  const jobId = impState.reviewJobId;
-  if (!jobId) return;
-  try {
-    const response = await fetch(impReviewURL(jobId), {method:'POST', signal:AbortSignal.timeout(15000)});
-    if (!response.ok) return;
-  } catch(e){ return; }
-  if (impState.reviewJobId !== jobId) return;
+  const jobId = impState.reviewJobId, generation = impState.reviewGen;
+  const row = projectRows.get(impState.reviewRowId) || [...projectRows.values()].find(item => item.jobId === jobId);
+  if (!row || row.jobId !== jobId) return;
+  if (impState.reviewRerun === false || row.sourceAvailable === false) return projectOpenSource(row);
+  if (!await projectReviewAgain(row) || !impReviewAlive(jobId, generation)) return;
   impReviewStop();
   const gen = impState.reviewGen;
   impState.review = null;
@@ -3580,6 +5184,11 @@ async function impReviewApplyProject(){
     toast(tr('当前项目已切换，请重新打开对比后再应用。', 'The project changed. Reopen the comparison to apply.'));
     return;
   }
+  const requested = projectRows.get(activeProjectId)?.reviewRequestedSig;
+  if (requested && requested !== sceneSignature(Studio.projectJSON())){
+    toast(tr('项目已有新编辑，请重新复核后再应用修正。', 'The project has changed. Run the review again before applying corrections.'));
+    return;
+  }
   const before = snap();
   const oldWalls = WALLS.slice();
   installPlan(fixed.plan);
@@ -3609,25 +5218,21 @@ async function impReviewApplyProject(){
   toast(tr('已应用自动修正，可用 Ctrl+Z 撤销', 'Corrections applied. Press Ctrl+Z to undo.'));
 }
 
-// 按几何（先整条 JSON、再矩形范围）把旧墙下标映射到新墙体；匹配不到就丢弃。
+// 墙体列表被整份替换时，拆除标记按 id → 几何（整条 JSON、再矩形范围）映射到新墙体；匹配不到就丢弃。
 function remapDemolished(oldWalls, walls, demolished){
-  const rectOf = wall => Array.isArray(wall) && wall.length >= 4 &&
-    [wall[0], wall[1], wall[2], wall[3]].every(Number.isFinite)
-    ? [Math.min(+wall[0], +wall[2]), Math.min(+wall[1], +wall[3]),
-      Math.max(+wall[0], +wall[2]), Math.max(+wall[1], +wall[3])]
-    : null;
-  const plain = wall => Array.isArray(wall) && wall.length <= 6 && rectOf(wall);
+  const rectOf = wall => wall ? (wall.rect || (wallCurve(wall) ? curveBounds(wallCurve(wall)) : null)) : null;
   const sameRect = (a, b) => a && b && a.every((value, index) => Math.abs(value - b[index]) < 1);
   const out = [];
-  for (const id of Array.isArray(demolished) ? demolished : []){
-    const index = +String(id).slice(1);
-    const old = oldWalls[index];
+  for (const value of Array.isArray(demolished) ? demolished : []){
+    const text = String(value);
+    const legacy = /^w(\d+)$/.exec(text);
+    const old = walls.find(w => w.id === text) ?? (legacy ? oldWalls[+legacy[1]] : oldWalls.find(w => w && w.id === text));
     if (!old) continue;
     const raw = JSON.stringify(old);
-    let next = walls.findIndex(wall => JSON.stringify(wall) === raw);
-    if (next < 0 && plain(old)) next = walls.findIndex(wall => plain(wall) && sameRect(rectOf(wall), rectOf(old)));
-    const mapped = next >= 0 ? 'w' + next : '';
-    if (mapped && !out.includes(mapped)) out.push(mapped);
+    let next = walls.find(wall => wall.id === old.id);
+    if (!next) next = walls.find(wall => JSON.stringify(wall) === raw);
+    if (!next) next = walls.find(wall => sameRect(rectOf(wall), rectOf(old)));
+    if (next && !out.includes(next.id)) out.push(next.id);
   }
   return out;
 }
@@ -3649,17 +5254,6 @@ function impReviewDelta(delta){
   pair(tr('门', 'Doors'), delta.doors);
   pair(tr('家具', 'Furniture'), delta.furniture);
   return parts.join(' · ');
-}
-
-// 墙体 / 窗：sanitizePlan 的弧线条目是对象，转成渲染层使用的数组形态
-function impReviewWall(w){
-  if (Array.isArray(w)) return w;
-  const curve = curvedSpan(w);
-  return [...curveBounds(curve), w.kind, w.height, curve];
-}
-function impReviewWin(w){
-  if (Array.isArray(w)) return w;
-  return [...curveBounds(curvedSpan(w)), curvedSpan(w)];
 }
 
 // 整图 SVG：按 bounds 适配，只画房间、墙体、门窗和家具，不做标注与尺寸线
@@ -3688,11 +5282,14 @@ function impReviewMap(plan, furniture, changedIds, viewBox){
     const [x0, y0, x1, y1] = d.rect;
     s += `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#e2dacb" stroke="#b9b0a0" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
   });
-  plan.walls.forEach(w => { s += wallShape(impReviewWall(w), 'fill="#a7a195"'); });
+  plan.walls.forEach(w => { s += wallShape(w, 'fill="#a7a195"'); });
   plan.wins.forEach(w => {
-    const [x0, y0, x1, y1, curve] = impReviewWin(w);
-    s += curve ? `<path d="${curveBandPath(curve)}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`
-      : `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    const curve = windowCurve(w);
+    if (curve) s += `<path d="${curveBandPath(curve)}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    else {
+      const [x0, y0, x1, y1] = w.rect;
+      s += `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    }
   });
   const list = (Array.isArray(furniture) ? furniture : []).map(normalizeFurn).filter(Boolean);
   const paint = f => `<g transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${furnitureShape(f)}</g>`;
@@ -3989,12 +5586,13 @@ function impReviewRender(){
   if (issues.length) box.append(issueList);
   box.append(foot);
   if (projectMode) box.append(hint);
-  // 工作目录已清理（公网任务或服务重启）时服务端无法重跑，隐藏按钮而不是留一个死按钮。
-  if (impState.reviewRerun !== false){
+  const project = projectRows.get(impState.reviewRowId);
+  const needsSource = impState.reviewRerun === false || project?.sourceAvailable === false;
+  if (project?.jobId === impState.reviewJobId && (needsSource || project?.reviewEnabled !== false)){
     const retry = document.createElement('button');
     retry.type = 'button';
     retry.className = 'imp-review-retry';
-    retry.textContent = tr('重新复核', 'Re-run review');
+    retry.textContent = needsSource ? tr('补传原图', 'Attach original drawing') : tr('重新复核', 'Re-run review');
     retry.onclick = () => void impReviewRetry();
     box.append(retry);
   }
@@ -4056,11 +5654,12 @@ function impRenderPreview(){
   impReviewRender();
 }
 
-async function impApplyPlan(){
+async function impApplyPlan(opts = {}){
+  const check = opts === true || opts?.check === true;
   if (!impState.result || impState.applying || typeof impState.onApply !== 'function') return;
   const {plan, furniture} = impState.result;
   impState.applying = true;
-  impEls.apply.disabled = impEls.cancelApply.disabled = impEls.close.disabled = true;
+  impEls.apply.disabled = impEls.cancelApply.disabled = impEls.close.disabled = impEls.check.disabled = true;
   impErrShow('');
   let result;
   try {
@@ -4069,35 +5668,45 @@ async function impApplyPlan(){
     result = {ok:false};
   } finally {
     impState.applying = false;
-    impEls.apply.disabled = impEls.cancelApply.disabled = impEls.close.disabled = false;
+    impEls.apply.disabled = impEls.cancelApply.disabled = impEls.close.disabled = impEls.check.disabled = false;
   }
   if (!result?.ok){
     return impErrShow(tr('无法打开新项目。', 'Could not open the new project.') + (result?.errors?.[0] ? ' ' + result.errors[0] : ''));
   }
   const name = result.plan?.name || plan.name;
   impClose();
-  toast(tr(`已打开项目「${name}」`, `Opened project “${name}”`));
+  if (check) enterCheck();
+  else toast(tr(`已打开项目「${name}」`, `Opened project “${name}”`));
 }
 
 function impRelang(){
   if (!impEls.wrap) return;
-  impEls.title.textContent = impState.result ? tr('识别结果', 'Recognition result') : tr('导入图纸', 'Import drawing');
+  const source = impState.attachSource;
+  impEls.title.textContent = source ? tr('补传原图', 'Attach original drawing')
+    : impState.result ? tr('识别结果', 'Recognition result') : tr('导入图纸', 'Import drawing');
   impEls.close.title = tr('关闭', 'Close');
-  impEls.dropTitle.textContent = tr('选择图纸文件', 'Choose drawing files');
+  impEls.dropTitle.textContent = source ? tr('拖入原始图纸，或点击选择', 'Drop the original drawing here or click to browse')
+    : tr('拖入图纸文件，或点击选择', 'Drop drawing files here or click to browse');
   impEls.dropHint.textContent = tr('支持图片、PDF、CAD 导出、JSON，不限格式', 'Images, PDF, CAD exports or JSON — any format');
   impEls.note.placeholder = tr('备注（可选，如：只识别一层）', 'Note (optional, e.g. "ground floor only")');
-  impEls.pickHint.textContent = impState.retryId
+  impEls.pickHint.textContent = source
+    ? tr(`原图将保存到「${source.name}」。`, `The original drawing will be saved to “${source.name}”.`) +
+      (source.reviewEnabled === false ? tr(' 当前复核未启用。', ' Review is currently disabled.')
+        : tr(' 复核完成后，可从「项目」查看结果并选择是否应用修正。', 'When the review finishes, open Projects to review and apply corrections.'))
+    : impState.retryId
     ? tr('请重新选择图纸文件以重试识别。', 'Choose the drawing files again to retry recognition.')
     : tr('上传后会在后台识别，完成后可从「项目」打开新方案。', 'Recognition runs in the background. Open the new design from Projects when it is ready.');
   impEls.pickCancel.textContent = tr('取消', 'Cancel');
   impEls.cancel.textContent = tr('取消上传', 'Cancel upload');
   impEls.cancelApply.textContent = tr('关闭', 'Close');
   impEls.apply.textContent = tr('打开新项目', 'Open new project');
+  impEls.check.textContent = tr('校核图纸', 'Check drawing');
   impEls.resultHint.textContent = tr('打开后会切换到这份新方案，当前项目会保存在「项目」列表中。',
     'Opening this design switches projects. Your current project stays in Projects.');
   // 已打开项目的对比模式：主按钮在复核卡里（应用到当前项目），不显示「打开新项目」
   const compareMode = impState.reviewMode === 'project' && impState.result && typeof impState.onApply !== 'function';
   impEls.apply.hidden = Boolean(compareMode);
+  impEls.check.hidden = Boolean(compareMode);
   impEls.resultHint.hidden = Boolean(compareMode);
   impUpdateStart();
   if (impState.result) impRenderPreview();
@@ -4113,17 +5722,36 @@ function impInit(){
     body: $('#impBody'), planName: $('#impPlanName'), planSrc: $('#impPlanSrc'), stats: $('#impStats'),
     review: $('#impReview'), reviewNote: $('#impReviewNote'),
     rooms: $('#impRooms'), exp: $('#impExp'), resultHint: $('#impResultHint'),
-    cancelApply: $('#impCancelApply'), apply: $('#impApply'), err: $('#impErr'),
+    cancelApply: $('#impCancelApply'), apply: $('#impApply'), check: $('#impCheck'), err: $('#impErr'),
   });
   impEls.drop.onclick = () => impEls.file.click();
   impEls.drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); impEls.file.click(); } };
   impEls.file.onchange = e => { impAddFiles(e.target.files); e.target.value = ''; };
+  const isFileDrag = e => Array.from(e.dataTransfer?.types || []).includes('Files') || Boolean(e.dataTransfer?.files.length);
+  const canDrop = e => !impEls.pick.hidden && !impState.submission && impEls.drop.contains(e.target);
+  document.addEventListener('dragover', e => {
+    if (!impEls.wrap.classList.contains('on') || !isFileDrag(e)) return;
+    e.preventDefault();
+    const allowed = canDrop(e);
+    e.dataTransfer.dropEffect = allowed ? 'copy' : 'none';
+    impEls.drop.classList.toggle('drag-over', allowed);
+  });
+  impEls.drop.addEventListener('dragleave', e => {
+    if (!impEls.drop.contains(e.relatedTarget)) impEls.drop.classList.remove('drag-over');
+  });
+  document.addEventListener('drop', e => {
+    if (!impEls.wrap.classList.contains('on') || !isFileDrag(e)) return;
+    e.preventDefault();
+    impEls.drop.classList.remove('drag-over');
+    if (canDrop(e) && e.dataTransfer.files.length) impAddFiles(e.dataTransfer.files);
+  });
   impEls.start.onclick = impStart;
   impEls.pickCancel.onclick = impClose;
   impEls.cancel.onclick = impAbort;
   impEls.cancelApply.onclick = impClose;
   impEls.close.onclick = impClose;
-  impEls.apply.onclick = impApplyPlan;
+  impEls.apply.onclick = () => impApplyPlan();
+  impEls.check.onclick = () => impApplyPlan({check:true});
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && impEls.wrap.classList.contains('on')) impClose(); });
   // 复核大图：关闭 / 缩放控件 / 滚轮 / 拖动 / 双指 / 双击适应
   const viewStage = $('#impViewStage');
@@ -4890,6 +6518,7 @@ async function renderGenerate(opts = {}){
   if (renderState.busy || renderState.online === false) return null;
   if (!Studio.is3D()){ renderViewSync(); return null; }
   if (!window.View3D){ toast(tr('3D 引擎尚未就绪', 'The 3D engine is not ready yet')); return null; }
+  if (!confirmCheckGate(tr('生成效果图', 'generate the render'))) return null;
   const note = renderEls.note.value.trim();
   const style = renderState.style;
   const asRoom = opts.kind === 'room' && !!roomDef(opts.roomId);
@@ -5066,9 +6695,11 @@ impInit();
 
 /* ======================= 项目与后台识别 ======================= */
 const projectEndpoint = studioPath('/api/jobs/plan-import');
+const projectSourceURL = jobId => studioPath('/api/jobs/' + encodeURIComponent(jobId) + '/source');
 const projectActiveKey = 'interior-active-project-v1' + projectScope;
 const projectRows = new Map();
 const projectOpening = new Set();
+const projectReviewRequests = new Set();
 const projectPanel = $('#projectPanel'), projectToggle = $('#projectToggle'), projectList = $('#projectList');
 const projectPending = row => row.phase === 'queued' || row.phase === 'running';
 const projectAi = PUBLIC_ACCESS !== 'guest' && /^https?:$/.test(location.protocol);
@@ -5104,6 +6735,17 @@ function projectCurrent(){
     ...projectRows.get(activeProjectId), id:activeProjectId, name:snapshot.plan.name,
     phase:'saved', snapshot, updatedAt:Date.now(),
   };
+}
+function projectRowForJob(row){
+  const current = projectRows.get(row.id);
+  return current && current.jobId === row.jobId && !current.hidden ? current : null;
+}
+function projectReviewSnapshot(row){
+  const snapshot = row.id === activeProjectId ? Studio.projectJSON() : row.snapshot;
+  if (snapshot?.plan){
+    return {result:{plan:snapshot.plan, furniture:snapshot.state?.furniture || []}, signature:sceneSignature(snapshot)};
+  }
+  return row.result?.plan ? {result:{plan:row.result.plan, furniture:row.result.furniture || []}} : null;
 }
 function projectRecordActive(row){
   try {
@@ -5210,15 +6852,20 @@ const sameReview = (a, b) => (a?.state || '') === (b?.state || '') &&
   (+a?.count || 0) === (+b?.count || 0) && (+a?.updatedAt || 0) === (+b?.updatedAt || 0);
 function projectReviewMessage(row){
   const review = projectReview(row);
+  if (row.jobId && row.sourceAvailable === true && row.reviewEnabled === false)
+    return tr('原图已保存，当前复核未启用。', 'Original drawing saved. Review is currently disabled.');
   if (!review) return '';
+  if (review.state === 'unavailable' && row.sourceAvailable === true)
+    return tr('复核未完成，可以重新复核。', 'Review did not finish. You can run it again.');
   const count = Number.isFinite(+review.count) ? +review.count : 0;
-  const differ = tr(`自动复核发现 ${count} 处与原图不一致，建议先查看修正。`,
-    count === 1 ? 'Auto review found 1 difference from the source drawing. Review the corrections first.'
-      : `Auto review found ${count} differences from the source drawing. Review the corrections first.`);
+  const differ = tr(`复核发现 ${count} 处与原图不一致，可以查看对比。`,
+    count === 1 ? 'Review found 1 difference from the source drawing. Open the comparison to inspect it.'
+      : `Review found ${count} differences from the source drawing. Open the comparison to inspect them.`);
   if (review.state === 'differ'){
     if (row.phase === 'done') return differ;
     if (row.phase === 'saved' && row.jobId && !projectReviewApplied(row)) return differ;
   }
+  if (review.state === 'match') return tr('复核完成，未发现明显差异。', 'Review complete. No clear differences were found.');
   if ((review.state === 'pending' || review.state === 'running') &&
       (row.phase === 'done' || (row.phase === 'saved' && row.jobId)))
     return row.phase === 'done'
@@ -5258,18 +6905,20 @@ function projectActions(row){
     `<button type="button" class="btn${primary ? ' primary' : ''}" data-project-action="${action}" ${projectOpening.has(row.id) ? 'disabled' : ''}>${esc(label)}</button>`;
   const review = projectReview(row);
   const reviewBusy = review?.state === 'pending' || review?.state === 'running';
-  // 只要不是正在复核，就给一个主动触发的入口（包括已有差异、复核失败、还没复核）。
-  const rerunButton = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy
-    ? button('rerun', tr('重新复核', 'Run review again')) : '';
+  const canReview = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy;
+  let rerunButton = '';
+  if (canReview && row.sourceAvailable === false) rerunButton = button('attach-source', tr('补传原图', 'Attach original drawing'));
+  else if (canReview && row.reviewEnabled !== false) rerunButton = button('rerun', tr('重新复核', 'Run review again'));
   const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
     ? button('review', tr('查看对比', 'Compare')) : '';
-  if (row.id === activeProjectId) return reviewButton + rerunButton;
+  const checkButton = button('check', tr('校核', 'Check'), row.phase === 'saved');
+  if (row.id === activeProjectId) return checkButton + reviewButton + rerunButton;
   if (projectPending(row)) return button('cancel', tr('取消识别', 'Cancel analysis'));
   if (row.phase === 'done') return button('preview', tr('查看识别结果', 'Review result'), true) + rerunButton;
   if (row.phase === 'failed' || row.phase === 'canceled'){
     return button('retry', tr('重新导入', 'Import again'), true) + button('hide', tr('移除记录', 'Remove entry'));
   }
-  return button('open', tr('打开项目', 'Open project'), true) + reviewButton + rerunButton;
+  return button('open', tr('打开项目', 'Open project'), true) + checkButton + reviewButton + rerunButton;
 }
 function renderProjects(){
   const rows = [...projectRows.values()].filter(row => !row.hidden).sort((a, b) =>
@@ -5349,16 +6998,25 @@ async function syncProjectJobs(){
       if (!/^import-[a-f0-9-]{36}$/.test(job.id)) continue;
       seen.add(job.id);
       if ([...projectRows.values()].some(row => row.oldJobs?.includes(job.id))) continue;
-      const prev = [...projectRows.values()].find(row => row.jobId === job.id);
+      let prev = [...projectRows.values()].find(row => row.jobId === job.id);
+      if (!prev && job.sourceAvailable === true && job.replaces){
+        const replaced = [...projectRows.values()].find(row => row.jobId === job.replaces && !row.hidden);
+        if (replaced) prev = await projectSourceAttached(replaced, job, {sync:false});
+      }
       if (prev?.hidden) continue;
       const review = job.review && typeof job.review === 'object' ? job.review : null;
+      const source = {
+        sourceAvailable:typeof job.sourceAvailable === 'boolean' ? job.sourceAvailable : prev?.sourceAvailable,
+        reviewEnabled:typeof job.reviewEnabled === 'boolean' ? job.reviewEnabled : prev?.reviewEnabled,
+      };
+      const sourceChanged = prev?.sourceAvailable !== source.sourceAvailable || prev?.reviewEnabled !== source.reviewEnabled;
       // 已打开的项目保留本地快照，只按 jobId 合并最新的复核状态
       if (prev?.snapshot){
         const latest = job.review === undefined ? (prev.review ?? null) : review;
-        if (!sameReview(prev.review, latest)) await putProject({...prev, review:latest});
+        if (sourceChanged || !sameReview(prev.review, latest)) await putProject({...prev, ...source, review:latest});
         continue;
       }
-      const row = {...job, ...prev, id:prev?.id || job.id, jobId:job.id,
+      const row = {...job, ...prev, ...source, id:prev?.id || job.id, jobId:job.id,
         phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt,
         review:job.review === undefined ? (prev?.review ?? null) : review};
       if ((job.phase === 'done' && !row.result) || (job.phase === 'failed' && !row.error)){
@@ -5367,13 +7025,17 @@ async function syncProjectJobs(){
       }
       const latest = projectRows.get(row.id);
       if (latest && (latest.jobId !== row.jobId || latest.hidden || latest.snapshot)) continue;
-      if (!prev || prev.phase !== row.phase || row.result !== prev.result || row.error !== prev.error ||
+      if (!prev && [...projectRows.values()].some(current => current.jobId === row.jobId)) continue;
+      if (!prev || sourceChanged || prev.phase !== row.phase || row.result !== prev.result || row.error !== prev.error ||
           prev.updatedAt !== row.updatedAt || !sameReview(prev.review, row.review)) await putProject(row);
     }
     for (const row of projectRows.values()){
       const waiting = projectPending(row) || (row.phase === 'done' && !row.result);
       if (waiting && !seen.has(row.jobId) && Date.now() - row.createdAt > 120000){
         await putProject({...row, phase:'failed', error:tr('这条任务记录已过期，请重新导入。','This job expired. Import the drawing again.')});
+      } else if (row.jobId && !seen.has(row.jobId) && !row.hidden && row.sourceAvailable !== false &&
+          (row.phase === 'saved' || (row.phase === 'done' && row.result))){
+        await putProject({...row, sourceAvailable:false});
       }
     }
     projectSyncIssue = '';
@@ -5399,42 +7061,104 @@ async function projectImportSubmitted({jobId, name, note, retryId}){
   });
   renderProjects(); scheduleProjectSync(0);
 }
-// 手动触发一次复核：服务端异步跑模型回合，结果通过任务列表的 review 字段回传。
-async function projectReviewAgain(row){
-  if (!row?.jobId) return;
-  let response;
+function projectOpenSource(row){
+  const current = projectRowForJob(row);
+  if (current && impOpen({attachRow:current, note:current.note})) closeProjects();
+}
+async function projectSourceAttached(row, saved, {sync = true} = {}){
+  const current = projectRowForJob(row);
+  if (!current){
+    const linked = projectRows.get(row.id);
+    return linked?.jobId === saved.id && !linked.hidden && linked.oldJobs?.includes(row.jobId) ? linked : null;
+  }
+  const relinked = current.jobId !== saved.id;
+  const duplicate = relinked && projectRows.get(saved.id);
+  const linked = {...current, jobId:saved.id, sourceAvailable:true, reviewEnabled:saved.reviewEnabled};
+  if (relinked){
+    linked.oldJobs = [...new Set([...(current.oldJobs || []), current.jobId])];
+    linked.review = null;
+    linked.reviewRequestedSig = undefined;
+  }
+  const written = putProject(linked);
+  // 补传刚恢复了过期任务时，轮询可能已经把新任务添加为独立的待预览项。
+  if (duplicate && !duplicate.snapshot && duplicate.id !== current.id){
+    projectRows.delete(duplicate.id);
+    try { await projectTransaction('readwrite', store => store.delete(duplicate.id)); }
+    catch(e){ projectStorageIssue = true; }
+  }
+  await written;
+  if (sync){
+    renderProjects();
+    scheduleProjectSync(0);
+  }
+  return projectRowForJob(linked);
+}
+async function projectReviewAgain(row, {sourceSaved = false} = {}){
+  if (!row?.jobId || projectReviewRequests.has(row.id)) return false;
+  let current = projectRowForJob(row);
+  if (!current) return false;
+  projectReviewRequests.add(row.id);
+  const unavailable = tr('当前复核未启用。', 'Review is currently disabled.');
+  const saved = tr('原图已保存。', 'The original drawing was saved.');
+  const notice = message => {
+    toast((sourceSaved ? saved + ' ' : '') + message);
+    return false;
+  };
   try {
-    response = await fetch(studioPath('/api/jobs/' + encodeURIComponent(row.jobId) + '/review'),
-      {method:'POST', signal:AbortSignal.timeout(15000)});
-  } catch(e){
-    toast(tr('无法连接复核服务，请稍后重试。', 'Could not reach the review service. Try again.'));
-    return;
-  }
-  if (response.status === 202){
-    const current = projectRows.get(row.id);
-    if (current && current.jobId === row.jobId && !current.hidden && sameReview(current.review, row.review)){
-      await putProject({...current, review:{...(current.review || {}), state:'pending', count:0, updatedAt:Date.now()}});
+    if (current.sourceAvailable === undefined){
+      const check = await fetch(projectSourceURL(row.jobId), {cache:'no-store', signal:AbortSignal.timeout(15000)});
+      const source = await check.json().catch(() => ({}));
+      if (!check.ok && check.status !== 404) return notice(aiResponseMessage(check.status, JSON.stringify(source)));
+      current = projectRowForJob(row);
+      if (!current) return false;
+      const latest = {...current, sourceAvailable:source.available === true,
+        reviewEnabled:typeof source.reviewEnabled === 'boolean' ? source.reviewEnabled : current.reviewEnabled};
+      await putProject(latest);
       renderProjects();
+      current = projectRowForJob(row);
+      if (!current) return false;
     }
-    scheduleProjectSync(0);
-    toast(tr('已开始重新复核，完成后会提示差异。', 'Review started. Differences will show when it finishes.'));
-    return;
+    if (current.sourceAvailable === false){
+      projectOpenSource(current);
+      return false;
+    }
+    if (current.reviewEnabled === false) return notice(unavailable);
+    const baseline = projectReviewSnapshot(current);
+    const response = await fetch(impReviewURL(row.jobId), {
+      method:'POST', signal:AbortSignal.timeout(15000),
+      ...(baseline ? {headers:{'content-type':'application/json'}, body:JSON.stringify({result:baseline.result})} : {}),
+    });
+    const data = await response.json().catch(() => ({}));
+    const latest = projectRowForJob(row);
+    if (!latest) return false;
+    if (response.status === 202){
+      const unchanged = sameReview(latest.review, current.review);
+      await putProject({...latest, reviewRequestedSig:baseline?.signature,
+        ...(unchanged ? {review:{...(latest.review || {}), state:'pending', count:0, updatedAt:Date.now()}} : {})});
+      renderProjects();
+      scheduleProjectSync(0);
+      notice(tr('已开始复核，完成后可在「项目」中查看结果。', 'Review started. Check Projects for the result.'));
+      return true;
+    }
+    if (data.code === 'review-disabled'){
+      await putProject({...latest, reviewEnabled:false});
+      renderProjects();
+      return notice(unavailable);
+    }
+    if (data.code === 'missing-source' || data.code === 'missing-job' || response.status === 404){
+      await putProject({...latest, sourceAvailable:false});
+      renderProjects();
+      projectOpenSource(latest);
+      return false;
+    }
+    if (response.status === 409) scheduleProjectSync(0);
+    if (response.status === 503) return notice(tr('Codex 暂不可用，请稍后重新复核。', 'Codex is temporarily unavailable. Try reviewing again later.'));
+    return notice(aiResponseMessage(response.status, JSON.stringify(data)));
+  } catch(e){
+    return notice(tr('无法连接复核服务，请稍后重试。', 'Could not reach the review service. Try again.'));
+  } finally {
+    projectReviewRequests.delete(row.id);
   }
-  if (response.status === 409){
-    toast(tr('复核正在进行，请稍候。', 'A review is already running.'));
-    scheduleProjectSync(0);
-    return;
-  }
-  if (response.status === 404){
-    toast(tr('无法重新复核：原图已清理或复核未启用，可重新导入图纸。',
-      'Cannot re-run the review: the source drawing was cleaned up or reviews are disabled. Import the drawing again.'));
-    return;
-  }
-  if (response.status === 503){
-    toast(tr('codex 不可用，暂时无法复核。', 'codex is unavailable, so the review cannot run right now.'));
-    return;
-  }
-  toast(tr('无法开始复核，请稍后重试。', 'Could not start the review. Try again later.'));
 }
 
 async function projectClick(e){
@@ -5442,7 +7166,7 @@ async function projectClick(e){
   if (!button) return;
   const row = projectRows.get(button.closest('[data-project-id]').dataset.projectId);
   if (!row || button.disabled || projectOpening.has(row.id)) return;
-  const action = button.dataset.projectAction, opening = action === 'open' || action === 'preview' || action === 'review';
+  const action = button.dataset.projectAction, opening = action === 'open' || action === 'preview' || action === 'review' || action === 'check';
   button.disabled = true;
   if (opening){ projectOpening.add(row.id); renderProjects(); }
   try {
@@ -5450,6 +7174,13 @@ async function projectClick(e){
     case 'open':
       await switchProject(row, () => loadProjectScene(row.snapshot));
       break;
+    case 'check': {
+      const result = row.id === activeProjectId ? {ok:true} : await switchProject(row, () => loadProjectScene(row.snapshot));
+      if (!result.ok) break;
+      closeProjects();
+      enterCheck();
+      break;
+    }
     case 'preview': {
       const result = row.result || await projectResult(row);
       const current = projectRows.get(row.id);
@@ -5459,7 +7190,7 @@ async function projectClick(e){
         {...row, reviewApplied:Boolean(impState.reviewApplied)}, () => {
           state = {...defaultState(), renders:[]};
           return applyPlan(plan, {furniture, clearFurniture:true, freshState:true, history:false});
-        }), {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'preview'});
+        }), {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'preview', rowId:row.id});
       break;
     }
     case 'review': {
@@ -5474,6 +7205,7 @@ async function projectClick(e){
         {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'project', rowId:row.id});
       break;
     }
+    case 'attach-source': projectOpenSource(row); break;
     case 'rerun': await projectReviewAgain(row); break;
     case 'cancel': {
       const response = await fetch(studioPath(`/api/jobs/${encodeURIComponent(row.jobId)}`), {method:'DELETE'});
@@ -6618,19 +8350,24 @@ function visibleWallHeight(wall, cut){
 function openingTop(rect, walls, cut){
   // 洞口与相邻墙段的端点相接。有实测高度时，过梁与较低的一侧对齐。
   const along = rect[2] - rect[0] >= rect[3] - rect[1] ? 0 : 1, across = 1 - along;
-  const adjacent = walls.filter(w => !w[6] && (w[along + 2] === rect[along] || w[along] === rect[along + 2])
-    && w[across] < rect[across + 2] && w[across + 2] > rect[across]);
-  return adjacent.some(w => w[5] !== undefined) ? Math.min(...adjacent.map(w => visibleWallHeight(w, cut))) : cut;
+  const adjacent = walls.filter(w => w.rect && (w.rect[along + 2] === rect[along] || w.rect[along] === rect[along + 2])
+    && w.rect[across] < rect[across + 2] && w.rect[across + 2] > rect[across]);
+  return adjacent.some(w => w.height !== undefined) ? Math.min(...adjacent.map(w => visibleWallHeight(w, cut))) : cut;
 }
 
 function windowSills(windows, bayAreas, topY){
   // 相接且绕过圆角的同一排窗应有连续的下沿，留出图纸测量误差。
-  const sills = windows.map(r => bayAreas.some(b => overlaps(r, b)) ? .45 : (Math.abs(r[1] - topY) < 60 ? 1.4 : .9));
-  if (!windows.some(r => r[4])) return sills;
+  const sills = windows.map(w => {
+    const r = w.rect || curveBounds(windowCurve(w));
+    return bayAreas.some(b => overlaps(r, b)) ? .45 : (Math.abs(r[1] - topY) < 60 ? 1.4 : .9);
+  });
+  if (!windows.some(w => !w.rect)) return sills;
 
   const tolerance = 20, buckets = new Map();
   const bucketKey = (x, y) => `${x}:${y}`;
-  const ends = windows.map(([x0, y0, x1, y1, curve], index) => {
+  const ends = windows.map((w, index) => {
+    const curve = windowCurve(w), rect = w.rect;
+    const [x0, y0, x1, y1] = rect || curveBounds(curve);
     const points = curve ? [curvePoint(curve, 0), curvePoint(curve, 1)]
       : (x1-x0 >= y1-y0 ? [[x0, (y0+y1)/2], [x1, (y0+y1)/2]]
         : [[(x0+x1)/2, y0], [(x0+x1)/2, y1]]);
@@ -6645,7 +8382,7 @@ function windowSills(windows, bayAreas, topY){
 
   const visited = new Set();
   windows.forEach((window, index) => {
-    if (!window[4] || visited.has(index)) return;
+    if (window.rect || visited.has(index)) return;
     const run = [index];
     visited.add(index);
     for (let queue = 0; queue < run.length; queue++){
@@ -6702,7 +8439,7 @@ function buildArch(){
   doorG.clear(); lastDoorVisibility = -Infinity;
   clearGroup(archFloor); clearGroup(archUp); lampG.clear(); doors.length = 0; colliders = [];
   const top = opt.cut;
-  const walls = WALLS.filter((_, i) => !state.demolished.includes('w'+i));
+  const walls = WALLS.filter(w => !state.demolished.includes(w.id));
   // 阴影相机跟着方案大小走，换大户型也不会被裁掉
   const ext = Math.max(BOUNDS.w, BOUNDS.h) / 2000 + 3;
   Object.assign(sun.shadow.camera, {left:-ext, right:ext, top:ext, bottom:-ext, near:1, far:ext*4});
@@ -6726,18 +8463,18 @@ function buildArch(){
   });
   [...DOORS, ...SLIDES].forEach(d => { const [x0, y0, x1, y1] = d.rect; const s = box(M(x1-x0), .012, M(y1-y0), mat('#d8d0c0', {roughness:.3}), wx((x0+x1)/2), 0, wz((y0+y1)/2)); s.castShadow = false; archFloor.add(s); });
   walls.forEach(w => {
-    const height = visibleWallHeight(w, top), curve = w[6];
+    const height = visibleWallHeight(w, top), curve = wallCurve(w), rect = wallRect(w);
     if (curve) curvedWall(curve, 0, height);
-    else wallBox(w, 0, height);
-    colliders.push([wx(w[0]), wz(w[1]), wx(w[2]), wz(w[3]), curve]);
+    else wallBox(w.rect, 0, height);
+    colliders.push([wx(rect[0]), wz(rect[1]), wx(rect[2]), wz(rect[3]), curve]);
   });
   // 飘窗洞口上方过梁（洞口由房间轮廓短边推导）
   bayRuns.forEach(([r, h]) => wallBox(r, h, top));
-  const topY = Math.min(...WALLS.map(w => w[1]), ...WINS.map(w => w[1]));
+  const topY = Math.min(...WALLS.map(w => wallRect(w)[1]), ...WINS.map(w => (w.rect || curveBounds(windowCurve(w)))[1]));
   const sills = windowSills(WINS, bayAreas, topY);
-  WINS.forEach((r, i) => {
+  WINS.forEach((win, i) => {
     const sill = sills[i], head = 2.4;
-    const curve = r[4];
+    const curve = windowCurve(win), r = win.rect || curveBounds(curve);
     colliders.push([wx(r[0]), wz(r[1]), wx(r[2]), wz(r[3]), curve]);
     if (curve){ curvedWindow(curve, sill, head, top); return; }
     const windowTop = openingTop(r, walls, top);
@@ -6750,14 +8487,14 @@ function buildArch(){
       mu.position.set(cx + (hz ? t : 0), sill + gh/2, cz + (hz ? 0 : t)); mu.castShadow = true; archUp.add(mu); }
     [sill + .02, gTop - .02].forEach(y => { const tr = new THREE.Mesh(new THREE.BoxGeometry(hz ? L : .06, .04, hz ? .06 : L), frameMat); tr.position.set(cx, y, cz); archUp.add(tr); });
   });
-  DOORS.forEach((d, i) => {
+  DOORS.forEach(d => {
     const doorTop = openingTop(d.rect, walls, top);
     const lintel = wallBox(d.rect, 2.1, doorTop);
     const pivot = new THREE.Group(), L = M(d.len), dh = Math.min(2.05, doorTop);
     pivot.position.set(wx(d.h[0]), 0, wz(d.h[1]));
     const leaf = box(L, dh, .04, mat(d.entry ? '#6b4f3a' : '#efe6d8', {roughness:.5}), L/2);
     const a0 = Math.atan2(-d.c[1], d.c[0]), a1 = Math.atan2(-d.o[1], d.o[0]);
-    const turn = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)), key = `swing-${i}`;
+    const turn = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)), key = `swing-${d.id}`;
     const door = addDoor({key, name:d.name, open:previousDoors.get(key) ?? true, rect:d.rect, height:dh,
       move: t => { pivot.rotation.y = a0 + turn*t; },
       blocks(x, z, r){
@@ -6775,12 +8512,13 @@ function buildArch(){
     }
     archUp.add(pivot);
   });
-  SLIDES.forEach(({rect, v}, i) => {
+  SLIDES.forEach(slide => {
+    const {rect, v, id} = slide;
     const [x0, y0, x1, y1] = rect, head = v ? 2.4 : 2.1, slideTop = openingTop(rect, walls, top);
     const lintel = wallBox(rect, head, slideTop);
     const L = M(v ? y1-y0 : x1-x0), ph = Math.min(head, slideTop), pl = L*.55;
     const start = v ? wz(y0) : wx(x0), across = v ? wx((x0+x1)/2) : wz((y0+y1)/2);
-    const axis = v ? 'z' : 'x', travel = L - pl, key = `slide-${i}`;
+    const axis = v ? 'z' : 'x', travel = L - pl, key = `slide-${id}`;
     const panels = [-.02, .02].map(off => {
       const group = new THREE.Group();
       group.position[v ? 'x' : 'z'] = across + off;

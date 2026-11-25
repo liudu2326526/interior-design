@@ -119,7 +119,13 @@ async function main(){
     assert(Array.isArray(p.walls), 'walls 不是数组（' + typeName(p.walls) + '）');
     const r0 = p.rooms[0];
     ctx.roomId = r0 && r0.id;
-    return 'rooms=' + p.rooms.length + '，walls=' + p.walls.length + '，首个房间=' + ctx.roomId;
+    assert(p.version === 2, 'getPlan() 不是 Plan V2（version=' + p.version + '）');
+    assert(p.walls.every(w => w && typeof w.id === 'string' && (Array.isArray(w.rect) || Array.isArray(w.from))), '墙体不是带 id 的 V2 对象');
+    const checks = S.getChecks();
+    assert(checks.count === 0, '默认空户型不应有待确认问题：' + checks.issues.map(issue => issue.code + ' ' + issue.message).join('；'));
+    const status = win().document.querySelector('#checkStatus');
+    assert(status && status.hidden, '没有问题时状态带应隐藏');
+    return 'rooms=' + p.rooms.length + '，walls=' + p.walls.length + '，首个房间=' + ctx.roomId + '，初始检查 0 处';
   });
 
   await check('applyOps.setRoom', () => {
@@ -247,7 +253,7 @@ async function main(){
       const active = S.getPlan();
       assert(active.walls[1].height === 2300 && active.wins[0].sweep === 90 && active.rooms[0].arcs[0].edge === 0, '圆弧字段未保留');
       assert(active.bounds.y < -414 && active.bounds.x + active.bounds.w > 2414, '方案范围未包含圆弧外缘');
-      assert(doc.querySelector('#gWalls rect') && doc.querySelector('#gWalls path[data-wall="w1"]'), '二维墙体应同时绘制直线和弧线');
+      assert(doc.querySelector('#gWalls rect') && doc.querySelector('#gWalls path[data-wall="' + active.walls[1].id + '"]'), '二维墙体应同时绘制直线和弧线');
       assert(doc.querySelectorAll('#gOpen path').length === 3, '圆弧窗缺少外轮廓或框线');
       assert(/A[\d.]+/.test(doc.querySelector('#gRooms path[data-room="curved"]').getAttribute('d')), '房间边界未绘制圆弧');
       assert(doc.querySelector('#subtitle').textContent.includes('4.57 m²'), '房间面积应包含圆弧弓形');
@@ -255,6 +261,100 @@ async function main(){
     } finally { S.undo(); }
     assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original), '撤销未恢复原方案');
     return '弧形墙窗、房间轮廓、面积、存储和撤销';
+  });
+
+  await check('importDrawing.fileDrop', () => {
+    const w = win(), doc = w.document;
+    const drop = doc.querySelector('#impDrop'), title = doc.querySelector('#impDropTitle');
+    const start = doc.querySelector('#impStart'), list = doc.querySelector('#impFiles');
+    const send = (target, type, dataTransfer, relatedTarget = null) => {
+      const event = new w.DragEvent(type, {bubbles:true, cancelable:true, dataTransfer, relatedTarget});
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const files = new w.DataTransfer();
+    files.items.add(new w.File(['drawing'], '户型.png', {type:'image/png'}));
+    files.items.add(new w.File(['pdf'], '补充图纸.pdf', {type:'application/pdf'}));
+    assert(w.impOpen(), '无法打开导入窗口');
+    try {
+      assert(start.disabled, '导入窗口打开时应等待文件');
+      const text = new w.DataTransfer();
+      text.setData('text/plain', '备注');
+      assert(!send(drop, 'dragover', text) && !drop.classList.contains('drag-over'), '普通文本应由浏览器原样处理');
+      assert(send(title, 'dragover', files) && drop.classList.contains('drag-over'), '文件拖入时应高亮投放区');
+      send(title, 'dragleave', files, drop);
+      assert(drop.classList.contains('drag-over'), '在投放区内部移动时应保持高亮');
+      assert(send(doc.body, 'drop', files) && !drop.classList.contains('drag-over'), '拖到外部时应取消高亮并阻止页面跳转');
+      assert(start.disabled && !list.children.length, '外部投放不应添加文件');
+      assert(send(title, 'drop', files) && !drop.classList.contains('drag-over'), '投放后应清除高亮');
+      assert(list.children.length === 2 && list.textContent.includes('户型.png') && list.textContent.includes('补充图纸.pdf'), '应同时列出拖入的文件');
+      assert(!start.disabled && doc.querySelector('#impProg').hidden, '拖入仅选中文件，应等待用户点击上传');
+      const empty = new w.DataTransfer();
+      empty.items.add(new w.File([], '空文件.png'));
+      send(drop, 'drop', empty);
+      assert(list.children.length === 2 && doc.querySelector('#impErr').classList.contains('on'), '拖入文件应沿用空文件检查');
+      list.querySelector('button').click();
+      list.querySelector('button').click();
+      assert(start.disabled && !list.children.length, '移除文件后应重新等待选择');
+      send(drop, 'dragover', files);
+    } finally {
+      w.impClose();
+    }
+    assert(!drop.classList.contains('drag-over') && !send(doc.body, 'dragover', files), '关闭后应清除高亮并恢复页面拖放');
+    return '拖入多个文件、投放反馈、文件移除与手动提交';
+  });
+
+  await check('importReview.attachOriginal', async () => {
+    const w = win(), doc = w.document, S = studio();
+    const live = JSON.stringify(S.projectJSON());
+    const id = 'attach-review-test', oldId = 'import-00000000-0000-4000-8000-000000000001';
+    const newId = 'import-00000000-0000-4000-8000-000000000002';
+    const snapshot = S.projectJSON();
+    const row = {id, jobId:oldId, name:'补传测试', phase:'saved', snapshot, sourceAvailable:false, reviewEnabled:true,
+      createdAt:Date.now(), updatedAt:Date.now()};
+    const fetch = w.fetch, XHR = w.XMLHttpRequest;
+    const rows = w.eval('projectRows');
+    let attachment, requested;
+    w.fetch = (url, options) => {
+      if (!String(url).endsWith('/' + newId + '/review')) return fetch(url, options);
+      requested = {method:options.method, body:JSON.parse(options.body)};
+      return Promise.resolve(new w.Response('{"ok":true}', {status:202}));
+    };
+    w.XMLHttpRequest = class {
+      upload = {};
+      open(method, url){ this.method = method; this.url = url; }
+      setRequestHeader(){}
+      send(data){
+        attachment = {method:this.method, url:this.url, body:JSON.parse(data)};
+        this.status = 200;
+        this.responseText = JSON.stringify({id:newId, sourceAvailable:true, reviewEnabled:true});
+        w.queueMicrotask(() => this.onload());
+      }
+    };
+    try {
+      await w.putProject(row);
+      assert(w.projectActions(row).includes('补传原图'), '缺少原图的项目应提供补传入口');
+      w.projectOpenSource(row);
+      assert(doc.querySelector('#impTitle').textContent === '补传原图', '应打开补传原图窗口');
+      const dataTransfer = new w.DataTransfer();
+      dataTransfer.items.add(new w.File(['test drawing'], '原图.png', {type:'image/png'}));
+      doc.querySelector('#impDrop').dispatchEvent(new w.DragEvent('drop', {bubbles:true, cancelable:true, dataTransfer}));
+      doc.querySelector('#impStart').click();
+      assert(await waitFor(() => requested && rows.get(id)?.review?.state === 'pending', 3000), '保存后应开始后台复核');
+      assert(attachment.method === 'POST' && attachment.url.endsWith('/' + oldId + '/source'), '应补传至原有任务关联');
+      assert(attachment.body.files[0].name === '原图.png' && attachment.body.result.plan.name === snapshot.plan.name, '补传应同时提供原图和恢复所需的快照');
+      const linked = rows.get(id);
+      assert(linked.jobId === newId && linked.oldJobs.includes(oldId) && linked.sourceAvailable, '应将原项目关联到恢复后的任务');
+      assert(requested.method === 'POST' && requested.body.result.plan.name === snapshot.plan.name, '应复核现有方案');
+      assert(JSON.stringify(linked.snapshot) === JSON.stringify(snapshot) && JSON.stringify(S.projectJSON()) === live, '补传和复核不应改动方案');
+    } finally {
+      w.fetch = fetch;
+      w.XMLHttpRequest = XHR;
+      w.eval('clearTimeout(projectTimer)');
+      rows.delete(id);
+      w.impClose();
+    }
+    return '拖入原图，恢复过期关联，复核现有方案并保留编辑';
   });
 
   await check('importReview.furnitureGeometry', () => {
@@ -305,7 +405,9 @@ async function main(){
     ]}]);
     assert(res.applied === 1 && res.skipped === 0, '多对象修改失败：' + res.errors.join('；'));
     try {
-      assert(JSON.stringify(S.getPlan().walls.at(-1)) === JSON.stringify(wall), '墙高没有保存');
+      const savedWall = S.getPlan().walls.at(-1);
+      assert(savedWall && Array.isArray(savedWall.rect) && savedWall.rect.join(',') === wall.slice(0,4).join(',') &&
+        savedWall.kind === wall[4] && savedWall.height === wall[5] && typeof savedWall.id === 'string', '墙高没有保存');
       assert(S.getState().rooms[room].name === '联动修改', '房间没有更新');
       assert(S.getState().furniture.some(item => item.name === component.name && item.id && item.parts.length === 1), '自定义构件没有生成');
       const at = JSON.stringify(S.projectJSON());
@@ -322,6 +424,371 @@ async function main(){
     return '保留墙高，联动修改房间与构件，无效补丁不落盘，统一撤销';
   });
 
+  await check('plan.v1Migration', () => {
+    const S = studio(), w = win();
+    const v1 = {
+      version:1, name:'迁移自测',
+      walls:[[0,0,4000,200,'e'],[4000,0,4400,3000,'n',2600]],
+      wins:[[1000,0,1600,200]],
+      doors:[{name:'入户门',rect:[3000,0,3800,200],h:[3000,0],c:[0,1],o:[1,0],len:800,entry:true}],
+      slides:[{rect:[100,2000,400,2800],v:true}],
+      rooms:[{id:'r',name:'房',poly:[[0,200],[4000,200],[4000,3000],[0,3000]],mat:'wood'}],
+      materials:{},
+    };
+    const result = S.applyPlan(v1);
+    assert(result.ok, 'V1 方案迁移失败：' + (result.errors || []).join('；'));
+    try {
+      const p1 = S.getPlan();
+      assert(p1.version === 2, '迁移后 version=' + p1.version);
+      assert(p1.walls.length === 2 && p1.wins.length === 1 && p1.doors.length === 1 && p1.slides.length === 1,
+        '迁移后数量不对：walls=' + p1.walls.length + ' wins=' + p1.wins.length);
+      const ids = [...p1.walls, ...p1.wins, ...p1.doors, ...p1.slides].map(item => item.id);
+      assert(ids.every(id => typeof id === 'string' && id), '迁移后对象缺少稳定 id');
+      assert(new Set(ids).size === ids.length, '迁移后 id 不唯一');
+      assert(p1.walls[1].kind === 'n' && p1.walls[1].height === 2600, '墙类型 / 高度未保留');
+      assert(p1.doors[0].len === 800 && p1.doors[0].entry === true, '门字段未保留');
+      assert(p1.wins[0].rect.join(',') === '1000,0,1600,200' && !('sill' in p1.wins[0]), '窗几何或迁移期空字段不对');
+      const stored = JSON.parse(w.localStorage.getItem('interior-plan-v1'));
+      assert(stored.version === 2 && stored.walls[0].id === p1.walls[0].id, '保存未写 V2');
+      const again = S.normalizePlan(v1).plan;
+      assert(JSON.stringify(again.walls.map(item => item.id)) === JSON.stringify(p1.walls.map(item => item.id)),
+        '同一输入重复迁移 id 不稳定');
+      const twice = S.normalizePlan(p1).plan;
+      assert(JSON.stringify(twice) === JSON.stringify(p1), 'V2 方案校验不幂等');
+    } finally { S.undo(); }
+    return '墙体 / 窗 / 门 / 推拉门数量与 id 稳定，保存写 V2';
+  });
+
+  await check('checks.windowMove', () => {
+    const S = studio(), w = win(), doc = w.document;
+    ctx.beforeChecks = JSON.stringify(S.projectJSON());
+    const plan = {
+      name:'校核自测',
+      walls:[[0,0,1000,200,'e'],[1400,0,2400,200,'e'],[0,200,200,2000,'e'],[2400,200,2600,2000,'e'],[0,2000,2600,2200,'e']],
+      wins:[[1000,0,1400,200]],
+      rooms:[{id:'r1',name:'房',poly:[[200,200],[2400,200],[2400,2000],[200,2000]],mat:'wood'}],
+    };
+    assert(S.applyPlan(plan).ok, '校核方案加载失败');
+    const before = S.getChecks();
+    ctx.checkBaseline = before.count;
+    assert(!before.all.some(issue => issue.code === 'opening-join'),
+      '初始窗应已衔接，实际：' + before.all.map(issue => issue.code).join(','));
+    assert(before.issues.every(issue => issue.code && issue.severity && Array.isArray(issue.objects) && issue.objects.length),
+      '检查结果缺少 code / severity / 对象引用');
+    const moved = S.applyOps([{op:'editScene', changes:[
+      {action:'replace', path:['plan','wins',0,'rect'], value:[400,0,800,200]},
+    ]}]);
+    assert(moved.applied === 1 && moved.skipped === 0, '移动窗失败：' + (moved.errors || []).join('；'));
+    const after = S.getChecks();
+    assert(after.all.some(issue => issue.code === 'opening-join'), '窗离开墙段后应报洞口衔接');
+    assert(after.count > before.count, '待确认数量没有增加：' + before.count + ' → ' + after.count);
+    assert(doc.querySelectorAll('#gCheck circle').length >= 1, '2D 画布缺少检查角标');
+    const status = doc.querySelector('#checkStatus');
+    assert(status && !status.hidden && /处待确认/.test(status.textContent), '顶部状态带未显示待确认数量');
+    return '角标 ' + doc.querySelectorAll('#gCheck circle').length + ' 个，状态带「' + status.textContent + '」';
+  });
+
+  await check('checks.undo', () => {
+    const S = studio(), doc = win().document;
+    assert(S.getPlan().wins[0].rect.join(',') === '400,0,800,200', '前置：窗应已被移动');
+    S.undo();
+    const movedWin = S.getPlan().wins[0];
+    assert(movedWin.rect.join(',') === '1000,0,1400,200', '撤销后窗位置未恢复：' + movedWin.rect.join(','));
+    const checks = S.getChecks();
+    assert(!checks.all.some(issue => issue.code === 'opening-join'), '撤销后洞口衔接问题应消失');
+    assert(checks.count === ctx.checkBaseline, '撤销后待确认数量应回到基线：' + checks.count + ' ≠ ' + ctx.checkBaseline);
+    assert(!doc.querySelector('#gCheck circle'), '撤销后角标应清空');
+    S.undo();
+    assert(JSON.stringify(S.projectJSON()) === ctx.beforeChecks, '撤销校核方案后未回到原项目');
+    return '窗位置、待确认数量与角标都随一步撤销恢复';
+  });
+
+  await check('checks.rules', () => {
+    const S = studio();
+    const room = {id:'r', name:'房', poly:[[0,200],[3000,200],[3000,2000],[0,2000]], mat:'wood'};
+    const base = (walls, extra) => ({name:'检查规则', walls, rooms:[room], ...(extra || {})});
+    const codes = new Set();
+    const add = plan => S.checkPlan(plan).forEach(issue => codes.add(issue.code));
+
+    add(base([[0,0,1000,200,'e'],[1400,0,2400,200,'e']], {wins:[[500,0,900,200]]}));
+    add(base([[0,0,1000,200,'e'],[1400,0,2400,200,'e']], {wins:[[1000,0,1400,200],[1000,0,1500,200]]}));
+    add(base([[0,0,3000,200,'e'],[0,200,200,2000,'e'],[3000,200,3200,2000,'e']],
+      {rooms:[{id:'r', name:'房', poly:[[200,200],[3000,200],[3000,1900],[200,1900]], mat:'wood'}]}));
+    add(base([
+      {id:'a', rect:[0,0,1000,200], kind:'e', source:'drawing'},
+      {id:'b', rect:[1000,0,3000,200], kind:'e', source:'drawing'},
+      {id:'c', rect:[3000,0,3500,200], kind:'e', source:'drawing'},
+    ], {dims:[
+      {id:'d1', source:'user', from:{kind:'wall',id:'a',face:'left',point:[0,100]}, to:{kind:'wall',id:'b',face:'left',point:[1000,100]}, axis:'x', locked:'none'},
+      {id:'d2', source:'user', from:{kind:'wall',id:'b',face:'left',point:[1000,100]}, to:{kind:'wall',id:'c',face:'left',point:[3000,100]}, axis:'x', locked:'none'},
+      {id:'d3', source:'user', from:{kind:'wall',id:'a',face:'left',point:[0,100]}, to:{kind:'wall',id:'c',face:'left',point:[3500,100]}, axis:'x', locked:'none'},
+    ]}));
+    add(base([{from:[0,0], to:[1000,0], sweep:90, thickness:100, kind:'n'}], {}));
+    add(base([[0,0,3000,200,'e']], {rooms:[{...room, counted:false}]}));
+
+    const expected = ['opening-join','opening-overlap','room-edge','dim-chain','arc-join','bay-window'];
+    const missing = expected.filter(code => !codes.has(code));
+    assert(!missing.length, '未触发的检查规则：' + missing.join(',') + '（实际：' + [...codes].join(',') + '）');
+
+    S.ignoreCheck('demo-check-key');
+    assert(S.getChecks().ignores.includes('demo-check-key'), '忽略集合未记录 key');
+    S.restoreCheck('demo-check-key');
+    assert(!S.getChecks().ignores.includes('demo-check-key'), '恢复后忽略集合仍有 key');
+    return '六条规则均能触发；忽略 / 恢复可用';
+  });
+
+  await check('check.dimMove', () => {
+    const S = studio(), w = win();
+    const plan = {
+      name:'尺寸联动自测',
+      walls:[
+        {id:'wl', rect:[0,0,200,3000], kind:'e', source:'drawing'},
+        {id:'wr', rect:[3000,0,3200,3000], kind:'e', source:'drawing'},
+        {id:'wt', rect:[0,0,3200,200], kind:'e', source:'drawing'},
+        {id:'wb', rect:[0,3000,3200,3200], kind:'e', source:'drawing'},
+      ],
+      wins:[{id:'win1', rect:[3000,1000,3200,1800], source:'ai'}],
+      rooms:[{id:'r1', name:'房', poly:[[200,200],[3000,200],[3000,3000],[200,3000]], mat:'tile800', source:'drawing'}],
+      dims:[{id:'d1', source:'drawing', from:{kind:'wall', id:'wl', face:'right', point:[200,1500]},
+        to:{kind:'wall', id:'wr', face:'left', point:[3000,1500]}, axis:'x', locked:'from', drawingValue:2800}],
+    };
+    assert(S.applyPlan(plan).ok, '尺寸联动方案加载失败');
+    ctx.dimBefore = JSON.stringify(S.projectJSON());
+    const areaBefore = 7.84;
+    const res = S.setDimValue('d1', 4000);
+    assert(res.ok, '改尺寸失败：' + (res.error || ''));
+    const p = S.getPlan();
+    const wr = p.walls.find(item => item.id === 'wr');
+    assert(wr && wr.rect.join(',') === '4200,0,4400,3000', '终点墙没有移动：' + (wr && wr.rect.join(',')));
+    const winItem = p.wins.find(item => item.id === 'win1');
+    assert(winItem && winItem.rect.join(',') === '4200,1000,4400,1800', '门窗未随墙移动：' + (winItem && winItem.rect.join(',')));
+    const room = p.rooms.find(item => item.id === 'r1');
+    const moved = room.poly.filter(pt => pt[0] === 4200).length;
+    assert(moved === 2, '房间轮廓未随墙面更新：' + JSON.stringify(room.poly));
+    const areaAfter = room.poly.reduce((sum, [x], i, a) => {
+      const [nx, ny] = a[(i + 1) % a.length], [, y] = a[i];
+      return sum + x * ny - nx * y;
+    }, 0) / 2 / 1e6;
+    assert(Math.abs(Math.abs(areaAfter) - 11.2) < .01, '面积未重算：' + Math.abs(areaAfter));
+    assert(areaAfter > areaBefore, '面积应增大');
+    const stored = JSON.parse(w.localStorage.getItem('interior-plan-v1'));
+    assert(stored.walls.find(item => item.id === 'wr').rect.join(',') === '4200,0,4400,3000', '改尺寸未写回 V2 存储');
+    return '墙 3000→4200，窗随动，房间面积 7.84→11.20 m²，已保存';
+  });
+
+  await check('check.dimUndo', () => {
+    const S = studio();
+    assert(S.getPlan().walls.find(item => item.id === 'wr').rect[0] === 4200, '前置：终点墙应已移动');
+    S.undo();
+    assert(JSON.stringify(S.projectJSON()) === ctx.dimBefore, '一步撤销未恢复墙体、门窗、房间与尺寸');
+    const dim = S.getPlan().dims.find(item => item.id === 'd1');
+    assert(Math.round(Math.abs(dim.to.point[0] - dim.from.point[0])) === 2800, '撤销后尺寸未回到 2800');
+    S.undo();
+    assert(S.getPlan().name !== '尺寸联动自测', '撤销两次应回到上一份方案');
+    return '一步撤销恢复墙 / 窗 / 房间 / 尺寸';
+  });
+
+  await check('check.illegalSave', () => {
+    const S = studio(), w = win();
+    const plan = {
+      name:'非法状态自测',
+      walls:[{id:'wl', rect:[0,0,200,3000], kind:'e'}, {id:'wr', rect:[3000,0,3200,3000], kind:'e'},
+        {id:'wt', rect:[0,0,3200,200], kind:'e'}, {id:'wb', rect:[0,3000,3200,3200], kind:'e'}],
+      wins:[{id:'win1', rect:[1000,0,1600,200], source:'ai'}],
+      rooms:[{id:'r1', name:'房', poly:[[200,200],[3000,200],[3000,3000],[200,3000]], mat:'tile800'}],
+    };
+    assert(S.applyPlan(plan).ok, '非法状态方案加载失败');
+    ctx.illegalBefore = JSON.stringify(S.projectJSON());
+    const moved = S.applyOps([{op:'editScene', changes:[
+      {action:'replace', path:['plan','wins',0,'rect'], value:[600,900,1000,1100]},
+    ]}]);
+    assert(moved.applied === 1, '拖动窗（离开墙面）不应被阻断');
+    const stored = JSON.parse(w.localStorage.getItem('interior-plan-v1'));
+    assert(stored.wins[0].rect.join(',') === '600,900,1000,1100', '非法状态没有随方案保存');
+    const gate = S.exportGate();
+    assert(gate.requiresConfirm && gate.count > 0, '导出前应要求确认未解决项');
+    assert(gate.issues.some(text => /洞口|opening/i.test(text)), '未解决项应包含洞口衔接：' + gate.issues.join(' / '));
+    S.undo();
+    return '窗被拖离墙面仍可保存；导出前列出 ' + gate.count + ' 项并要求确认';
+  });
+
+  await check('check.estimate', () => {
+    const S = studio(), w = win();
+    const plan = {
+      name:'估算转正自测',
+      walls:[{id:'wl', rect:[0,0,200,2000], kind:'e'}, {id:'wr', rect:[2800,0,3000,2000], kind:'e'},
+        {id:'wt', rect:[0,0,3000,200], kind:'e'}, {id:'wb', rect:[0,1800,3000,2000], kind:'e'}],
+      rooms:[{id:'r1', name:'房', poly:[[200,200],[2800,200],[2800,1800],[200,1800]], mat:'tile800'}],
+      dims:[{id:'d1', source:'ai', estimated:true, drawingValue:2600, from:{kind:'wall', id:'wl', face:'right', point:[200,1000]},
+        to:{kind:'wall', id:'wr', face:'left', point:[2800,1000]}, axis:'x', locked:'none'}],
+    };
+    assert(S.applyPlan(plan).ok, '估算方案加载失败');
+    assert(S.getPlan().dims[0].estimated === true, '估算标记未保留');
+    const labels = [...win().document.querySelectorAll('#gDims text')].map(t => t.textContent).join(' ');
+    assert(labels.includes('≈2600'), '画布未显示 ≈ 估算标记：' + labels);
+    S.confirmDim('d1');
+    const dim = S.getPlan().dims[0];
+    assert(!dim.estimated && dim.source === 'user', '确认后估算标记未转正');
+    const stored = JSON.parse(w.localStorage.getItem('interior-plan-v1'));
+    assert(!stored.dims[0].estimated && stored.dims[0].source === 'user', '转正未写回存储');
+    S.undo();
+    assert(S.getPlan().dims[0].estimated === true, '转正应可撤销');
+    S.undo();
+    return '≈ 标记显示、确认后转正并持久化，可撤销';
+  });
+
+  await check('check.dimChoice', () => {
+    const S = studio();
+    const plan = {
+      name:'两端可选自测',
+      walls:[{id:'wl', rect:[0,0,200,2000], kind:'e'}, {id:'wr', rect:[2800,0,3000,2000], kind:'e'},
+        {id:'wt', rect:[0,0,3000,200], kind:'e'}, {id:'wb', rect:[0,1800,3000,2000], kind:'e'}],
+      rooms:[{id:'r1', name:'房', poly:[[200,200],[2800,200],[2800,1800],[200,1800]], mat:'tile800'}],
+      dims:[{id:'d1', source:'user', from:{kind:'wall', id:'wl', face:'right', point:[200,1000]},
+        to:{kind:'wall', id:'wr', face:'left', point:[2800,1000]}, axis:'x', locked:'none'}],
+    };
+    assert(S.applyPlan(plan).ok, '两端可选方案加载失败');
+    const first = S.setDimValue('d1', 3000);
+    assert(!first.ok && first.needChoice, '两端都可动时应先让用户选择：' + JSON.stringify(first));
+    assert(S.getPlan().walls.find(item => item.id === 'wr').rect[0] === 2800, '未选择前不应移动墙体');
+    const chosen = S.setDimValue('d1', 3000, {end:'to'});
+    assert(chosen.ok, '选择移动终点侧后应成功：' + (chosen.error || ''));
+    assert(S.getPlan().walls.find(item => item.id === 'wr').rect[0] === 3000, '终点墙未按选择移动');
+    S.undo();
+    assert(S.getPlan().walls.find(item => item.id === 'wr').rect[0] === 2800, '撤销后墙体未恢复');
+    S.undo();
+    return '两端可动时返回 needChoice，指定端后移动，可撤销';
+  });
+
+  await check('check.layers', () => {
+    const S = studio(), w = win(), doc = w.document;
+    const plan = {
+      name:'校核图层自测',
+      walls:[{id:'wl', rect:[0,0,200,2000], kind:'e'}, {id:'wr', rect:[2800,0,3000,2000], kind:'e'},
+        {id:'wt', rect:[0,0,3000,200], kind:'e'}, {id:'wb', rect:[0,1800,3000,2000], kind:'e'}],
+      wins:[{id:'win1', rect:[1200,0,1800,200], style:'casement', source:'ai'}],
+      rooms:[{id:'r1', name:'房', poly:[[200,200],[2800,200],[2800,1800],[200,1800]], mat:'tile800'}],
+    };
+    assert(S.applyPlan(plan).ok, '校核图层方案加载失败');
+    ctx.layerBefore = JSON.stringify(S.projectJSON());
+    assert(!S.isChecking(), '初始不应处于校核图层');
+    S.enterCheck();
+    assert(S.isChecking(), 'enterCheck 未进入校核图层');
+    assert(!doc.querySelector('#checkDone').hidden && !doc.querySelector('#dimAdd').hidden, '校核按钮未出现');
+    assert(doc.querySelector('#gDims').getAttribute('pointer-events') === 'all', '尺寸图层不可交互');
+    const res = S.addDim({x:200,y:1000},{x:2800,y:1000});
+    assert(res.ok && res.dim && S.getPlan().dims.length === 1, '新增尺寸失败');
+    assert(Math.round(Math.abs(res.dim.to.point[0]-res.dim.from.point[0])) === 2600, '新尺寸量测值不对');
+    S.select({kind:'dim', id:res.dim.id});
+    assert(doc.querySelector('#dimValue') && doc.querySelector('.dim-compare'), '尺寸面板缺少原图 / 模型 / 差');
+    assert(S.exitCheck(true) === true && !S.isChecking(), '退出校核失败');
+    S.undo();
+    assert(JSON.stringify(S.projectJSON()) === ctx.layerBefore, '撤销未恢复校核前状态');
+    return '进入 / 退出图层、新增尺寸、面板与一步撤销正常';
+  });
+
+  await check('check.panels', () => {
+    const S = studio(), w = win(), doc = w.document;
+    const plan = {
+      name:'结构面板自测',
+      walls:[{id:'wl', rect:[0,0,200,2000], kind:'e'}, {id:'wr', rect:[2800,0,3000,2000], kind:'e'},
+        {id:'wt', rect:[0,0,3000,200], kind:'e'}, {id:'wb', rect:[0,1800,3000,2000], kind:'e'}],
+      doors:[{id:'d1', name:'门', rect:[1200,0,1800,200], h:[1200,0], c:[0,1], o:[1,0], len:600}],
+      rooms:[{id:'r1', name:'房', poly:[[200,200],[2800,200],[2800,1800],[200,1800]], mat:'tile800'}],
+    };
+    assert(S.applyPlan(plan).ok, '结构面板方案加载失败');
+    ctx.panelBefore = JSON.stringify(S.projectJSON());
+    S.enterCheck();
+    S.select({kind:'wall', id:'wl'});
+    assert(doc.querySelector('#wKind') && doc.querySelector('#wThick') && doc.querySelector('#wHeight') && doc.querySelector('#wConvertArc'),
+      '直墙面板缺少类型 / 厚度 / 高度 / 转弧');
+    doc.querySelector('#wKind').value = 'b';
+    doc.querySelector('#wKind').dispatchEvent(new w.Event('change', {bubbles:true}));
+    assert(S.getPlan().walls.find(item => item.id === 'wl').kind === 'b', '直墙类型未改');
+    doc.querySelector('#wOpen').click();
+    const afterOpen = S.getPlan();
+    assert(afterOpen.wins.length === 1 && afterOpen.walls.length === 5, '实墙开窗未拆分墙体：' + afterOpen.walls.length + ' 墙 / ' + afterOpen.wins.length + ' 窗');
+    S.select({kind:'wall', id:'wr'});
+    doc.querySelector('#wConvertArc').click();
+    const arc = S.getPlan().walls.find(item => item.id === 'wr');
+    assert(arc && !arc.rect && arc.from && arc.sweep, '直墙转弧墙失败');
+    S.select({kind:'wall', id:'wr'});
+    doc.querySelector('#wConvertArc').click();
+    const straight = S.getPlan().walls.find(item => item.id === 'wr');
+    assert(straight && straight.rect, '弧墙转直墙失败');
+    S.select({kind:'win', id:afterOpen.wins[0].id});
+    doc.querySelector('#winSolid').click();
+    assert(S.getPlan().wins.length === 0, '窗转实墙失败');
+    S.select({kind:'door', id:'d1'});
+    assert(doc.querySelector('#doorName') && doc.querySelector('#doorEntry'), '门面板字段缺失');
+    const bay = S.addBayWindow('r1', 1, 600);   // 右侧竖边
+    assert(bay.ok && S.getPlan().rooms.length === 2, '新增飘窗模块失败');
+    const bayRoom = S.getPlan().rooms.find(item => item.counted === false);
+    assert(bayRoom && bayRoom.bay && bayRoom.bay.sill === 450, '飘窗房间缺窗台高');
+    assert(S.getPlan().wins.length >= 3, '飘窗应有三个窗段');
+    S.exitCheck(true);
+    for (let n = 0; n < 12 && JSON.stringify(S.projectJSON()) !== ctx.panelBefore; n++) S.undo();
+    assert(JSON.stringify(S.projectJSON()) === ctx.panelBefore, '结构编辑撤销未恢复');
+    return '墙类型 / 开窗拆墙 / 弧直互换 / 窗转墙 / 门面板 / 飘窗模块均可用';
+  });
+
+  await check('check.entries', () => {
+    const doc = win().document;
+    assert(doc.querySelector('#impCheck'), '导入结果页缺少「校核图纸」按钮');
+    assert(/校核/.test(doc.querySelector('#impCheck').textContent), '导入页按钮文案不对');
+    doc.querySelector('#projectToggle').click();
+    const button = doc.querySelector('#projectList [data-project-action="check"]');
+    assert(button, '项目列表当前项目缺少「校核」按钮');
+    doc.querySelector('#projectToggle').click();
+    return '导入结果页与项目列表均有校核入口';
+  });
+
+  await check('plan.125c', async () => {
+    const S = studio(), before = JSON.stringify(S.projectJSON());
+    const data = await fetch('../data/125c-plan.json').then(response => response.json());
+    const result = S.applyPlan(data);
+    assert(result.ok, '125-C 示例迁移失败：' + (result.errors || []).join('；'));
+    try {
+      const p = S.getPlan();
+      assert(p.walls.length === data.walls.length && p.wins.length === data.wins.length,
+        '迁移后墙 / 窗数量不对：' + p.walls.length + ' / ' + p.wins.length);
+      const checks = S.getChecks();
+      assert(checks.all.every(issue => issue.key && Array.isArray(issue.objects) && issue.objects.every(o => o.id)),
+        '检查结果缺少 key 或对象引用');
+      ctx.sampleChecks = checks.all.map(issue => issue.code);
+    } finally { S.undo(); }
+    assert(JSON.stringify(S.projectJSON()) === before, '125-C 示例撤销未恢复原项目');
+    return 'walls=' + data.walls.length + '，wins=' + data.wins.length + '，检查 ' + ctx.sampleChecks.length + ' 处：' +
+      [...new Set(ctx.sampleChecks)].join(',');
+  });
+
+  await check('plan.legacyStorage', async () => {
+    const w = win();
+    const v1 = {
+      version:1, name:'旧本地方案',
+      walls:[[0,0,3000,200,'e'],[3000,0,3400,2400,'n']],
+      wins:[[800,0,1400,200]],
+      rooms:[{id:'old',name:'旧房间',poly:[[0,200],[3000,200],[3000,2400],[0,2400]],mat:'wood'}],
+      materials:{},
+    };
+    w.localStorage.setItem('interior-plan-v1', JSON.stringify(v1));
+    w.localStorage.setItem('interior-state-v1', JSON.stringify({furniture:[], rooms:{}, demolished:['w0'], measures:[]}));
+    w.location.reload();
+    const ready = await waitFor(() => w.Studio && typeof w.Studio.getPlan === 'function' &&
+      w.document.readyState === 'complete' && w.Studio.getPlan()?.rooms?.length, 15000, 50);
+    assert(ready, '重载后 window.Studio 未就绪');
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const S = studio();
+    const p = S.getPlan(), st = S.getState();
+    assert(p.version === 2, '旧 localStorage 方案未迁移为 V2（version=' + p.version + '）');
+    assert(p.walls.length === 2 && p.wins.length === 1, '旧方案墙 / 窗数量不对：' + p.walls.length + ' / ' + p.wins.length);
+    assert(typeof p.walls[0].id === 'string' && p.walls[0].rect.join(',') === '0,0,3000,200', '旧墙体未对象化');
+    assert(st.demolished.length === 1 && st.demolished[0] === p.walls[0].id, '旧拆除下标未映射到墙体 id');
+    const stored = JSON.parse(w.localStorage.getItem('interior-plan-v1'));
+    assert(stored.version === 2 && typeof stored.walls[0].id === 'string', '迁移结果未写回 localStorage');
+    return '旧 localStorage 的 Plan 与拆除下标已迁移并写回 V2';
+  });
+
   await check('shot.png', () => {
     const S = studio();
     return Promise.resolve(S.shot({scale:1, clean:true})).then(url => {
@@ -336,7 +803,7 @@ async function main(){
     const S = studio();
     const v = S.is3D();
     assert(typeof v === 'boolean', 'is3D() 返回 ' + typeName(v) + '，期望 boolean');
-    return 'is3D() = ' + v;
+    return 'is3D() = ' + v + '，View3D=' + typeof win().View3D;
   });
 
   finished = true;

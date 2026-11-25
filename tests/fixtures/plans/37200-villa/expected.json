@@ -1,0 +1,23 @@
+{
+  "id": "37200-villa",
+  "name": "37200 弧形露台户型",
+  "units": "mm",
+  "bounds": { "width": 37200, "heightLeft": 16950, "heightRight": 15800 },
+  "chains": {
+    "top": [6000, 8650, 4250, 2150, 2050, 3000, 3400, 4800, 2900],
+    "bottom": [6000, 5550, 2050, 10000, 1400, 3300, 3200, 2800, 2900],
+    "left": [1500, 8500, 4200, 2750],
+    "right": [1500, 5500, 3100, 1000, 4700]
+  },
+  "features": {
+    "terraces": { "min": 2, "note": "左右各一，转角为弧形玻璃" },
+    "garden": { "min": 1 },
+    "stairs": { "min": 1 },
+    "elevators": { "min": 2 },
+    "bayWindows": { "min": 2, "note": "右侧卧室，弧形飘窗" },
+    "arcWalls": { "min": 2 },
+    "arcWins": { "min": 1 },
+    "rooms": { "min": 8 }
+  },
+  "tolerances": { "bounds": 300, "chain": 50, "roomWidth": 60 }
+}
