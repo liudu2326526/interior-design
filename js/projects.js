@@ -9,12 +9,17 @@
   const projectEndpoint = App.core.studioPath('/api/jobs/plan-import');
   const projectActiveKey = 'interior-active-project-v1' + App.core.projectScope;
   const projectRows = new Map();
+  const jobProgress = new Map();
   const projectOpening = new Set();
   const projectPanel = App.core.$('#projectPanel'), projectToggle = App.core.$('#projectToggle'), projectList = App.core.$('#projectList');
   const projectPending = row => row.phase === 'queued' || row.phase === 'running';
+  const projectReview = row => row?.review && typeof row.review === 'object' ? row.review : null;
+  const projectReviewPending = row => ['pending', 'running'].includes(projectReview(row)?.state);
+  const projectBusy = row => projectPending(row) || projectReviewPending(row);
   const projectAi = App.core.PUBLIC_ACCESS !== 'guest' && /^https?:$/.test(location.protocol);
   let activeProjectId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
   let projectTimer = 0, projectSyncing = false, projectSyncAgain = false;
+  let renderedProjectRows = '';
 
   const projectDb = new Promise(resolve => {
     try {
@@ -131,8 +136,6 @@
     return new Intl.DateTimeFormat(App.core.LANG === 'en' ? 'en' : App.core.LANG === 'zht' ? 'zh-TW' : 'zh-CN',
       {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}).format(value);
   }
-  // 自动复核：job.review 由任务列表 / 复核接口同步；旧行可能没有这个字段
-  const projectReview = row => row?.review && typeof row.review === 'object' ? row.review : null;
   // 应用修正时记录的现场指纹：户型的可比较投影（渲染记录等无关字段不参与）。
   function sceneSignature(snapshot){
     return JSON.stringify({
@@ -163,13 +166,61 @@
       if (row.phase === 'done') return differ;
       if (row.phase === 'saved' && row.jobId && !projectReviewApplied(row)) return differ;
     }
-    if ((review.state === 'pending' || review.state === 'running') &&
-        (row.phase === 'done' || (row.phase === 'saved' && row.jobId)))
-      return row.phase === 'done'
-        ? App.core.tr('识别完成，正在对照原图复核…', 'Recognition finished. Comparing with the source drawing…')
-        : App.core.tr('正在对照原图复核，完成后会提示是否有差异。', 'Comparing with the source drawing. You will be told if anything differs.');
     return '';
   }
+
+  const progressSteps = {
+    queued:[1, '等待任务开始', 'Waiting its turn'],
+    preparing:[2, '正在准备图纸', 'Preparing the drawing'],
+    'waiting-model':[2, '正在等待模型响应', 'Waiting for the model'],
+    recognizing:[3, '模型正在识别图纸', 'Analyzing the drawing'],
+    comparing:[3, '模型正在对照原图', 'Comparing with the source'],
+    validating:[4, '正在校验并保存结果', 'Validating and saving'],
+    done:[4, '识别结果已就绪', 'Recognition complete'],
+    failed:[0, '图纸识别失败', 'Recognition failed'],
+    canceled:[0, '图纸识别已取消', 'Recognition canceled'],
+    unavailable:[0, '未能完成图纸复核', 'Review unavailable'],
+  };
+
+  function projectProgress(row){
+    const {tr, esc} = App.core;
+    const progress = jobProgress.get(row.jobId), review = projectReview(row);
+    const reviewing = projectReviewPending(row);
+    const reviewFinished = progress?.review && ['match', 'differ', 'unavailable'].includes(review?.state);
+    const isReview = reviewing || reviewFinished;
+    if (!isReview && !projectPending(row) && !(progress?.import && row.phase !== 'saved')) return '';
+    const snapshot = isReview ? progress?.review : progress?.import;
+    const active = isReview ? reviewing : projectPending(row);
+    const fallback = isReview ? {pending:'queued', running:'comparing', unavailable:'unavailable'}[review.state] || 'done'
+      : {running:'recognizing'}[row.phase] || row.phase;
+    const stage = active && Object.hasOwn(progressSteps, snapshot?.stage) ? snapshot.stage : fallback;
+    if (!Object.hasOwn(progressSteps, stage)) return '';
+    const [step, zh, en] = progressSteps[stage];
+    const category = isReview ? tr('图纸复核', 'Drawing review') : tr('图纸识别', 'Drawing recognition');
+    const title = isReview && stage === 'done' ? tr('图纸复核已完成', 'Review complete') : tr(zh,en);
+    const steps = [tr('排队','Queue'), tr('准备','Prepare'), isReview ? tr('复核','Compare') : tr('识别','Analyze'), tr('校验','Validate')];
+    const badge = active ? tr(`阶段 ${step}/${steps.length}`, `Step ${step}/${steps.length}`)
+      : stage === 'done' ? tr('已完成','Complete') : stage === 'canceled' ? tr('已取消','Canceled') : tr('未完成','Incomplete');
+    const began = isReview ? review.updatedAt : row.startedAt || row.createdAt;
+    const mins = Math.max(0, Math.floor((Date.now() - (began || Date.now())) / 60000));
+    const time = mins ? tr(`已用 ${mins} 分钟`, `${mins} min elapsed`) : tr('已用不到 1 分钟', 'Less than 1 min elapsed');
+    const recognitionSummary = reviewing && row.phase === 'done' && !snapshot?.message && progress?.import?.message;
+    const output = recognitionSummary || snapshot?.message;
+    const message = typeof output === 'string' ? output.trim().slice(0,600) : '';
+    const outputLabel = recognitionSummary ? tr('识别摘要','Recognition summary')
+      : stage === 'done' ? tr('模型摘要','Model summary') : tr('模型进展','Model update');
+    const range = stage === 'done' || active ? ` aria-valuenow="${step}"` : '';
+    return `<section class="project-progress${isReview ? ' is-review' : ''}${step === 0 ? ' is-ended' : ''}" aria-label="${esc(category)}">
+      <div class="project-progress-head"><div><span class="project-progress-label">${esc(category)}</span>
+        <strong>${esc(title)}</strong></div><span class="project-progress-badge">${esc(badge)}</span></div>
+      <div class="project-progress-track" role="progressbar" aria-label="${esc(category)}" aria-valuemin="0" aria-valuemax="${steps.length}"${range} aria-valuetext="${esc(`${badge} · ${title}`)}">
+        ${steps.map((label, i) => `<span class="project-progress-step${stage === 'done' || i + 1 < step ? ' is-done' : i + 1 === step ? ' is-active' : ''}" aria-hidden="true">${esc(label)}</span>`).join('')}
+      </div>
+      ${active ? `<div class="project-progress-time">${esc(time)}</div>` : ''}
+      ${message ? `<div class="project-progress-output"><span>${esc(outputLabel)}</span><p>${esc(message)}</p></div>` : ''}
+    </section>`;
+  }
+
   function projectStatus(row){
     if (row.id === activeProjectId) return [App.core.tr('当前项目', 'Current'), 'is-ready'];
     if (projectOpening.has(row.id)) return [App.core.tr('打开中', 'Opening'), 'is-running'];
@@ -189,19 +240,13 @@
       const count = (row.snapshot?.state?.furniture || row.result?.furniture || []).length;
       return App.core.tr(`${rooms.length} 个房间 · ${count} 件家具与构件`, `${rooms.length} rooms · ${count} furnishings and components`);
     }
-    if (projectPending(row)){
-      const minutes = Math.max(0, Math.floor((Date.now() - (row.startedAt || row.createdAt)) / 60000));
-      return row.phase === 'queued'
-        ? App.core.tr('正在等待识别，可继续编辑当前项目。', 'Waiting its turn. You can keep editing.')
-        : App.core.tr(`识别已运行${minutes < 1 ? '不到 1' : ' ' + minutes} 分钟，可继续编辑。`, `Analyzing for ${minutes < 1 ? 'less than 1' : minutes} min. You can keep editing.`);
-    }
     return row.error || (row.phase === 'canceled' ? App.core.tr('图纸识别已停止。', 'Drawing recognition was canceled.') : '');
   }
   function projectActions(row){
     const button = (action, label, primary = false) =>
       `<button type="button" class="btn${primary ? ' primary' : ''}" data-project-action="${action}" ${projectOpening.has(row.id) ? 'disabled' : ''}>${App.core.esc(label)}</button>`;
     const review = projectReview(row);
-    const reviewBusy = review?.state === 'pending' || review?.state === 'running';
+    const reviewBusy = projectReviewPending(row);
     // 只要不是正在复核，就给一个主动触发的入口（包括已有差异、复核失败、还没复核）。
     const rerunButton = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy
       ? button('rerun', App.core.tr('重新复核', 'Run review again')) : '';
@@ -218,7 +263,7 @@
   function renderProjects(){
     const rows = [...projectRows.values()].filter(row => !row.hidden).sort((a, b) =>
       Number(b.id === activeProjectId) - Number(a.id === activeProjectId) || b.updatedAt - a.updatedAt);
-    const pending = rows.filter(projectPending).length, count = App.core.$('#projectCount');
+    const pending = rows.filter(projectBusy).length, count = App.core.$('#projectCount');
     count.hidden = pending === 0;
     count.textContent = pending > 99 ? '99+' : String(pending);
     projectToggle.setAttribute('aria-label', pending
@@ -229,27 +274,30 @@
       ? App.core.tr('浏览器存储不可用，项目请及时导出备份。', 'Browser storage is unavailable. Export projects to keep a copy.') : '');
     warning.hidden = !warning.textContent;
     App.core.$('#projectEmpty').hidden = rows.length > 0;
-    const expanded = new Set([...projectList.querySelectorAll('details[open]')].map(el => el.dataset.projectId));
+    const expanded = new Map([...projectList.children].map(el => [el.dataset.projectId, el.open]));
     const focus = document.activeElement, focusRow = focus?.closest('[data-project-id]')?.dataset.projectId;
     const scroll = projectList.scrollTop;
-    projectList.innerHTML = rows.map(row => {
+    const markup = rows.map(row => {
       const [status, tone] = projectStatus(row), detail = projectDetails(row), note = projectReviewMessage(row);
       const review = projectReview(row);
       const chip = row.jobId && review?.state === 'differ' && !projectReviewApplied(row) &&
         (row.phase === 'done' || row.phase === 'saved')
         ? `<span class="project-chip is-diff">${App.core.esc(App.core.tr('有差异', 'Differences'))}</span>`
-        : row.jobId && (review?.state === 'pending' || review?.state === 'running') &&
+        : row.jobId && projectReviewPending(row) &&
           (row.phase === 'done' || row.phase === 'saved')
           ? `<span class="project-chip is-review">${App.core.esc(App.core.tr('复核中', 'Reviewing'))}</span>` : '';
       const icon = projectPending(row) || projectOpening.has(row.id) ? 'project-spinner' : 'project-folder';
-      return `<details class="project-row" data-project-id="${App.core.esc(row.id)}" ${expanded.has(row.id) ? 'open' : ''}>
+      return `<details class="project-row" data-project-id="${App.core.esc(row.id)}" ${(expanded.get(row.id) ?? projectBusy(row)) ? 'open' : ''}>
       <summary class="project-row-head"><span class="project-row-icon" aria-hidden="true"><i class="${icon}"></i></span>
         <span class="project-row-title"><b title="${App.core.esc(row.name)}">${App.core.esc(row.name)}</b><span class="project-row-meta">${App.core.esc(projectFormatTime(row.createdAt || row.updatedAt))}</span></span>
         <span class="project-status ${tone}">${App.core.esc(status)}</span>${chip}</summary>
       <div class="project-row-body">${detail ? `<p class="project-row-message">${App.core.esc(detail)}</p>` : ''}
-        ${note ? `<p class="project-row-message">${App.core.esc(note)}</p>` : ''}
+        ${projectProgress(row)}${note ? `<p class="project-row-note">${App.core.esc(note)}</p>` : ''}
         <div class="project-row-actions">${projectActions(row) || ''}</div></div></details>`;
     }).join('');
+    if (markup === renderedProjectRows) return;
+    renderedProjectRows = markup;
+    projectList.innerHTML = markup;
     projectList.scrollTop = scroll;
     if (focusRow){
       const node = [...projectList.children].find(el => el.dataset.projectId === focusRow);
@@ -295,14 +343,17 @@
         if ([...projectRows.values()].some(row => row.oldJobs?.includes(job.id))) continue;
         const prev = [...projectRows.values()].find(row => row.jobId === job.id);
         if (prev?.hidden) continue;
-        const review = job.review && typeof job.review === 'object' ? job.review : null;
+        const {progress, review:rawReview, ...meta} = job;
+        const {progress:reviewProgress, ...reviewMeta} = rawReview ?? {};
+        const review = rawReview && typeof rawReview === 'object' ? reviewMeta : null;
+        jobProgress.set(job.id, {import:progress, review:reviewProgress});
         // 已打开的项目保留本地快照，只按 jobId 合并最新的复核状态
         if (prev?.snapshot){
           const latest = job.review === undefined ? (prev.review ?? null) : review;
           if (!sameReview(prev.review, latest)) await putProject({...prev, review:latest});
           continue;
         }
-        const row = {...job, ...prev, id:prev?.id || job.id, jobId:job.id,
+        const row = {...meta, ...prev, id:prev?.id || job.id, jobId:job.id,
           phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt,
           review:job.review === undefined ? (prev?.review ?? null) : review};
         if ((job.phase === 'done' && !row.result) || (job.phase === 'failed' && !row.error)){
@@ -320,6 +371,7 @@
           await putProject({...row, phase:'failed', error:App.core.tr('这条任务记录已过期，请重新导入。','This job expired. Import the drawing again.')});
         }
       }
+      for (const id of jobProgress.keys()) if (!seen.has(id)) jobProgress.delete(id);
       projectSyncIssue = '';
     } catch(e){
       projectSyncIssue = e instanceof TypeError || e.name === 'TimeoutError'
@@ -327,21 +379,26 @@
     } finally {
       projectSyncing = false;
       renderProjects();
-      const pending = [...projectRows.values()].some(projectPending);
+      const pending = [...projectRows.values()].some(row => !row.hidden && projectBusy(row));
       const again = projectSyncAgain; projectSyncAgain = false;
-      if (again || pending || !projectPanel.hidden) scheduleProjectSync(again ? 0 : (pending ? 3500 : 12000));
+      const activePanel = !document.hidden && !projectPanel.hidden;
+      if (again || pending || activePanel){
+        scheduleProjectSync(again ? 0 : pending && activePanel ? 1500 : pending && !document.hidden ? 5000 : 12000);
+      }
     }
   }
 
   async function projectImportSubmitted({jobId, name, note, retryId}){
     await projectBoot;
     const prev = projectRows.get(retryId) || projectRows.get(jobId);
+    const id = prev?.id || jobId;
     await putProject({
-      id:prev?.id || jobId, jobId, name:name.replace(/\.[a-z\d]{1,8}$/i, '') || name, note,
+      id, jobId, name:name.replace(/\.[a-z\d]{1,8}$/i, '') || name, note,
       oldJobs:prev?.jobId && prev.jobId !== jobId ? [...(prev.oldJobs || []), prev.jobId] : prev?.oldJobs,
       phase:'queued', createdAt:Date.now(), updatedAt:Date.now(),
     });
     renderProjects(); scheduleProjectSync(0);
+    return id;
   }
   // 手动触发一次复核：服务端异步跑模型回合，结果通过任务列表的 review 字段回传。
   async function projectReviewAgain(row){
@@ -357,6 +414,8 @@
     if (response.status === 202){
       const current = projectRows.get(row.id);
       if (current && current.jobId === row.jobId && !current.hidden && sameReview(current.review, row.review)){
+        const progress = jobProgress.get(row.jobId);
+        if (progress) jobProgress.set(row.jobId, {...progress, review:null});
         await putProject({...current, review:{...(current.review || {}), state:'pending', count:0, updatedAt:Date.now()}});
         renderProjects();
       }
@@ -443,14 +502,22 @@
     projectToggle.setAttribute('aria-expanded','false');
     if (returnFocus) projectToggle.focus({preventScroll:true});
   }
-  projectToggle.onclick = () => {
-    if (!projectPanel.hidden) return closeProjects();
+  function openProjects(expandId){
     App.core.$('details.menu').open = false;
     App.panel.closeDrawers();
     projectPanel.hidden = false;
     projectToggle.setAttribute('aria-expanded','true');
+    const findRow = () => [...projectList.children].find(el => el.dataset.projectId === expandId);
+    const row = expandId && findRow();
+    if (row) row.open = true;
     resizeProjects(); renderProjects(); scheduleProjectSync(0);
-  };
+    if (expandId){
+      const expanded = findRow();
+      expanded?.scrollIntoView({block:'nearest'});
+      expanded?.querySelector('summary')?.focus({preventScroll:true});
+    }
+  }
+  projectToggle.onclick = () => projectPanel.hidden ? openProjects() : closeProjects();
   App.core.$('#projectClose').onclick = () => closeProjects(true);
   App.core.$('#projectNew').onclick = startBlankProject;
   App.core.$('#projectImport').onclick = () => { closeProjects(); App.importer.impOpen(); };
@@ -499,7 +566,7 @@
 
   Object.assign(App.projects, {
     projectEndpoint, projectRows, putProject, openNewProject, sceneSignature, renderProjects,
-    projectImportSubmitted,
+    projectImportSubmitted, openProjects,
   });
   Object.defineProperties(App.projects, {
     activeProjectId: {get: () => activeProjectId},

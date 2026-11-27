@@ -253,3 +253,51 @@ test('setReview merges into the manifest atomically and is listed with the job',
   assert.equal(meta.review.count, 3);
   assert.equal(await store.setReview('remote', job.id, { state: 'match' }), null);
 });
+
+test('keeps review progress separate from result version and resets it on a rerun', async t => {
+  let entered;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { store, directory } = await fixture(t, async (body, context) => ({
+    ...await success(body, context),
+    after: async ({ onProgress, updateReview }) => {
+      onProgress('preparing');
+      onProgress('waiting-model');
+      entered = true;
+      await gate;
+      await updateReview({ state: 'running' });
+      onProgress('comparing', '正在比较外墙。');
+      onProgress('validating', '外墙与原图一致。');
+      await updateReview({ state: 'match', updatedAt: 123 });
+    },
+  }));
+  const { id } = await submit(store, 'local', '复核进度');
+  await until(() => entered);
+  const { review: waiting } = await store.get('local', id, 1);
+  assert.equal(waiting.state, 'pending');
+  assert.equal(waiting.progress.stage, 'waiting-model');
+  await store.setReviewProgress('remote', id, 'validating', '未经许可更新');
+  assert.deepEqual((await store.get('local', id, 1)).review, waiting);
+
+  release();
+  const finished = await until(async () => {
+    const { review } = await store.get('local', id, 1);
+    return review.state === 'match' && review;
+  });
+  assert.equal(finished.updatedAt, 123);
+  assert.equal(finished.progress.stage, 'done');
+  assert.equal(finished.progress.message, '外墙与原图一致。');
+  assert.ok(finished.progress.updatedAt > 123);
+
+  await store.setReview('local', id, { state: 'pending', updatedAt: 456 });
+  const { review: pending } = await store.get('local', id, 1);
+  assert.deepEqual(pending.progress, { stage: 'queued', updatedAt: 456 });
+  await store.setReviewProgress('local', id, 'preparing', '检查原始户型图');
+  const { review: preparing } = await store.get('local', id, 1);
+  assert.equal(preparing.progress.message, '检查原始户型图');
+  assert.equal(preparing.updatedAt, 456);
+  const saved = JSON.parse(await readFile(path.join(directory, id, 'job.json'), 'utf8'));
+  assert.equal(Object.hasOwn(saved.review, 'progress'), false);
+  await store.setReview('local', id, { state: 'unavailable' });
+  assert.equal((await store.get('local', id, 1)).review.progress.message, undefined);
+});

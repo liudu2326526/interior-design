@@ -156,17 +156,19 @@ test('checkPlan caps the pairwise room overlap scan for implausible room counts'
 });
 
 test('buildReviewMessage contains every required section and the output contract', () => {
+  const plan = { name: '示例', rooms: [{ id: 'living', name: '客厅' }] };
+  const furniture = [{ type: 'bed', name: '床', cx: 1, cy: 2, w: 3, d: 4, rot: 0 }];
   const message = buildReviewMessage({
-    plan: { name: '示例', rooms: [{ id: 'living', name: '客厅' }] },
-    furniture: [{ type: 'bed', name: '床', cx: 1, cy: 2, w: 3, d: 4, rot: 0 }],
+    plan,
+    furniture,
     explanation: '这是识别说明',
     note: '这是用户备注',
     check: [{ where: '门', detail: '位置不对' }],
     fileNames: ['a.png', 'b.pdf'],
   });
   assert.match(message, /识别说明（仅供参考，不作为修改依据）/);
-  assert.match(message, /"name": "示例"/);
-  assert.match(message, /"type": "bed"/);
+  const jsonBlocks = [...message.matchAll(/```json\n([^\n]+)\n```/g)];
+  assert.deepEqual(jsonBlocks.map(([, json]) => JSON.parse(json)), [plan, furniture]);
   assert.match(message, /这是识别说明/);
   assert.match(message, /这是用户备注/);
   assert.match(message, /门：位置不对/);

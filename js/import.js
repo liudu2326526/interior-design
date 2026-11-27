@@ -184,15 +184,16 @@
       impEls.cancel.disabled = true;
       impEls.close.disabled = true;
       impStatus(App.core.tr('正在保存项目记录…', 'Saving the project entry…'));
+      let rowId;
       try {
-        await App.projects.projectImportSubmitted({jobId, name, note, retryId});
+        rowId = await App.projects.projectImportSubmitted({jobId, name, note, retryId});
       } catch(e){
         void fetch(App.core.studioPath('/api/jobs/' + jobId), {method:'DELETE', keepalive:true}).catch(() => {});
         return impFail(App.core.tr('无法保存项目记录。', 'Could not save the project entry.'));
       }
       impUploadReady();
       impClose();
-      App.core.toast(App.core.tr('图纸已提交，在「项目」查看识别进度。', 'Drawing submitted. Check its progress in Projects.'));
+      App.projects.openProjects(rowId);
     };
     xhr.onerror = () => {
       if (impState.submission !== submission) return;
@@ -344,7 +345,7 @@
       if (impState.review.state === 'pending' || impState.review.state === 'running')
         impState.reviewTimer = setTimeout(tick, IMP_REVIEW_POLL);
     };
-    impState.reviewTimer = setTimeout(tick, IMP_REVIEW_POLL);
+    void tick();
   }
 
   async function impReviewRetry(){

@@ -12,7 +12,7 @@ const tool = {
   inputSchema: { type: 'object', properties: { prompt: { type: 'string' } }, required: ['prompt'] },
 };
 
-async function fixture(t, { dynamic = true, ...options } = {}) {
+async function fixture(t, { dynamic = true, commentary = false, ...options } = {}) {
   const cwd = await mkdtemp(path.join(tmpdir(), 'studio-tool-protocol-'));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const runner = path.join(cwd, 'codex.cjs');
@@ -20,6 +20,7 @@ async function fixture(t, { dynamic = true, ...options } = {}) {
     const readline = require('node:readline');
     const assert = require('node:assert/strict');
     const dynamic = ${JSON.stringify(dynamic)};
+    const commentary = ${JSON.stringify(commentary)};
     const send = (value) => console.log(JSON.stringify(value));
     const answer = (id, result) => send({ id, result });
     let turnRequest;
@@ -37,7 +38,28 @@ async function fixture(t, { dynamic = true, ...options } = {}) {
           break;
         case 'turn/start':
           if (!dynamic) {
-            answer(id, { turn: { id: 'turn', status: 'completed' } });
+            if (!commentary) {
+              answer(id, { turn: { id: 'turn', status: 'completed' } });
+              break;
+            }
+            answer(id, { turn: { id: 'turn', status: 'inProgress' } });
+            send({ method: 'turn/started', params: { threadId: 'thread', turn: { id: 'turn' } } });
+            const emit = (method, item, threadId = 'thread', turnId = 'turn') => send({
+              method, params: { threadId, turnId, item },
+            });
+            const update = { type: 'agentMessage', phase: 'commentary', id: 'progress', text: '核对外墙。' };
+            emit('item/started', update);
+            emit('item/completed', { ...update, text: '无关会话' }, 'other-thread');
+            emit('item/completed', { ...update, text: '无关回合' }, 'thread', 'other-turn');
+            emit('item/completed', { ...update, text: '隐藏消息', moderation: { display: { mode: 'hide' } } });
+            emit('item/completed', { type: 'reasoning', id: 'reason', text: '隐藏推理' });
+            emit('item/completed', { type: 'commandExecution', id: 'command', text: '原始命令' });
+            emit('item/completed', update);
+            emit('item/completed', { type: 'agentMessage', id: 'partial', phase: 'partial_answer', text: '部分答复' });
+            emit('item/completed', { type: 'agentMessage', id: 'legacy', text: '旧版答复' });
+            send({ method: 'item/agentMessage/delta', params: { threadId: 'thread', turnId: 'turn', delta: '原始增量' } });
+            emit('item/completed', { type: 'agentMessage', id: 'final', phase: 'final_answer', text: '{"verdict":"match"}' });
+            endTurn('completed');
             break;
           }
           turnRequest = id;
@@ -109,4 +131,14 @@ test('aborts an in-flight tool when interrupting the current turn', async (t) =>
 test('keeps the standard non-experimental handshake without tools', async (t) => {
   const session = await fixture(t, { dynamic: false });
   assert.equal((await session.runTurn({ input: [], timeoutMs: 2500 })).outcome, 'completed');
+});
+
+test('separates only explicit completed user-facing commentary from regular output', async (t) => {
+  const session = await fixture(t, { dynamic: false, commentary: true });
+  const events = [];
+  const result = await session.runTurn({ input: [], timeoutMs: 2500, onEvent: event => events.push(event) });
+  assert.equal(result.outcome, 'completed');
+  assert.deepEqual(events.filter(event => event.type === 'commentary'), [{ type: 'commentary', text: '核对外墙。' }]);
+  assert.deepEqual(events.filter(event => event.type === 'delta'), [{ type: 'delta', text: '原始增量' }]);
+  assert.ok(result.text.includes('{"verdict":"match"}'));
 });

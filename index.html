@@ -321,6 +321,29 @@ html:lang(en) .app > header{padding-inline-end:126px}
 .project-row-body{padding:8px 9px 10px 45px;color:#6f6254;border-top:1px solid #eee8de;font-size:12px;overflow-wrap:anywhere}
 .project-row-message,.project-row-note{margin:0;white-space:pre-wrap}
 .project-row-note{color:#776b5e}
+.project-progress{--progress-deep:#87502f;--progress-fill:#ad673e;--progress-pale:#f2e7db;--progress-line:#e9dbcd;
+  margin:8px 0;padding:10px 11px;border:1px solid var(--progress-line);border-radius:9px;
+  background:linear-gradient(160deg,#fcf7f0 0%,#fffefa 100%);line-height:1.45}
+.project-progress:first-child{margin-top:0}
+.project-progress.is-review{--progress-deep:#3b665b;--progress-fill:#52796e;--progress-pale:#e5eee9;--progress-line:#dbe6df;
+  background:linear-gradient(160deg,#f4f8f5 0%,#fdfffc 100%)}
+.project-progress.is-ended{--progress-deep:#8b483d;--progress-line:#ecd9d2;
+  background:linear-gradient(160deg,#fcf5f2 0%,#fffdfa 100%)}
+.project-progress-head{display:flex;align-items:flex-start;justify-content:space-between;gap:7px}
+.project-progress-label{display:block;color:var(--progress-deep);font-size:10px;font-weight:650}
+.project-progress-head strong{display:block;margin-top:2px;color:var(--ink);font-size:12px;font-weight:650;line-height:1.35}
+.project-progress-badge{flex:none;padding:2px 7px;border-radius:12px;background:var(--progress-pale);color:var(--progress-deep);
+  font-size:10px;font-weight:620;line-height:1.5;font-variant-numeric:tabular-nums}
+.project-progress-track{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:10px}
+.project-progress-step{display:flex;min-width:0;flex-direction:column;gap:4px;color:#74685c;font-size:10px;line-height:1.35}
+.project-progress-step::before{content:"";display:block;height:4px;border-radius:4px;background:var(--progress-pale)}
+.project-progress-step.is-done::before,.project-progress-step.is-active::before{background:var(--progress-fill)}
+.project-progress-step.is-active{color:var(--progress-deep);font-weight:650}
+.project-progress-step.is-active::before{animation:project-pulse 1.7s ease-in-out infinite}
+.project-progress-time{margin-top:6px;color:#74685c;font-size:10px;font-variant-numeric:tabular-nums}
+.project-progress-output{margin-top:8px;padding-top:7px;border-top:1px solid var(--progress-line)}
+.project-progress-output span{display:block;color:var(--progress-deep);font-size:10px;font-weight:650}
+.project-progress-output p{max-height:7.25em;overflow:auto;margin:2px 0 0;white-space:pre-wrap;scrollbar-width:thin}
 .project-row-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 .project-row-actions .btn:not(.primary){border:1px solid var(--line)}
 @media (pointer:coarse){
@@ -335,7 +358,7 @@ html:lang(en) .app > header{padding-inline-end:126px}
     right:calc(12px + env(safe-area-inset-right));left:calc(12px + env(safe-area-inset-left));
     width:auto;max-height:min(440px,60dvh);border-radius:16px}
 }
-@media (prefers-reduced-motion:reduce){#projectPanel,.project-spinner{animation:none}}
+@media (prefers-reduced-motion:reduce){#projectPanel,.project-spinner,.project-chip.is-review::before,.project-progress-step.is-active::before{animation:none}}
 .range span{font-variant-numeric:tabular-nums;color:var(--ink)}
 /* ---------- 选中后的浮动工具条 ---------- */
 #fab{position:absolute;left:50%;bottom:16px;transform:translate(-50%,12px);display:flex;align-items:center;gap:4px;padding:5px;
@@ -1053,9 +1076,9 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <script src="./js/panel.js?v=3"></script>
 <script src="./js/interact.js?v=5"></script>
 <script src="./js/io.js?v=4"></script>
-<script src="./js/import.js?v=3"></script>
+<script src="./js/import.js?v=4"></script>
 <script src="./js/assistant.js?v=3"></script>
-<script src="./js/projects.js?v=5"></script>
+<script src="./js/projects.js?v=6"></script>
 <script src="./js/tour.js"></script>
 <script src="./js/view3d-models.js?v=3"></script>
 <script src="./js/view3d.js?v=5"></script>

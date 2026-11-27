@@ -123,3 +123,44 @@ test('cancels queued and running work and retains actionable failures', async t 
   assert.equal(issue.status, 422);
   assert.equal(issue.error, '请补充横向尺寸。');
 });
+
+test('reports bounded owner-scoped import progress without rewriting the manifest', async t => {
+  let advance;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { store, directory } = await fixture(t, async (body, { onProgress }) => {
+    advance = onProgress;
+    await gate;
+    onProgress('validating', '已确认 2 个房间。');
+    return success(body);
+  });
+  const submitted = await submit(store, 'local', '进度测试');
+  assert.equal(submitted.progress.stage, 'queued');
+  await until(() => advance);
+  const preparing = await store.get('local', submitted.id, 0);
+  assert.equal(preparing.progress.stage, 'preparing');
+  advance('waiting-model');
+  advance('recognizing', '外墙\n已确认\u0000。' + '测试'.repeat(500));
+  advance('recognizing', '{"walls":[]}');
+  advance('waiting-model', '过期的更新');
+
+  const [listed] = await store.list('local');
+  assert.equal(listed.updatedAt, preparing.updatedAt);
+  assert.equal(listed.progress.stage, 'recognizing');
+  assert.match(listed.progress.message, /^外墙 已确认 。/);
+  assert.ok(listed.progress.message.length <= 360);
+  assert.equal(await store.get('remote', submitted.id, 0), null);
+  assert.deepEqual(await store.list('remote'), []);
+  const saved = JSON.parse(await readFile(path.join(directory, submitted.id, 'job.json'), 'utf8'));
+  assert.equal(Object.hasOwn(saved, 'progress'), false);
+
+  release();
+  const finished = await until(async () => {
+    const row = await store.get('local', submitted.id, 0);
+    return row.done && row;
+  });
+  advance('recognizing', '迟到的更新');
+  assert.deepEqual((await store.get('local', submitted.id, 1)).progress, finished.progress);
+  assert.equal(finished.progress.stage, 'done');
+  assert.equal(finished.progress.message, '已确认 2 个房间。');
+});

@@ -49,6 +49,8 @@ const REVIEW_TIMEOUT_MS = 10 * 60_000;
 const MAX_REVIEWS = 2;
 /** 复核默认开启；STUDIO_PLAN_REVIEW=off 时完全跳过（job.review 保持 null）。 */
 const PLAN_REVIEW_ENABLED = String(process.env.STUDIO_PLAN_REVIEW || '').trim().toLowerCase() !== 'off';
+const IMPORT_ARTIFACTS = ['plan.json', 'review-plan.png', 'review-note.json'];
+const DRAWING_PROGRESS_INSTRUCTIONS = '如果能发送独立的中途进度消息，请简短说明已完成的图纸核对。不要回显原始资料、工具输出或推理过程。最终答复仍遵守本任务的输出格式。';
 const MAX_CONCURRENT_TURNS = 4;
 const MAX_CHAT_SESSIONS = 6;
 const SSE_HEARTBEAT_MS = 15_000;
@@ -376,9 +378,9 @@ const rerunReviews = new Set();
 const reviewing = new Set();
 const importJobs = createImportJobs({
   directory: IMPORT_JOBS_DIR,
-  execute: async (body, { id, owner, workDirectory, signal }) => {
+  execute: async (body, { id, owner, workDirectory, signal, onProgress }) => {
     // 识别阶段不清理工作目录：复核需要原图和 plan.json。
-    const result = await analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: false });
+    const result = await analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: false, onProgress });
     if (result.status >= 400) {
       // 公网任务失败后不保留用户上传的文件。
       if (owner === 'remote') await fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {});
@@ -394,16 +396,19 @@ const importJobs = createImportJobs({
       await fsp.writeFile(path.join(workDirectory, 'review-note.json'),
         JSON.stringify({ note: body.note }), { mode: 0o600 }).catch(() => {});
     }
+    const { note } = body;
     return {
       ...result,
-      after: ({ signal: reviewSignal, updateReview, saveReview }) =>
+      after: ({ signal: reviewSignal, updateReview, saveReview, onProgress: onReviewProgress }) =>
         runPlanReview({
           workDirectory,
-          body,
+          body: { note },
           result: result.body,
+          preparedInputs: result.inputs,
           signal: reviewSignal,
           updateReview,
           saveReview,
+          onProgress: onReviewProgress,
         }).finally(() => (owner === 'remote'
           ? fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {})
           : undefined)),
@@ -1043,7 +1048,20 @@ async function handlePlanImport(req, res, publicRequest) {
   if (!controller.signal.aborted) sendJson(res, result.status, result.body);
 }
 
-async function analyzePlanImport({ files, note }, { id, importDir, signal, cleanup }) {
+function finalDrawingReply(turn) {
+  const finals = turn.items.filter(item => item?.type === 'agentMessage' && item.phase === 'final_answer' &&
+    typeof item.text === 'string' && item.text.trim());
+  return finals.length ? finals.map(item => item.text).join('\n\n') : turn.text;
+}
+
+function drawingCommentary(onProgress, stage) {
+  if (!onProgress) return undefined;
+  return event => {
+    if (event.type === 'commentary') onProgress(stage, event.text);
+  };
+}
+
+async function analyzePlanImport({ files, note }, { id, importDir, signal, cleanup, onProgress }) {
   const reply = (status, fields) => ({ status, body: { ...fields, id } });
   let activeSession = null;
   let stoppingSession = null;
@@ -1061,7 +1079,7 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
     const written = [];
     const images = [];
     const curveEvidence = [];
-    const used = new Set(['plan.json']);
+    const used = new Set(IMPORT_ARTIFACTS);
     for (let i = 0; i < files.length; i++) {
       signal.throwIfAborted();
       const buffer = decodeBase64(files[i].data);
@@ -1103,7 +1121,9 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
       .filter(Boolean)
       .join('\n\n');
 
-    const developerInstructions = await readPrompt('plan-import.md');
+    const prompt = await readPrompt('plan-import.md');
+    const developerInstructions = onProgress ? `${prompt}\n\n${DRAWING_PROGRESS_INSTRUCTIONS}` : prompt;
+    onProgress?.('waiting-model');
     const result = await limitTurns(async () => {
       signal.throwIfAborted();
       const session = await CodexSession.start({
@@ -1116,12 +1136,14 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
       activeSession = session;
       try {
         signal.throwIfAborted();
+        onProgress?.('recognizing');
         return await session.runTurn({
           input: [
             { type: 'text', text: message, text_elements: [] },
             ...images.map(({ file }) => ({ type: 'localImage', path: file })),
           ],
           timeoutMs: IMPORT_TIMEOUT_MS,
+          onEvent: drawingCommentary(onProgress, 'recognizing'),
         });
       } finally {
         activeSession = null;
@@ -1133,31 +1155,39 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
     if (result.outcome !== 'completed') {
       return reply(502, { error: result.error || 'codex 回合未正常完成（turn incomplete）' });
     }
+    onProgress?.('validating');
 
     let rawPlan = null;
     let summary = '';
+    const finalText = finalDrawingReply(result);
     try {
       rawPlan = JSON.parse(await fsp.readFile(path.join(importDir, 'plan.json'), 'utf8'));
-      summary = result.text.trim();
+      summary = finalText.trim();
     } catch {
-      rawPlan = extractJson(result.text);
+      rawPlan = extractJson(finalText);
     }
     if (!rawPlan) {
       return reply(422, {
         error: 'codex 没有产出可解析的 Plan（no Plan JSON produced）',
-        explanation: truncate(result.text, 2000),
+        explanation: truncate(finalText, 2000),
       });
     }
 
     const validated = validatePlan(rawPlan);
     if (!validated.ok) {
-      return reply(422, { error: validated.error, explanation: truncate(result.text, 2000) });
+      return reply(422, { error: validated.error, explanation: truncate(finalText, 2000) });
     }
 
-    if (typeof rawPlan.explanation === 'string' && rawPlan.explanation.trim()) summary = rawPlan.explanation.trim();
-    const explanation = summary ? truncate(summary, 4000) : summarizePlan(validated.plan);
+    const displaySummary = typeof rawPlan.explanation === 'string' ? rawPlan.explanation.trim() : '';
+    const reportedSummary = displaySummary || summary;
+    const modelSummary = summarizePlan(validated.plan);
+    const explanation = reportedSummary ? truncate(reportedSummary, 4000) : modelSummary;
     const furniture = validateImportedFurniture(rawPlan.furniture, validated.plan.bounds);
-    return reply(200, { plan: validated.plan, furniture, explanation });
+    onProgress?.('validating', displaySummary || modelSummary);
+    return {
+      ...reply(200, { plan: validated.plan, furniture, explanation }),
+      inputs: { names: written, images: images.map(({ file }) => file), curveEvidence },
+    };
   } catch (error) {
     if (error?.code === 'timeout' && error.message.startsWith('codex 响应超时')) {
       return reply(504, { error: '图纸识别超过 30 分钟，请尝试拆分图纸或重新提交。' });
@@ -1191,7 +1221,7 @@ async function collectReviewInputs(workDirectory, signal) {
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const name = entry.name;
-    if (name === 'plan.json' || name === 'review-plan.png' || name === 'review-note.json') continue;
+    if (IMPORT_ARTIFACTS.includes(name.toLowerCase())) continue;
     files.push({ name, file: path.join(workDirectory, name) });
   }
   files.sort((a, b) => a.name.localeCompare(b.name));
@@ -1229,7 +1259,7 @@ function describeCurveEvidence(evidence) {
  * 复核一次识别结果。复核失败一律静默：状态标记为 unavailable，不写 review.json。
  * 由 importJobs 的 after 钩子或 POST 重跑调用，不占用识别并发槽位。
  */
-async function runPlanReview({ workDirectory, body, result, signal, updateReview, saveReview }) {
+async function runPlanReview({ workDirectory, body, result, preparedInputs, signal, updateReview, saveReview, onProgress }) {
   const plan = result?.plan ?? null;
   const furniture = Array.isArray(result?.furniture) ? result.furniture : [];
   // 失败时清掉上一次的复核正文，只保留契约要求的 state / count / updatedAt。
@@ -1239,10 +1269,7 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
   }).catch(() => {});
 
   try {
-    await updateReview({
-      state: 'running', count: 0, updatedAt: Date.now(),
-      summary: undefined, issues: undefined, fixed: undefined, delta: undefined,
-    });
+    await onProgress('preparing');
     if (signal.aborted) return await unavailable();
 
     const probe = await getProbe();
@@ -1252,7 +1279,7 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
     await fsp.writeFile(rendered, renderPlanPng(plan), { mode: 0o600 });
     if (signal.aborted) return await unavailable();
 
-    const inputs = await collectReviewInputs(workDirectory, signal);
+    const inputs = preparedInputs ?? await collectReviewInputs(workDirectory, signal);
     const check = checkPlan(plan, furniture);
     const message = buildReviewMessage({
       plan,
@@ -1262,9 +1289,16 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
       check,
       fileNames: ['review-plan.png', ...inputs.names],
     }) + (inputs.curveEvidence.length ? '\n\n' + describeCurveEvidence(inputs.curveEvidence) : '');
-    const developerInstructions = await readPrompt('plan-verify.md');
+    const prompt = await readPrompt('plan-verify.md');
+    const developerInstructions = `${prompt}\n\n${DRAWING_PROGRESS_INSTRUCTIONS}`;
 
+    await onProgress('waiting-model');
     const turn = await reviewQueue(async () => {
+      signal.throwIfAborted();
+      await updateReview({
+        state: 'running', count: 0, updatedAt: Date.now(),
+        summary: undefined, issues: undefined, fixed: undefined, delta: undefined,
+      });
       signal.throwIfAborted();
       const session = await CodexSession.start({
         install: probe.install,
@@ -1280,6 +1314,7 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
       signal.addEventListener('abort', interrupt, { once: true });
       try {
         signal.throwIfAborted();
+        await onProgress('comparing');
         return await session.runTurn({
           input: [
             { type: 'text', text: message, text_elements: [] },
@@ -1287,6 +1322,7 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
             ...inputs.images.map(file => ({ type: 'localImage', path: file })),
           ],
           timeoutMs: REVIEW_TIMEOUT_MS,
+          onEvent: drawingCommentary(onProgress, 'comparing'),
         });
       } finally {
         signal.removeEventListener('abort', interrupt);
@@ -1297,7 +1333,8 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
     if (signal.aborted) return await unavailable();
     if (!turn || turn.outcome !== 'completed') return await unavailable();
 
-    const reviewed = parseReviewReply(turn.text, { plan, furniture });
+    await onProgress('validating');
+    const reviewed = parseReviewReply(finalDrawingReply(turn), { plan, furniture });
     const afterPlan = reviewed.fixed?.plan ?? plan;
     const afterFurniture = reviewed.fixed?.furniture ?? furniture;
     const review = {
@@ -1312,6 +1349,8 @@ async function runPlanReview({ workDirectory, body, result, signal, updateReview
     // 严格比较 true：saveReview 的契约是成功返回 true，undefined 不能被当成成功。
     const saved = await saveReview(review);
     if (saved !== true) return await unavailable();
+    await onProgress('validating', reviewed.summary || (reviewed.verdict === 'match'
+      ? '识别结果与原图相符。' : `复核发现 ${reviewed.issues.length} 项差异。`));
     await updateReview({ state: reviewed.verdict, count: reviewed.issues.length, updatedAt: review.updatedAt });
   } catch (error) {
     if (!(error?.name === 'ReviewParseError' || error?.code === 'timeout' ||
@@ -1376,6 +1415,9 @@ async function handlePlanReview(req, res, id, owner) {
         signal: controller.signal,
         updateReview: patch => importJobs.setReview(owner, id, patch),
         saveReview: review => importJobs.saveReview(owner, id, review),
+        onProgress: (stage, text) => {
+          if (!controller.signal.aborted) return importJobs.setReviewProgress(owner, id, stage, text);
+        },
       }).finally(() => {
         rerunReviews.delete(controller);
         reviewing.delete(id);
