@@ -38,6 +38,14 @@ async function until(check) {
   assert.fail('未等到预期状态（timed out waiting for state）');
 }
 
+function waitForInputCleanup(directory, id) {
+  // A job reports done before its worker finishes deleting the request file.
+  return until(() => stat(path.join(directory, id, 'input.json')).then(() => false, error => {
+    if (error.code === 'ENOENT') return true;
+    throw error;
+  }));
+}
+
 async function success(body, context) {
   await mkdir(context.workDirectory, { recursive: true });
   return { status: 200, body: { plan: { name: body.name } } };
@@ -317,7 +325,10 @@ test('keeps originals and results by owner and ID beyond both recent-list limits
   await until(async () => (await store.get('remote', first.id, 0)).done);
   const second = await submit(store, 'remote', '底图二');
   await until(async () => (await store.get('remote', second.id, 0)).done);
-  assert.deepEqual((await store.list('remote')).map(job => job.id), [second.id]);
+  await until(async () => {
+    const visible = await store.list('remote');
+    return visible.length === 1 && visible[0].id === second.id;
+  });
   assert.equal(await store.get('local', first.id, 0), null);
   assert.equal(await store.sourceDirectory('local', first.id), null);
   assert.deepEqual(await store.list('local', [first.id]), []);
@@ -370,6 +381,7 @@ test('migrates remaining legacy inputs, work, and recovered source directories b
   for (const name of ['旧请求', '旧工作区', '已恢复原件']) {
     const job = await submit(store, 'local', name);
     await until(async () => (await store.get('local', job.id, 0)).done);
+    await waitForInputCleanup(directory, job.id);
     jobs.push(job);
   }
   store.close();
@@ -399,6 +411,7 @@ test('a failed legacy migration keeps the only surviving files for a later recov
   const { store, open, directory } = await fixture(t, success);
   const job = await submit(store, 'remote', '归档待恢复');
   await until(async () => (await store.get('remote', job.id, 0)).done);
+  await waitForInputCleanup(directory, job.id);
   store.close();
   const folder = path.join(directory, job.id);
   const input = JSON.stringify({ name: job.name });

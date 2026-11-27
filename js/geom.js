@@ -350,6 +350,24 @@
         offer('ovencol-750','ovencol','宽蒸烤箱高柜','Wide oven tower',750,655,'#bcb4a8'),
       ]),
     ]),
+    category('ceiling','灯具与顶面设备','Lighting & ceiling equipment',[
+      group('ceiling-lights','顶装灯具','Ceiling lighting',[
+        offer('downlight-90','downlight','嵌入式筒灯','Recessed downlight',90,90,'#e2dfd5'),
+        offer('spot-100','spot','可调射灯','Adjustable spotlight',100,100,'#777669',{ceiling:{hang:40}}),
+        offer('pendant-400','pendant','吊灯','Pendant light',400,400,'#f4f0e7',{ceiling:{hang:600}}),
+        offer('linear-1200','linear','线性灯','Linear light',1200,45,'#a9a9a0'),
+        offer('track-1500','track','磁吸轨道灯','Magnetic track light',1500,55,'#53534c'),
+      ]),
+      group('ceiling-hvac','空调与风口','Air conditioning & vents',[
+        offer('ceilingac-840','ceilingac','嵌入式四面出风空调','Four-way ceiling cassette AC',840,840,'#f5f5f0'),
+        offer('ductac-1200','ductac','风管机','Concealed ducted AC',1200,500,'#dddfd9'),
+        offer('vent-1000','vent','条形风口','Linear air grille',1000,120,'#bcc7bd'),
+      ]),
+      group('ceiling-accessories','顶部配件','Ceiling accessories',[
+        offer('access-450','access','检修口','Access hatch',450,450,'#c6cfc4'),
+        offer('curtain-1600','curtain','窗帘盒','Curtain pocket',1600,180,'#d8d7c9'),
+      ]),
+    ]),
     category('study','书房 · 休闲','Study & leisure',[
       group('desks','书桌','Desks',[
         existing('书桌','desk-1200','Desk'),
@@ -466,9 +484,10 @@
     const item = {
       id: String(f.id || uid()), type, name: String(f.name || type), cx, cy, w, d,
       rot: wrapRotation(+f.rot),
-      color: /^#[0-9a-f]{3,8}$/i.test(f.color || '') ? f.color : typeColor(type),
+      color: /^#[0-9a-f]{3,8}$/i.test(f.color || '') ? f.color : (App.ceilingFurniture?.is({type}) ? App.ceilingFurniture.defaults(type).color : typeColor(type)),
       ...(parts ? {parts} : {}),
     };
+    if (App.ceilingFurniture?.is(item)) item.ceiling = App.ceilingFurniture.normalizeMount(f);
     if (type === 'cornersofa' && ['left', 'right'].includes(f.handedness)) item.handedness = f.handedness;
     if (tableTopType(type)){
       if (tableTopShapes.includes(f.topShape)) item.topShape = f.topShape;
@@ -596,6 +615,9 @@
   }
 
   function furnSVG(t,w,d,c,details = {}){
+    if (App.ceilingFurniture?.is({type:t}) && App.ceilingEditor?.fixtureSymbol){
+      return `<g transform="scale(${w/100} ${d/100})">${App.ceilingEditor.fixtureSymbol(t,c)}</g>`;
+    }
     const x = -w/2, y = -d/2, m = Math.min(w,d);
     switch (t){
       case 'bed': {

@@ -100,11 +100,12 @@
 
 ### 3.1 天花板设计
 
-- 天花编辑只写 `state.ceiling`。按 `ceilingSelection.roomId`、已选对象、房间名称和 `view.room` 判断范围。参考图片中的灯具或造型也写入这个图层。把不可从照片读出的尺寸说明为估算，明确书写的尺寸优先。没有可靠的目标房间时先询问。
-- 顶层结构为 `{version:1,baseHeight:2800,rooms:{}}`。每个 room key 必须是已有室内房间 id。房间记录为 `{baseHeight?,zones:[],edges:[],fixtures:[]}`。首次编辑用 `add` 写入整条房间记录。已有记录只改用户指定对象或字段。所有长度、坐标和标高都是 mm。
+- 天花造型和原顶饰面保存在 `state.ceiling`，顶装灯具和设备以家具对象保存在 `state.furniture`。按 `ceilingSelection.roomId`、已选对象、房间名称和 `view.room` 判断范围。把不可从照片读出的尺寸说明为估算，明确书写的尺寸优先。没有可靠的目标房间时先询问。
+- 顶层结构为 `{version:1,baseHeight:2800,rooms:{}}`。每个 room key 必须是已有室内房间 id。天花编辑的房间记录为 `{baseHeight?,finish?,color?,zones:[],edges:[],fixtures:[]}`。`finish` 是原顶饰面名称，`color` 是其六位十六进制颜色。首次编辑用 `add` 写入整条房间记录。已有记录只改用户指定对象或字段。所有长度、坐标和标高都是 mm。
 - 吊顶区 `zones[]` 为 `{id,name,poly,arcs?,holes?,drop,color}`。 `poly` 是闭合轮廓的顶点（尾点不重复首点），`arcs` 项为 `{edge,sweep}`，与房间圆弧规则一致。`holes` 是房间坐标系中留空的轮廓数组。下吊量 `drop` 相对于房间原顶，`color` 用 `#rrggbb`。只有用户要求的新吊顶区才创建新 id。
 - 灯槽和收边 `edges[]` 为 `{id,zoneId?,hole?,edge,type,width,depth,color}`，`type` 是 `cove`（灯槽）或 `trim`（收边）。`edge` 是所属区域的原始边编号，从 0 开始。`hole` 存在时使用该留空轮廓的边号。省略 `zoneId` 时引用房间边。变更轮廓顶点时同步调整受影响的边编号。
-- 灯具及设备 `fixtures[]` 为 `{id,type,x,y,zoneId?,rotation?,length?,width?,hang?,kelvin?,intensity?,tilt?,color?}`，`type` 使用 `downlight`（筒灯）、`spot`（射灯）、`pendant`（吊灯）、`linear`（线性灯）、`track`（轨道）、`vent`（风口）、`access`（检修口）或 `curtain`（窗帘盒）。坐标是对象中心，角度从平面 x 正向顺时针，`hang` 是吊线长度。照明可选 `kelvin`（1800–10000 K）、`intensity`（0–100%）、`tilt`（-85–85 度）。仅在对象中心位于对应吊顶区有效范围时提供 `zoneId`，否则省略让工作台按灯位确定安装面。
+- 天花上下文的 `fixtures[]` 是顶装家具按房间生成的编辑投影，沿用家具里的同一个 id。使用 `editScene` 编辑该投影时，工作台会预览，再把通过校验的变更写入家具。家具格式为 `{id,type,name,cx,cy,w,d,rot,color,ceiling:{roomId?,zoneId?,hang?,kelvin?,intensity?,tilt?}}`。投影格式为 `{id,type,x,y,zoneId?,rotation?,length?,width?,hang?,kelvin?,intensity?,tilt?,color?}`。同一条修改只使用一种表示。
+- 顶装家具支持 `downlight`（筒灯）、`spot`（射灯）、`pendant`（吊灯）、`linear`（线性灯）、`track`（轨道）、`vent`（普通风口）、`access`（检修口）、`curtain`（窗帘盒）、`ceilingac`（嵌入式四面出风空调）和 `ductac`（风管机）。坐标是对象中心，角度从平面 x 正向顺时针，`hang` 是吊线长度。照明可选 `kelvin`（1800–10000 K）、`intensity`（0–100%）、`tilt`（-85–85 度）。仅在对象中心位于对应吊顶区有效范围时提供 `zoneId`，否则省略让工作台按位置确定安装面。
 - 顶面对象在所属房间内使用唯一、稳定的字符串 id。更新灯组时保留还能继续用的灯具 id，插入或删除后用更新后的索引。照着走廊中心均布时根据房间净轮廓计算坐标，布置风口时先看现有灯位。露台等 `outdoor:true` 区域默认留空。
 - 相关天花变更放在同一条 `editScene` 中，工作台会显示待应用的预览。可附 `focus:{"room":"现有房间id","ceiling":{"kind":"fixture","id":"顶面对象id"}}`，`kind` 支持 `zone`、`edge`、`fixture`。
 

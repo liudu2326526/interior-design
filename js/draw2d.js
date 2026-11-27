@@ -70,21 +70,40 @@
 
   function furnitureShape(f){ return f.type === 'component' ? App.geom.componentSVG(f) : App.geom.furnSVG(f.type,f.w,f.d,f.color,f); }
   function renderFurn(){
-    const g = App.core.$('#gFurn');
-    g.setAttribute('display', App.store.ui.layers.furn ? 'inline' : 'none');
-    g.innerHTML = App.store.state.furniture.map(f => {
+    const regular = [], mounted = [];
+    for (const f of App.store.state.furniture){
+      const top = App.ceilingFurniture?.is(f);
+      if (top && App.store.ui.ceilingPreview) continue;
       const name = App.core.nm(f.name);
       const fs = Math.max(80, Math.min(170, Math.min(f.w,f.d)*.2));
       const angle = f.rot * Math.PI / 180;
       const span = Math.min(f.w / Math.abs(Math.cos(angle)), f.d / Math.abs(Math.sin(angle)));
-      const shown = Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type) && fitLabel(name, span - fs, fs, 400);
+      const shown = !top && Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type) && fitLabel(name, span - fs, fs, 400);
       const label = shown
         ? `<text aria-hidden="true" transform="rotate(${-f.rot})" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#4a443c" opacity=".8" pointer-events="none">${App.core.esc(shown.text)}</text>` : '';
       const title = App.core.esc(name);
-      const shape = furnitureShape(f);
-      return `<g class="furn" data-fid="${App.core.esc(f.id)}" role="img" aria-label="${title}"
-        transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})"><title>${title}</title>${shape}${label}</g>`;
-    }).join('');
+      const shape = top
+        ? `<g data-mounted-symbol="${App.core.esc(f.type)}" data-length="${f.w}" data-width="${f.d}" transform="${App.ceilingEditor.symbolScale(f.type,f.w,f.d,App.store.view.s)}"><rect x="-50" y="-50" width="100" height="100" fill="transparent"/>${App.ceilingEditor.fixtureSymbol(f.type,f.color)}</g>`
+        : furnitureShape(f);
+      (top ? mounted : regular).push(`<g class="furn" data-fid="${App.core.esc(f.id)}" role="img" aria-label="${title}"
+        transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})"><title>${title}</title>${shape}${label}</g>`);
+    }
+    const visible=App.store.ui.layers.furn?'inline':'none';
+    const floor=App.core.$('#gFurn'),ceiling=App.core.$('#gMountedFurniture');
+    floor.setAttribute('display',visible);floor.innerHTML=regular.join('');
+    ceiling.setAttribute('display',visible);ceiling.innerHTML=mounted.join('');
+    mountedScale=App.store.view.s;
+  }
+
+  let mountedScale=0;
+  function resizeMountedSymbols(){
+    const scale=App.store.view.s;
+    if(mountedScale===scale)return;
+    mountedScale=scale;
+    for(const symbol of App.core.$('#gMountedFurniture').querySelectorAll('[data-mounted-symbol]')){
+      const {mountedSymbol,length,width}=symbol.dataset;
+      symbol.setAttribute('transform',App.ceilingEditor.symbolScale(mountedSymbol,Number(length),Number(width),scale));
+    }
   }
 
   function renderWalls(){
@@ -204,12 +223,16 @@
       if (f){
         // 触屏上手柄更大、离家具更远，并各带一圈透明的大热区
         const p = 5*k, A = 'stroke="#b5653a" vector-effect="non-scaling-stroke"', hs = App.core.COARSE ? 1.7 : 1, ro = (App.core.COARSE ? 40 : 26)*k, hit = (App.core.COARSE ? 24 : 11)*k;
-        const sx = f.w/2+p, sy = f.d/2+p;
+        const cornerX = f.w/2+p, cornerY = f.d/2+p;
+        // Keep the larger resize target off small ceiling symbols so their centres still drag the item.
+        const resizeOffset = App.ceilingFurniture?.is(f) ? hit - p : 0;
+        const sx = cornerX+resizeOffset, sy = cornerY+resizeOffset;
         s += `<g transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">
         <rect x="${-f.w/2-p}" y="${-f.d/2-p}" width="${f.w+2*p}" height="${f.d+2*p}" fill="none" ${A} stroke-width="1.5" stroke-dasharray="5 3" pointer-events="none"/>
         <line x1="0" y1="${-f.d/2-p}" x2="0" y2="${-f.d/2-ro}" ${A} stroke-width="1" pointer-events="none"/>
         <circle data-handle="rot" cx="0" cy="${-f.d/2-ro}" r="${hit}" fill="transparent"/>
         <circle data-handle="rot" cx="0" cy="${-f.d/2-ro}" r="${6*hs*k}" fill="#fff" ${A} stroke-width="1.5"><title>${App.core.tr('拖动旋转（Shift 自由角度）','Drag to rotate (Shift for free angle)')}</title></circle>
+        ${resizeOffset ? `<line x1="${cornerX}" y1="${cornerY}" x2="${sx}" y2="${sy}" ${A} stroke-width="1" pointer-events="none"/>` : ''}
         <circle data-handle="size" cx="${sx}" cy="${sy}" r="${hit}" fill="transparent"/>
         <rect data-handle="size" x="${sx-5*hs*k}" y="${sy-5*hs*k}" width="${10*hs*k}" height="${10*hs*k}" fill="#b5653a"><title>${App.core.tr('拖动调整尺寸','Drag to resize')}</title></rect></g>`;
 
@@ -221,7 +244,11 @@
       const w = App.plan.wallOf(App.store.ui.sel.id);
       if (w) s += wallShape(w, 'fill="none" stroke="#b5653a" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"');
     }
-    App.core.$('#gSel').innerHTML = s;
+    const selection=App.core.$('#gSel'), selected=App.store.ui.sel;
+    const showMounted=selected?.kind==='furn'&&App.ceilingFurniture?.is(App.store.getF(selected.id))&&
+      !App.store.ui.ceilingPreview && App.store.ui.layers.furn && (!App.ceilingEditor.active() || App.ceilingEditor.context()?.tool==='select');
+    selection.classList.toggle('has-ceiling-item',Boolean(showMounted));
+    selection.innerHTML = s;
     App.dimensions.renderSelection();
   }
 
@@ -272,7 +299,7 @@
   App.core.$('#brandEdit').onblur = () => endRename(true);
 
   Object.assign(App.draw2d, {
-    curveBandPath, roomShape, wallShape, furnitureShape, renderFurn, renderOpenings, renderDims,
+    curveBandPath, roomShape, wallShape, furnitureShape, renderFurn, resizeMountedSymbols, renderOpenings, renderDims,
     renderMeasure, renderSel, renderAll,
   });
 })();

@@ -383,7 +383,10 @@ async function main(){
       assert(!S.getState().ceiling.rooms.west && preview.rooms.west.zones[0].drop === 180, '预览写入了正式方案');
       const result = S.applyOps([{op:'editScene', changes}]);
       assert(result.applied === 1, result.errors.join('、'));
-      assert(app.ceilingModel.fixtureHeight(S.getState().ceiling, plan.rooms[0], design.fixtures[0]) === 2620,
+      const lamp = app.store.getF('test-light');
+      assert(lamp?.ceiling.roomId === 'west' && lamp.ceiling.zoneId === 'test-drop', '灯具未存入家具');
+      assert(!Object.hasOwn(S.getState().ceiling.rooms.west,'fixtures'), '顶装家具重复存入天花');
+      assert(app.ceilingModel.fixtureHeight(app.ceilingFurniture.current(), plan.rooms[0], design.fixtures[0]) === 2620,
         '灯具没有跟随吊顶完成面');
       const invalid = S.applyOps([{op:'editScene', changes:[
         {action:'replace', path:[...path, 'zones', 0, 'drop'], value:150},
@@ -391,11 +394,33 @@ async function main(){
       ]}]);
       assert(!invalid.applied && S.getState().ceiling.rooms.west.zones[0].drop === 180, '无效补丁部分生效');
       const exported = JSON.parse(JSON.stringify(S.projectJSON()));
-      assert(app.store.fixState(exported.state).ceiling.rooms.west.fixtures[0].id === 'test-light', '项目 JSON 丢失灯具');
+      assert(app.store.fixState(exported.state).furniture.find(f=>f.id==='test-light')?.type === 'downlight', '项目 JSON 丢失灯具');
+      const migrated = app.store.fixState({...exported.state,furniture:[],ceiling:{...exported.state.ceiling,rooms:{west:design}}});
+      assert(migrated.furniture[0]?.ceiling?.zoneId === 'test-drop' && !Object.hasOwn(migrated.ceiling.rooms.west,'fixtures'),
+        '旧项目的灯具没有迁入家具');
       S.undo();
-      assert(!S.getState().ceiling.rooms.west, '撤销没有回到原顶');
+      assert(!S.getState().ceiling.rooms.west && !app.store.getF('test-light'), '撤销没有恢复原顶和家具');
       S.redo();
-      assert(S.getState().ceiling.rooms.west.fixtures.length === 1, '重做没有恢复灯位');
+      assert(app.ceilingFurniture.room('west').fixtures.length === 1, '重做没有恢复灯位');
+      const added = S.applyOps([{op:'addFurniture',id:'test-ac',type:'ceilingac',cx:1500,cy:1900,w:840,d:840}]);
+      assert(added.applied === 1 && app.store.getF('test-ac')?.ceiling.roomId === 'west', '普通家具入口未挂载空调');
+      assert(S.applyOps([{op:'moveFurniture',id:'test-ac',cx:4800,cy:2000}]).applied === 1 &&
+        app.store.getF('test-ac')?.ceiling.roomId === 'east', '普通家具移动未改挂载房间');
+      const linear = {op:'addFurniture', id:'test-linear', type:'linear', cx:520, cy:2500, w:900, d:60, rot:90};
+      assert(S.applyOps([linear]).applied === 1, '沿墙布置的有效线性灯未添加');
+      const index = app.store.state.furniture.findIndex(item => item.id === linear.id);
+      const edits = [
+        {...linear,id:'invalid-linear',rot:0},
+        {op:'moveFurniture',id:linear.id,cx:260},
+        {op:'resizeFurniture',id:linear.id,d:900},
+        {op:'rotateFurniture',id:linear.id,rot:0},
+        {op:'editScene',changes:[{action:'replace',path:['state','furniture',index,'rot'],value:0}]},
+      ];
+      for (const edit of edits){
+        assert(S.applyOps([edit]).applied === 0, '线性灯越界改动被提交：' + edit.op);
+      }
+      assert(app.store.getF(linear.id).cx === 520 && app.store.getF(linear.id).rot === 90 &&
+        app.store.getF(linear.id).d === 60, '无效顶装改动改变了家具数据');
     } finally {
       S.applyPlan(before.plan, {history:false});
       app.store.state = app.store.fixState(before.state);
@@ -411,11 +436,11 @@ async function main(){
       S.select({kind:'room',id:'west'});
       doc.querySelector('#ceilingMode').click();
       const button = type => doc.querySelector('#ceilingLibrary [data-value="' + type + '"]');
-      assert(button('downlight').querySelector('svg'), '灯具缩略图缺失');
-      button('downlight').click();
-      assert(app.ceilingEditor.context()?.tool === 'downlight', '筒灯工具未启动');
-      button('downlight').click();
-      assert(app.ceilingEditor.context()?.tool === 'select', '再次点击没有退出筒灯布置');
+      assert(doc.querySelector('#ceilingLibrary [data-cmd="furniture"]') && !button('downlight'), '天花工具没有复用家具库');
+      button('rectangle').click();
+      assert(app.ceilingEditor.context()?.tool === 'rectangle', '矩形吊顶工具未启动');
+      button('rectangle').click();
+      assert(app.ceilingEditor.context()?.tool === 'select', '再次点击没有退出吊顶绘制');
       button('flat').click();
       const zone = S.getState().ceiling.rooms.west?.zones[0];
       assert(zone?.color === '#ffffff', '新吊顶的默认饰面应为白色');
@@ -681,17 +706,31 @@ async function main(){
     await ceilingEditor.open(room.id);
     try { doc.querySelector('#ceilingLibrary [data-cmd="preset"][data-value="flat"]').click(); }
     finally { ceilingEditor.close(); }
+    const lamp = {op:'addFurniture', id:'file-export-lamp', type:'downlight', cx:room.at[0], cy:room.at[1], w:90, d:90};
+    const sofa = {op:'addFurniture', id:'file-export-sofa', type:'sofa', cx:room.at[0], cy:room.at[1], w:1200, d:700};
+    assert(S.applyOps([lamp, sofa]).applied === 2, '测试灯具与落地家具未布置');
     store.state.walk.recent = [pose];
     store.state.renders = [{url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/Trv3yQAAAAASUVORK5CYII='}];
     const clicks = [], anchor = w.HTMLAnchorElement.prototype;
-    const previous = anchor.click;
+    const previousClick = anchor.click, previousFetch = w.fetch;
+    let dwg, cadName;
     anchor.click = function(){
-      if (this.download) clicks.push({name:this.download, json:w.fetch(this.href).then(r => r.json())});
+      if (this.download.endsWith('.json')) clicks.push({name:this.download, json:w.fetch(this.href).then(r => r.json())});
+      if (this.download.endsWith('.dwg')) cadName = this.download;
+    };
+    w.fetch = (url, init) => {
+      if (!String(url).endsWith('/api/export/dwg')) return previousFetch(url, init);
+      dwg = JSON.parse(init.body);
+      return Promise.resolve(new w.Response('AC1015'));
     };
     try {
       doc.querySelector('#exportProj').click();
       doc.querySelector('#exportJson').click();
-    } finally { anchor.click = previous; }
+      await doc.querySelector('#exportDwg').onclick();
+    } finally {
+      anchor.click = previousClick;
+      w.fetch = previousFetch;
+    }
     assert(clicks.length === 2 && clicks[0].name === '可编辑设计 _ 客户版 - 完整项目.json' &&
       clicks[1].name === '可编辑设计 _ 客户版 - 设计.json', '两个导出文件名无法区分或含路径分隔符');
     const [project, design] = await Promise.all(clicks.map(item => item.json));
@@ -699,7 +738,12 @@ async function main(){
       project.state.walk.recent[0].roomId === room.id, '完整项目缺少效果图或漫游记录');
     assert(design.plan.name === name && design.state.ceiling.rooms[room.id]?.zones.length === 1 && !('renders' in design.state) &&
       !('walk' in design.state), '设计导出内容范围错误');
-    return '文件名包含项目名，两种导出保留天花设计，完整项目另含效果图与漫游机位';
+    assert([project,design].every(file => file.state.furniture.some(item => item.id === lamp.id && item.ceiling?.roomId === room.id)),
+      'JSON 丢失顶装灯具挂载数据');
+    assert(cadName === '可编辑设计 _ 客户版 - 户型平面.dwg' &&
+      dwg.state.furniture.some(item => item.id === sofa.id) && !dwg.state.furniture.some(item => item.id === lamp.id),
+      '户型平面 DWG 的家具范围错误');
+    return '完整项目与设计文件保留顶装灯具，户型平面 DWG 保留落地家具';
   });
 
   finished = true;

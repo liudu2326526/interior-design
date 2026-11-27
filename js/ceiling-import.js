@@ -7,6 +7,7 @@
   const ns = 'http://www.w3.org/2000/svg';
   const types = {downlight:['筒灯','Downlight'], spot:['射灯','Spotlight'], pendant:['吊灯','Pendant'],
     linear:['线性灯','Linear light'], track:['轨道灯','Track light'], vent:['风口','Vent'], access:['检修口','Access panel'], curtain:['窗帘盒','Curtain pocket'],
+    ceilingac:['嵌入式四面出风空调','Cassette air conditioner'], ductac:['风管机','Ducted air conditioner'],
     cove:['灯槽','Light cove'], trim:['收边','Trim']};
   const fields = {x:['横坐标','X'], y:['纵坐标','Y'], drop:['下吊','Drop'], width:['宽','Width'], depth:['深','Depth'],
     length:['长','Length'], rotation:['旋转','Rotation'], hang:['吊长','Hang'], kelvin:['色温','Color temperature'], tilt:['倾角','Tilt'], intensity:['亮度','Intensity'], baseHeight:['原顶净高','Base height']};
@@ -80,7 +81,7 @@
     if (App.core.PUBLIC_ACCESS === 'guest' || !/^https?:$/.test(location.protocol)){
       App.core.toast(tr('连接本机服务或登录公网 AI 后即可识别天花。','Connect to the local service or sign in to use AI recognition.')); return;
     }
-    const studio = App.io.studio, plan = studio.getPlan(), base = model.normalize(studio.getState().ceiling, plan.rooms);
+    const studio = App.io.studio, plan = studio.getPlan(), base = model.normalize(App.ceilingFurniture.current(), plan.rooms);
     const projectId = App.projects.activeProjectId;
     let items = [], controller = null, preview = null, urls = [], before = false;
     const dialog = document.createElement('dialog');
@@ -126,7 +127,7 @@
     at('close').onclick = close;
     dialog.addEventListener('close',()=>{ controller?.abort(); urls.forEach(url=>URL.revokeObjectURL(url)); dialog.remove(); },{once:true});
     const assertCurrent = () => {
-      const now = studio.getState().ceiling;
+      const now = App.ceilingFurniture.current();
       if (App.projects.activeProjectId !== projectId || JSON.stringify(plan)!==JSON.stringify(studio.getPlan()) ||
           JSON.stringify(base)!==JSON.stringify(model.normalize(now, plan.rooms))){
         throw new Error(tr('项目、底图或天花已改变。请关闭后重新识别。','The project, floor plan or ceiling changed. Reopen recognition to use the current version.'));

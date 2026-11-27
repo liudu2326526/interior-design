@@ -57,3 +57,29 @@ test('preserves legacy geometry on load and supports unrelated edits or correcti
   assert.throws(() => edit(design,{fixtures:[{...line,width:70}]}), /完整轮廓超出房间边界/);
   assert.doesNotThrow(() => edit(design,{fixtures:[{...line,x:7600}]}));
 });
+
+test('checks unified furniture placement and update while retaining legacy mounts', async () => {
+  const ceiling = model.normalize();
+  const item = {id:'line',type:'linear',cx:6690,cy:1980,w:1200,d:45,rot:0,color:'#ffffff',ceiling:{roomId:room.id}};
+  const previous = {...item};
+  const store = {
+    state:{ceiling,furniture:[previous]}, ROOMS:[room], view:{s:.05},
+    ui:{layers:{wallSnap:true}}, getF:id=>id===item.id?previous:null, mutate:fn=>fn(),
+  };
+  globalThis.App = {ceilingModel:model,store,plan:{roomDef:()=>room},core:{tr:zh=>zh}};
+  await import('../js/ceiling-furniture.js');
+  const furniture = globalThis.App.ceilingFurniture;
+  assert.equal(furniture.place(item).cx,item.cx);
+  assert.equal(furniture.current().rooms.master.fixtures.length,1);
+  assert.equal(furniture.placeEdited(item),null);
+  const snapped=furniture.placeEdited(item,{snap:true});
+  assert.equal(snapped.cx,7200);
+  assert.equal(furniture.placeEdited({...item,rot:90}).cx,item.cx);
+  assert.doesNotThrow(() => furniture.update({...item,color:'#f1e8d8'}));
+  assert.throws(() => furniture.update({...item,w:1500}), /完整轮廓超出房间边界/);
+  assert.doesNotThrow(() => furniture.update(snapped));
+  assert.equal(previous.cx,7200);
+  const air={...item,type:'ceilingac',w:840,d:840};
+  assert.equal(furniture.placeEdited(air),null);
+  assert.equal(furniture.placeEdited(air,{snap:true}).cx,7020);
+});

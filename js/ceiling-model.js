@@ -3,7 +3,7 @@
   'use strict';
   const DEFAULT_HEIGHT = 2800, DEFAULT_COLOR = '#ffffff';
   const fixtureDefaults = {downlight:[90,90,0],spot:[100,100,40],pendant:[400,400,600],
-    linear:[1200,45,0],track:[1500,55,0],vent:[1000,120,0],access:[450,450,0],curtain:[1600,180,0]};
+    linear:[1200,45,0],track:[1500,55,0],vent:[1000,120,0],access:[450,450,0],curtain:[1600,180,0],ceilingac:[840,840,0],ductac:[1200,500,0]};
   const fixtureTypes = Object.keys(fixtureDefaults);
   const roundFixtures = new Set(['downlight','spot','pendant']);
   const own = (obj, key) => Object.hasOwn(obj, key);
@@ -232,9 +232,11 @@
   }
   function readRoom(raw,def,globalHeight,strict){
     if (!record(raw)) error('房间天花设计无效');
-    if (strict) fields(raw,['baseHeight','zones','edges','fixtures']);
+    if (strict) fields(raw,['baseHeight','finish','color','zones','edges','fixtures']);
     const out=emptyRoom();
     if (raw.baseHeight!=null) out.baseHeight=num(raw.baseHeight,1,30000,'房间原顶高度');
+    if (raw.finish!=null) out.finish=string(raw.finish,'原顶饰面');
+    if (raw.color!=null) out.color=color(raw.color);
     const height=out.baseHeight ?? globalHeight, bound=def && outline(def);
     const unique=(items,fn)=>{
       const ids=new Set(), values=[];
@@ -397,7 +399,7 @@
     return zone;
   }
   const api={normalize,validate,apply,room,baseHeight,outline,edgePoints,shapes,fixtureHeight,fixturePlacementProblem,
-    snapFixture,preset,fixtureTypes,fixtureDefaults,defaultColor:DEFAULT_COLOR};
+    snapFixture,preset,pointIn,fixtureTypes,fixtureDefaults,defaultColor:DEFAULT_COLOR};
   globalThis.CeilingModel=api;
   if (globalThis.App) globalThis.App.ceilingModel=api;
 })();

@@ -16,6 +16,7 @@
   };
   const app = App.core.$('.app');
   const compact = () => matchMedia('(max-width:760px)').matches;
+  const panelTarget = (target) => () => App.core.narrow() || app.classList.contains('hide-panel') ? '#tgPanel' : target;
   let tourSteps = [], tourIdx = 0, tourOn = false, tourEntered = -1, previousFocus;
 
   function tourDefs(){
@@ -34,7 +35,7 @@
         body: App.core.tr('按 T 或点这里切换。3D 里可以鸟瞰、漫游，也能直接拖动家具；\n左侧列表点房间可以飞过去，点「进入」看室内。',
                  'Press T or click here. In 3D you can orbit, walk and drag furniture;\nclick a room on the left to fly there, or step inside.') },
       ...(guest ? [
-        { sel: () => App.core.narrow() || app.classList.contains('hide-panel') ? '#tgPanel' : '#ptabs',
+        { sel: panelTarget('#ptabs'),
           title: App.core.tr('③ 属性', '3. Properties'),
           body: App.core.tr('点顶部「属性」打开面板，可修改房间名称或地面材质，查看面积与材料费用。',
                    'Use Properties at the top to change room names or flooring and review areas and material costs.') },
@@ -42,18 +43,18 @@
           body: App.core.tr('用「文件」导入设计、打开 125-C 新示例项目，或导出自己的项目。窄屏时「文件」位于「更多」。',
                    'Use File to import a design, open the 125-C sample as a new project, or export your project. On narrow screens, find File under More.') },
       ] : [
-        { sel: '#ptabs', title: App.core.tr('③ 右侧三个页签', '3. Three tabs on the right'),
-          body: App.core.tr('属性：改房间名、换地面材质、看面积造价。\n助手：用一句话改方案，比如「客厅换个三人沙发」。\n效果图：选机位和风格，生成照片级渲染。',
-                   'Properties: rename rooms, change flooring, see areas and cost.\nAssistant: change the plan in plain words.\nRenders: pick a camera and style to generate a photoreal image.') },
+        { sel: panelTarget('#ptabs'), title: App.core.tr('③ 属性面板', '3. Properties panel'),
+          body: App.core.tr('点顶部「属性」打开面板。这里可以修改房间和家具属性，也可以切换到「助手」和「效果图」。',
+                   'Use Properties at the top to open the panel. Edit room and furniture properties or switch to Assistant and Renders.') },
         { sel: '#projectToggle', title: App.core.tr('④ 导入图纸、切换项目', '4. Import drawings and switch projects'),
           body: App.core.tr('从「项目」上传户型图、PDF 或 CAD 导出。上传后可以继续编辑，识别完成后在项目列表里预览并打开新方案。',
                    'Upload a drawing, PDF or CAD export from Projects. Keep editing while recognition runs, then preview and open the new plan from the list.') },
-        { sel: '#chat', title: App.core.tr('⑤ 第二步：对话修改', '5. Step two: change it by talking'),
+        { sel: panelTarget('#chat'), title: App.core.tr('⑤ 第二步：对话修改', '5. Step two: change it by talking'),
           body: App.core.tr('切到「助手」，直接说要改哪里：\n「把客厅沙发放到窗边」「主卧衣柜加宽到 2.4 米」「厨房换成 600 地砖」。\n助手返回改动预览，确认后才应用，一次 Ctrl+Z 可整体撤销。在 3D 里提问会自动带上当前视角。',
                    'Open the Assistant tab and say what to change:\n“move the sofa to the window”, “widen the wardrobe to 2.4 m”, “use 600 tiles in the kitchen”.\nYou preview the change before it is applied, and one Ctrl+Z undoes the whole batch. In 3D your current view is attached automatically.'),
           enter(){ try { App.assistant.chatPane('chat'); } catch(e) {} },
           leave(){ try { App.assistant.chatPane('props'); } catch(e) {} } },
-        { sel: '#render', title: App.core.tr('⑥ 生成效果图', '6. Generate a render'),
+        { sel: panelTarget('#render'), title: App.core.tr('⑥ 生成效果图', '6. Generate a render'),
           body: App.core.tr('在 3D 里挑机位和风格，把当前视角交给助手生成照片级效果图；\n也可以进入某个房间，单独生成这个房间的室内效果图。',
                    'In 3D pick a camera and style, and turn the current view into a photoreal render;\nor step into a room and generate that room on its own.'),
           enter(){ try { App.assistant.chatPane('render'); } catch(e) {} },
