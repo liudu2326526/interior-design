@@ -22,7 +22,11 @@
   const projectReviewPending = row => ['pending', 'running'].includes(projectReview(row)?.state);
   const projectBusy = row => projectPending(row) || projectReviewPending(row);
   const projectAi = App.core.PUBLIC_ACCESS !== 'guest' && /^https?:$/.test(location.protocol);
-  let activeProjectId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
+  const schemeHistory = new Map();
+  const baselineRecovery = new Set();
+  const projectWrites = new Map();
+  let pendingSceneSave = false;
+  let activeProjectId = '', activeSchemeId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
   let projectTimer = 0, projectSyncing = false, projectSyncAgain = false;
   let renderedProjectRows = '', namingProject = '', projectSorting = false, draggedProjectId = '';
 
@@ -54,44 +58,178 @@
       transaction.onabort = transaction.onerror = () => reject(transaction.error || request.error);
     });
   }
-  async function putProject(row){
-    projectRows.set(row.id, row);
-    try { await projectTransaction('readwrite', store => store.put(row)); }
-    catch(e){ projectStorageIssue = true; renderProjects(); }
+  async function updateStoredProject(id, update, {optimistic, memoryFallback = false} = {}){
+    const write = (projectWrites.get(id) || 0) + 1;
+    projectWrites.set(id, write);
+    if (optimistic) projectRows.set(id, optimistic);
+
+    let row;
+    try {
+      const db = await projectDb;
+      if (!db && memoryFallback){
+        row = optimistic || update(projectRows.get(id));
+      } else {
+        if (!db) throw new Error('Project storage unavailable');
+        row = await new Promise((resolve, reject) => {
+          const transaction = db.transaction('projects', 'readwrite');
+          const store = transaction.objectStore('projects');
+          const request = store.get(id);
+          let result, error;
+          request.onsuccess = () => {
+            try {
+              result = update(request.result);
+              if (result) store.put(result);
+            } catch(e){
+              error = e;
+              transaction.abort();
+            }
+          };
+          transaction.oncomplete = () => resolve(result);
+          transaction.onabort = transaction.onerror = () => reject(error || transaction.error || request.error);
+        });
+      }
+    } catch(e){
+      projectStorageIssue = true;
+      renderProjects();
+      return null;
+    }
+    if (row && projectWrites.get(id) === write) projectRows.set(id, row);
+    return row || null;
   }
-  function projectCurrent(){
-    const snapshot = App.io.studio.projectJSON();
+  async function putProject(row){
+    return Boolean(await updateStoredProject(row.id, () => row, {optimistic:row, memoryFallback:true}));
+  }
+
+  const sceneKey = (projectId, schemeId) => `${projectId}:${schemeId}`;
+  const activeSceneKey = () => activeSchemeId ? sceneKey(activeProjectId, activeSchemeId) : '';
+  function getActiveProject(){
+    const row = projectRows.get(activeProjectId);
+    return row && row.activeSchemeId !== activeSchemeId ? {...row,activeSchemeId} : row || null;
+  }
+  const savedProject = row => Boolean(row?.schemes?.length || row?.snapshot);
+  const selectedScheme = row => row?.schemes?.find(scheme => scheme.id === row.activeSchemeId) || row?.schemes?.[0];
+  const selectedSnapshot = row => selectedScheme(row)?.snapshot || row?.snapshot;
+  const initialName = number => App.core.tr('方案' + ('一二三四五六七八九十'[number - 1] || ' ' + number), 'Scheme ' + number);
+  const cleanName = name => typeof name === 'string' ? name.trim().slice(0, 60) : '';
+  const newProjectId = () => globalThis.crypto?.randomUUID?.() || App.geom.uid();
+  function nextSchemeNumber(row, requestedName = ''){
+    let number = row.nextSchemeNumber || row.schemes.length + 1;
+    while (row.schemes.some(scheme => scheme.id === `scheme-${number}` ||
+      (!requestedName && scheme.name === initialName(number)))) number++;
+    return number;
+  }
+  function defaultSchemeName(){
+    const row = getActiveProject();
+    return initialName(row ? nextSchemeNumber(row) : 1);
+  }
+
+  function updateScheme(row, id, update){
+    return {...row, schemes:row.schemes.map(scheme => scheme.id === id ? {...scheme,...update} : scheme)};
+  }
+  function updateSchemesUI(){
+    renderProjects();
+    App.schemesUI?.render?.();
+  }
+  function projectWithFirstScheme(row, snapshot, baselineSource, reviewVersion){
+    const {result, customName, snapshot:oldSnapshot, reviewApplied, reviewAppliedSig, reviewAppliedReview, ...metadata} = row;
+    const time = row.updatedAt || Date.now();
+    const id = 'scheme-1';
+    const scheme = {
+      id, name:initialName(1), snapshot, origin:oldSnapshot ? 'legacy' : 'initial',
+      createdAt:row.createdAt || time, updatedAt:time,
+    };
+    if (reviewApplied){
+      Object.assign(scheme, {reviewApplied, reviewAppliedSig, reviewAppliedReview});
+    } else if (Number.isFinite(reviewVersion)){
+      Object.assign(scheme, {reviewApplied:true, reviewAppliedSig:null, reviewAppliedReview:reviewVersion});
+    }
     return {
-      ...projectRows.get(activeProjectId), id:activeProjectId, name:snapshot.plan.name,
-      phase:'saved', snapshot, updatedAt:Date.now(),
+      ...metadata,
+      name:row.customName || row.name || snapshot.plan?.name || App.core.tr('未命名项目', 'Untitled project'),
+      phase:'saved', activeSchemeId:id, nextSchemeNumber:2,
+      baseline:App.core.deepCopy(snapshot), baselineSource, schemes:[scheme],
+      updatedAt:time,
     };
   }
-  function projectRecordActive(row){
+  function migrateSavedProject(row){
+    return row?.snapshot && !row.schemes?.length ? projectWithFirstScheme(row, row.snapshot, 'saved') : row;
+  }
+  async function recoverLegacyBaseline(row){
+    if (!projectAi || row.baselineSource !== 'saved' || !row.jobId || baselineRecovery.has(row.id)) return;
+    baselineRecovery.add(row.id);
     try {
-      sessionStorage.setItem(projectActiveKey, row.id);
-      localStorage.setItem(projectActiveKey, JSON.stringify({id:row.id, updatedAt:row.updatedAt}));
+      const result = await projectResult(row);
+      const baseline = App.io.snapshotFromRecognition(result.plan, result.furniture);
+      if (!baseline) return;
+      const recovered = await updateStoredProject(row.id, current =>
+        current?.baselineSource === 'saved' && current.jobId === row.jobId
+          ? {...current, baseline, baselineSource:'recognized'} : null);
+      if (recovered) updateSchemesUI();
+    } catch(e){}  // 已保存的旧方案仍可作为项目底稿。
+  }
+
+  function projectCurrent(row = getActiveProject()){
+    if (!row || !row.schemes?.some(scheme => scheme.id === activeSchemeId)) return null;
+    const snapshot = App.io.studio.projectJSON();
+    const updatedAt = Date.now();
+    return updateScheme({...row, activeSchemeId, updatedAt}, activeSchemeId, {snapshot, updatedAt});
+  }
+  function projectRecordActive(row){
+    const pointer = {id:row.id, schemeId:row.activeSchemeId, updatedAt:row.updatedAt};
+    try {
+      const value = JSON.stringify(pointer);
+      sessionStorage.setItem(projectActiveKey, value);
+      localStorage.setItem(projectActiveKey, value);
     } catch(e){}
   }
-  function saveActiveProject(){
-    if (!activeProjectId || projectSwitching) return;
-    const row = projectCurrent();
-    projectRecordActive(row);
-    void putProject(row);
-    if (!projectPanel.hidden) renderProjects();
+  function writeSceneSnapshot(row, {optimistic = true, memoryFallback = false, preserveSelection = false} = {}){
+    const scene = selectedScheme(row);
+    return updateStoredProject(row.id, stored => {
+      const current = migrateSavedProject(stored) || row;
+      if (!current.schemes?.some(scheme => scheme.id === scene.id)) return null;
+      const activeSchemeId = preserveSelection ? current.activeSchemeId : scene.id;
+      return updateScheme({...current, activeSchemeId, updatedAt:Date.now()}, scene.id, {
+        snapshot:scene.snapshot, updatedAt:scene.updatedAt,
+      });
+    }, {optimistic:optimistic ? row : undefined, memoryFallback});
   }
+  function saveActiveProject(){
+    if (projectSwitching){ pendingSceneSave = true; return; }
+    pendingSceneSave = false;
+    const row = projectCurrent();
+    if (!row) return;
+    projectRecordActive(row);
+    void writeSceneSnapshot(row, {memoryFallback:true}).then(updateSchemesUI);
+    updateSchemesUI();
+  }
+  async function flushActiveProject(){
+    await projectBoot;
+    if (projectSwitching) return null;
+    const row = projectCurrent();
+    if (!row) return null;
+    const saved = await writeSceneSnapshot(row);
+    updateSchemesUI();
+    return saved;
+  }
+
   function loadProjectScene(snapshot){
-    const result = App.plan.sanitizePlan(snapshot.plan);
+    const result = App.plan.sanitizePlan(snapshot?.plan);
     if (!result.ok) return result;
     App.store.installPlan(result.plan);
-    App.store.state = App.store.fixState({...App.core.deepCopy(snapshot.state || App.store.defaultState()), renders:snapshot.state?.renders || []});
+    const state = App.core.deepCopy(snapshot.state || {});
+    App.store.state = App.store.fixState({...state, renders:Array.isArray(state.renders) ? state.renders : []});
     return result;
+  }
+  function saveSchemeHistory(){
+    const key = activeSceneKey();
+    if (key) schemeHistory.set(key, {undo:App.store.undoStack.slice(), redo:App.store.redoStack.slice()});
   }
   function refreshProjectScene(){
     App.dimensions.clearDraft();
     App.dimensions.closeEditor();
     clearTimeout(App.assistant.chatState.focusT);
     App.assistant.resetChatHistory();
-    App.assistant.resetRenderReference();
+    App.assistant.resetRenderReference({closeOutput:true});
     App.assistant.renderState.last = null;
     App.assistant.renderEls.out.removeAttribute('src');
     App.assistant.renderEls.outCap.textContent = ''; App.assistant.renderEls.actions.hidden = true;
@@ -100,55 +238,229 @@
     if (last) App.assistant.renderShowRec(last, false);
     else { App.assistant.renderHistory(); App.assistant.renderAvailability(); }
     App.assistant.chatPane('props');
-    App.store.undoStack.length = App.store.redoStack.length = 0;
+    const history = schemeHistory.get(activeSceneKey());
+    App.store.undoStack.splice(0, App.store.undoStack.length, ...(history?.undo || []));
+    App.store.redoStack.splice(0, App.store.redoStack.length, ...(history?.redo || []));
     App.store.ui.sel = App.store.ui.mA = App.store.ui.mCur = null;
     App.view3d?.resetWalk();
-    App.store.save();
     App.geom.buildDefs(); App.draw2d.renderDims(); App.draw2d.renderOpenings(); App.draw2d.renderAll(); App.io.refit();
     if (App.io.studio.is3D()) App.view3d?.flyIso?.();
   }
-  async function switchProject(row, install, appliedReviewVersion){
+
+  async function changeProjectScene(targetId, prepare, {closePanel = false, memoryFallback = false} = {}){
     await projectBoot;
     if (projectSwitching || document.body.classList.contains('busy') || App.assistant.chatState.sending || App.assistant.renderState.busy){
-      const message = App.core.tr('请等当前操作完成后再切换项目。', 'Finish the current operation before switching projects.');
-      App.core.toast(message); return {ok:false, errors:[message]};
+      const message = App.core.tr('请等当前操作完成后再切换方案。', 'Finish the current operation before switching schemes.');
+      App.core.toast(message);
+      return {ok:false, errors:[]};
     }
+
     projectSwitching = true;
     try {
-      if (activeProjectId){
-        App.view3d?.rememberWalkExit();
-        await putProject(projectCurrent());
-        // 等待浏览器存储时，最后一次键盘操作也归到原来的项目。
-        void putProject(projectCurrent());
+      App.view3d?.rememberWalkExit();
+      pendingSceneSave = false;
+      const leavingProject = activeProjectId !== targetId;
+      if (leavingProject){
+        const previous = projectCurrent();
+        if (previous && !await writeSceneSnapshot(previous, {memoryFallback})) return {ok:false, errors:[]};
       }
-      const current = projectRows.get(row.id) || row;
-      if (current.hidden || current.jobId !== row.jobId){
-        return {ok:false, errors:[App.core.tr('项目记录已更新，请重新打开。', 'The project was updated. Open it again.')]};
+
+      let errors = [];
+      const saved = await updateStoredProject(targetId, stored => {
+        const current = migrateSavedProject(stored ?? projectRows.get(targetId));
+        const captured = leavingProject ? null : projectCurrent(current);
+        const candidate = prepare(captured || current);
+        if (!candidate) return null;
+        const scheme = selectedScheme(candidate);
+        const result = App.plan.sanitizePlan(scheme?.snapshot?.plan);
+        if (!result.ok){ errors = result.errors; return null; }
+        if (captured) pendingSceneSave = false;
+        return candidate;
+      }, {memoryFallback});
+      if (!saved) return {ok:false, errors};
+      const scheme = selectedScheme(saved);
+      if (saved.id === activeProjectId && scheme.id === activeSchemeId) return {ok:true, scheme};
+
+      let selectedProject = saved;
+      while (pendingSceneSave){
+        // 保存事务期间发生的最后一次编辑仍归离开的方案。
+        pendingSceneSave = false;
+        const current = leavingProject ? getActiveProject() : selectedProject;
+        const previous = current?.schemes.some(item => item.id === activeSchemeId) && projectCurrent(current);
+        if (previous){
+          const written = await writeSceneSnapshot(previous, {memoryFallback, preserveSelection:!leavingProject});
+          if (!written) return {ok:false, errors:[]};
+          if (!leavingProject) selectedProject = written;
+        }
       }
-      const result = install(current);
+      const result = loadProjectScene(scheme.snapshot);
       if (!result.ok) return result;
-      activeProjectId = row.id;
-      projectRows.set(row.id, {...current, customName:undefined, result:undefined, snapshot:undefined, phase:'saved'});
+
+      saveSchemeHistory();
+      activeProjectId = saved.id;
+      activeSchemeId = scheme.id;
+      projectRows.set(saved.id, selectedProject);
       refreshProjectScene();
-      const saved = projectCurrent();
-      if (Number.isFinite(appliedReviewVersion)){
-        saved.reviewApplied = true;
-        saved.reviewAppliedSig = sceneSignature(saved.snapshot);
-        saved.reviewAppliedReview = appliedReviewVersion;
+      // 活动指针在目标方案与离开前的设计成功写入后更新。
+      App.store.save();
+      let active = projectCurrent();
+      if (scheme.reviewAppliedSig === null){
+        active = updateScheme(active, scheme.id, {reviewAppliedSig:sceneSignature(selectedScheme(active).snapshot)});
+        void updateStoredProject(active.id, latest => latest && updateScheme(latest,scheme.id, {
+          reviewAppliedSig:sceneSignature(selectedScheme(active).snapshot),
+        }), {optimistic:active, memoryFallback});
       }
-      projectRecordActive(saved); await putProject(saved);
-      closeProjects();
-      return result;
+      projectRecordActive(active);
+      if (closePanel) closeProjects();
+      void recoverLegacyBaseline(active);
+      return {...result, scheme:selectedScheme(active)};
     } finally {
       projectSwitching = false;
-      saveActiveProject();
-      renderProjects();
+      if (pendingSceneSave) saveActiveProject();
+      updateSchemesUI();
     }
   }
+
+  async function switchProject(row, {snapshot, reviewVersion} = {}){
+    return changeProjectScene(row.id, stored => {
+      const current = stored || row;
+      if (current.hidden || current.jobId !== row.jobId) return null;
+      if (savedProject(current)) return current;
+      return snapshot && projectWithFirstScheme(current, snapshot, current.jobId ? 'recognized' : 'blank', reviewVersion);
+    }, {closePanel:true, memoryFallback:true});
+  }
   async function openNewProject(snapshot){
-    const row = {id:App.geom.uid(), createdAt:Date.now()};
-    const result = await switchProject(row, () => loadProjectScene(snapshot));
+    const row = {id:newProjectId(), name:snapshot.plan.name, createdAt:Date.now()};
+    const result = await switchProject(row, {snapshot});
     if (!result.ok && result.errors?.[0]) App.core.toast(result.errors[0]);
+    return result.ok;
+  }
+
+  async function switchScheme(id){
+    const expectedSceneKey = activeSceneKey();
+    const result = await changeProjectScene(activeProjectId, row => row && activeSceneKey() === expectedSceneKey &&
+      row.schemes.some(scheme => scheme.id === id) ? {...row,activeSchemeId:id} : null);
+    return result.ok;
+  }
+  async function createScheme({from = 'baseline', name, snapshot, origin, expectedSceneKey, reviewVersion} = {}){
+    const sourceKey = expectedSceneKey ?? activeSceneKey();
+    const requestedName = cleanName(name);
+    const result = await changeProjectScene(activeProjectId, row => {
+      if (!row || activeSceneKey() !== sourceKey ||
+          (requestedName && row.schemes.some(scheme => scheme.name === requestedName))) return null;
+      const source = row.schemes.find(scheme => scheme.id === activeSchemeId);
+      if (!source) return null;
+      const scene = App.core.deepCopy(snapshot || (from === 'current' ? source.snapshot : row.baseline));
+      if (!scene?.plan) return null;
+      scene.state = {...scene.state, renders:[]};
+      const createdAt = Date.now();
+      const number = nextSchemeNumber(row, requestedName);
+      const scheme = {
+        id:`scheme-${number}`, name:requestedName || initialName(number), snapshot:scene,
+        origin:origin || (from === 'current' ? 'copy' : 'baseline'), createdAt, updatedAt:createdAt,
+        ...(from === 'current' ? {copiedFrom:source.name} : {}),
+      };
+      if (Number.isFinite(reviewVersion)){
+        Object.assign(scheme, {reviewApplied:true, reviewAppliedSig:null, reviewAppliedReview:reviewVersion});
+      }
+      return {...row, schemes:[...row.schemes,scheme], activeSchemeId:scheme.id, nextSchemeNumber:number+1};
+    });
+    return result.ok ? result.scheme : null;
+  }
+  async function renameScheme(id, name){
+    const sourceKey = activeSceneKey();
+    await projectBoot;
+    const row = getActiveProject(), nextName = cleanName(name);
+    if (projectSwitching || activeSceneKey() !== sourceKey || !nextName || !row) return false;
+    const saved = await updateStoredProject(row.id, stored => {
+      const current = migrateSavedProject(stored);
+      if (!current?.schemes.some(scheme => scheme.id === id) ||
+          current.schemes.some(scheme => scheme.id !== id && scheme.name === nextName)) return null;
+      return updateScheme({...current, updatedAt:Date.now()}, id, {name:nextName});
+    });
+    updateSchemesUI();
+    return Boolean(saved);
+  }
+  async function deleteScheme(id){
+    const sourceKey = activeSceneKey();
+    await projectBoot;
+    const row = getActiveProject();
+    if (projectSwitching || activeSceneKey() !== sourceKey || !row) return false;
+    const remove = current => {
+      const schemes = current?.schemes;
+      if (!schemes || schemes.length < 2) return null;
+      const index = schemes.findIndex(scheme => scheme.id === id);
+      if (index < 0) return null;
+      const remaining = schemes.filter(scheme => scheme.id !== id);
+      return {...current, schemes:remaining, updatedAt:Date.now(),
+        activeSchemeId:current.activeSchemeId === id
+          ? remaining[Math.min(index, remaining.length - 1)].id : current.activeSchemeId};
+    };
+    if (id === activeSchemeId){
+      const result = await changeProjectScene(row.id, current => activeSceneKey() === sourceKey ? remove(current) : null);
+      if (!result.ok) return false;
+    } else if (!await updateStoredProject(row.id, current => remove(migrateSavedProject(current)))) return false;
+    schemeHistory.delete(sceneKey(row.id, id));
+    updateSchemesUI();
+    return true;
+  }
+  async function renameProject(name){
+    const id = activeProjectId;
+    await projectBoot;
+    const row = getActiveProject(), nextName = cleanName(name);
+    if (projectSwitching || activeProjectId !== id || !row || !nextName) return false;
+    const saved = await updateStoredProject(id, current =>
+      current && {...current, name:nextName, updatedAt:Date.now()}, {memoryFallback:true});
+    if (saved){
+      App.draw2d.renderAll();
+      updateSchemesUI();
+    }
+    return Boolean(saved);
+  }
+
+  function projectSchemesJSON(){
+    const row = projectCurrent();
+    if (!row) return null;
+    const {name, baseline, baselineSource, schemes, activeSchemeId, nextSchemeNumber} = row;
+    return App.core.deepCopy({version:3, name, baseline, baselineSource, schemes, activeSchemeId, nextSchemeNumber});
+  }
+  function importSnapshot(snapshot){
+    const result = App.plan.sanitizePlan(snapshot?.plan);
+    if (!result.ok || (snapshot.state != null && (typeof snapshot.state !== 'object' || Array.isArray(snapshot.state)))) return null;
+    return {version:2, plan:result.plan, state:App.core.deepCopy(snapshot.state || {})};
+  }
+  async function openImportedProject(data){
+    const invalid = () => {
+      App.core.toast(App.core.tr('完整项目文件包含无效的底稿或方案。', 'The project file contains an invalid baseline or scheme.'));
+      return false;
+    };
+    const name = cleanName(data?.name);
+    const baseline = importSnapshot(data?.baseline);
+    if (!name || !baseline || !Array.isArray(data.schemes) || !data.schemes.length) return invalid();
+
+    const ids = new Set(), names = new Set(), schemes = [], time = Date.now();
+    for (const scheme of data.schemes){
+      const snapshot = importSnapshot(scheme?.snapshot), schemeName = cleanName(scheme?.name);
+      if (!snapshot || !schemeName || typeof scheme.id !== 'string' ||
+          !/^[A-Za-z0-9_-]{1,48}$/.test(scheme.id) || ids.has(scheme.id) || names.has(schemeName)) return invalid();
+      ids.add(scheme.id);
+      names.add(schemeName);
+      schemes.push({
+        id:scheme.id, name:schemeName, snapshot,
+        origin:['initial','legacy','copy','baseline','review'].includes(scheme.origin) ? scheme.origin : 'legacy',
+        ...(cleanName(scheme.copiedFrom) ? {copiedFrom:cleanName(scheme.copiedFrom)} : {}),
+        createdAt:Number.isFinite(scheme.createdAt) ? scheme.createdAt : time,
+        updatedAt:Number.isFinite(scheme.updatedAt) ? scheme.updatedAt : time,
+      });
+    }
+    const row = {
+      id:newProjectId(), name, baseline, schemes, phase:'saved', createdAt:time, updatedAt:time,
+      baselineSource:['recognized','saved','blank'].includes(data.baselineSource) ? data.baselineSource : 'saved',
+      activeSchemeId:ids.has(data.activeSchemeId) ? data.activeSchemeId : schemes[0].id,
+      nextSchemeNumber:Number.isSafeInteger(data.nextSchemeNumber) && data.nextSchemeNumber > 0 &&
+        data.nextSchemeNumber < Number.MAX_SAFE_INTEGER - schemes.length ? data.nextSchemeNumber : schemes.length + 1,
+    };
+    const result = await switchProject(row);
     return result.ok;
   }
   async function startBlankProject(name, request){
@@ -214,16 +526,17 @@
   }
   // 「已应用」只在场景与复核版本都还是应用时那一份时有效；撤销、编辑或复核重跑后自动失效。
   function projectReviewApplied(row){
-    if (!row?.reviewApplied) return false;
-    // 复核重跑出新结果（updatedAt 变化）后，应重新提供对比入口。
-    if (Number.isFinite(+row.reviewAppliedReview) &&
-        +row.reviewAppliedReview !== (+projectReview(row)?.updatedAt || 0)) return false;
-    if (!row.reviewAppliedSig) return true;   // 旧数据：没有指纹时沿用原行为
-    if (!row.snapshot) return false;
-    const current = sceneSignature(row.snapshot);
-    if (row.reviewAppliedSig === current) return true;
+    const scheme = selectedScheme(row) || row;
+    if (!scheme?.reviewApplied) return false;
+    if (Number.isFinite(+scheme.reviewAppliedReview) &&
+        +scheme.reviewAppliedReview !== (+projectReview(row)?.updatedAt || 0)) return false;
+    if (!scheme.reviewAppliedSig) return true;
+    const snapshot = scheme.snapshot;
+    if (!snapshot) return false;
+    const current = sceneSignature(snapshot);
+    if (scheme.reviewAppliedSig === current) return true;
     try {
-      const legacy = JSON.parse(row.reviewAppliedSig);
+      const legacy = JSON.parse(scheme.reviewAppliedSig);
       return Object.hasOwn(legacy.plan ?? {}, 'name') && sceneSignature({plan:legacy.plan,state:legacy}) === current;
     } catch(e){ return false; }
   }
@@ -308,11 +621,14 @@
     }
   }
   function projectDetails(row){
-    const plan = row.snapshot?.plan || row.result?.plan;
+    const snapshot = selectedSnapshot(row);
+    const plan = snapshot?.plan || row.result?.plan;
     if (plan) {
-      const rooms = plan.rooms.filter(room => room.counted !== false);
-      const count = (row.snapshot?.state?.furniture || row.result?.furniture || []).length;
-      return App.core.tr(`${rooms.length} 个房间 · ${count} 件家具与构件`, `${rooms.length} rooms · ${count} furnishings and components`);
+      const rooms = plan.rooms.filter(room => room.counted !== false).length;
+      const count = (snapshot?.state?.furniture || row.result?.furniture || []).length;
+      const designCount = savedProject(row) ? row.schemes?.length || 1 : 0;
+      const details = App.core.tr(`${rooms} 个房间 · ${count} 件家具与构件`, `${rooms} rooms · ${count} furnishings and components`);
+      return designCount ? App.core.tr(`${designCount} 个方案 · ${details}`, `${designCount} ${designCount === 1 ? 'scheme' : 'schemes'} · ${details}`) : details;
     }
     return row.error || (row.phase === 'canceled' ? App.core.tr('图纸识别已停止。', 'Drawing recognition was canceled.') : '');
   }
@@ -325,7 +641,7 @@
     const rerunButton = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy
       ? button('rerun', App.core.tr('重新复核', 'Run review again')) : '';
     const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
-      ? button('review', App.core.tr('查看对比', 'Compare')) : '';
+      ? button('review', App.core.tr('查看图纸复核', 'View drawing review')) : '';
     const rename = button('rename', App.core.tr('重命名','Rename'));
     if (row.id === activeProjectId) return reviewButton + rename + rerunButton;
     if (projectPending(row)) return rename + button('cancel', App.core.tr('取消识别', 'Cancel analysis'));
@@ -385,9 +701,12 @@
     if (!row || row.hidden) return;
     if (name === row.name){ closeProjectRename(true); return; }
     closeProjectRename();
-    if (row.id === activeProjectId) App.store.mutate(() => { App.store.PLAN.name = name; });
-    else if (row.snapshot) await putProject({...row, name, snapshot:{...row.snapshot, plan:{...row.snapshot.plan,name}}});
-    else await putProject({...row, name, sourceName:row.sourceName || row.name, customName:name});
+    if (row.id === activeProjectId) await renameProject(name);
+    else await updateStoredProject(row.id, current => {
+      if (!current || current.hidden) return null;
+      return savedProject(current) ? {...current, name, updatedAt:Date.now()}
+        : {...current, name, sourceName:current.sourceName || current.name, customName:name};
+    }, {memoryFallback:true});
     renderProjects();
     if (!projectPanel.hidden && !namingProject) (findProjectRow(row.id)?.querySelector('[data-project-action="rename"]') || projectSearch).focus();
   }
@@ -509,10 +828,14 @@
         const review = rawReview && typeof rawReview === 'object' ? reviewMeta : null;
         jobProgress.set(job.id, {import:progress, review:reviewProgress});
         // 已打开的项目保留本地快照，只按 jobId 合并最新的复核状态
-        if (prev?.snapshot){
+        if (savedProject(prev)){
           const latest = job.review === undefined ? (prev.review ?? null) : review;
           const sourceName = prev.sourceName || meta.name;
-          if (!sameReview(prev.review, latest) || prev.sourceName !== sourceName) await putProject({...prev, sourceName, review:latest});
+          if (!sameReview(prev.review, latest) || prev.sourceName !== sourceName){
+            await updateStoredProject(prev.id, current => current?.jobId === job.id && !current.hidden
+              ? {...current, sourceName:current.sourceName || sourceName,
+                review:job.review === undefined ? current.review : review} : null, {memoryFallback:true});
+          }
           continue;
         }
         const id = prev?.id || job.id;
@@ -522,19 +845,27 @@
           catch(e){ if (job.phase === 'failed') error = e.message; }
         }
         const latest = projectRows.get(id);
-        if (latest && (latest.jobId !== job.id || latest.hidden || latest.snapshot)) continue;
+        if (latest && (latest.jobId !== job.id || latest.hidden || savedProject(latest))) continue;
         const row = {...meta, ...latest, id, jobId:job.id, result, error,
           name:latest?.customName || result?.plan?.name || latest?.name || meta.name,
           sourceName:latest?.sourceName || meta.name, phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt,
           review:job.review === undefined ? (latest?.review ?? null) : review};
         if (!latest || latest.phase !== row.phase || latest.name !== row.name || latest.sourceName !== row.sourceName ||
             row.result !== latest.result || row.error !== latest.error || latest.updatedAt !== row.updatedAt ||
-            !sameReview(latest.review, row.review)) await putProject(row);
+            !sameReview(latest.review, row.review)){
+          await updateStoredProject(row.id, stored => {
+            if (stored && (stored.hidden || stored.jobId !== job.id)) return null;
+            if (savedProject(stored)) return {...stored, sourceName:stored.sourceName || row.sourceName,
+              review:job.review === undefined ? stored.review : review};
+            return {...row, ...(stored?.customName ? {name:stored.customName,customName:stored.customName} : {})};
+          }, {memoryFallback:true});
+        }
       }
       for (const row of projectRows.values()){
         const waiting = projectPending(row) || (row.phase === 'done' && !row.result);
         if (waiting && !seen.has(row.jobId) && Date.now() - row.createdAt > 120000){
-          await putProject({...row, phase:'failed', error:App.core.tr('这条任务记录已过期，请重新导入。','This job expired. Import the drawing again.')});
+          await updateStoredProject(row.id, current => current?.jobId === row.jobId && !savedProject(current)
+            ? {...current, phase:'failed', error:App.core.tr('这条任务记录已过期，请重新导入。','This job expired. Import the drawing again.')} : null, {memoryFallback:true});
         }
       }
       for (const id of jobProgress.keys()) if (!seen.has(id)) jobProgress.delete(id);
@@ -556,7 +887,8 @@
 
   async function projectImportSubmitted({jobId, name, note, retryId}){
     await projectBoot;
-    const prev = projectRows.get(retryId) || projectRows.get(jobId);
+    const retry = projectRows.get(retryId);
+    const prev = (!savedProject(retry) && retry) || projectRows.get(jobId);
     const id = prev?.id || jobId;
     const sourceName = name;
     await putProject({
@@ -584,7 +916,8 @@
       if (current && current.jobId === row.jobId && !current.hidden && sameReview(current.review, row.review)){
         const progress = jobProgress.get(row.jobId);
         if (progress) jobProgress.set(row.jobId, {...progress, review:null});
-        await putProject({...current, review:{...(current.review || {}), state:'pending', count:0, updatedAt:Date.now()}});
+        await updateStoredProject(row.id, stored => stored?.jobId === row.jobId && !stored.hidden && sameReview(stored.review, row.review)
+          ? {...stored, review:{...(stored.review || {}), state:'pending', count:0, updatedAt:Date.now()}} : null, {memoryFallback:true});
         renderProjects();
       }
       scheduleProjectSync(0);
@@ -628,35 +961,34 @@
       switch (action){
       case 'rename': beginProjectRename(row); break;
       case 'open':
-        await switchProject(row, current => loadProjectScene(current.snapshot));
+        await switchProject(row);
         break;
       case 'preview': {
         const result = row.result || await projectResult(row);
         const current = projectRows.get(row.id);
-        if (!current || current.snapshot || current.jobId !== row.jobId) break;
+        if (!current || savedProject(current) || current.jobId !== row.jobId) break;
         closeProjects();
         const preview = current.customName ? {...result, plan:{...result.plan,name:current.customName}} : result;
         App.importer.impOpenResult(preview, ({plan,furniture}) => {
           const {reviewApplied,review} = App.importer.impState;
-          return switchProject(current, latest => {
-            App.store.state = {...App.store.defaultState(), renders:[]};
-            return App.io.applyPlan(latest.customName ? {...plan,name:latest.customName} : plan,
-              {furniture, clearFurniture:true, freshState:true, history:false});
-          }, reviewApplied ? review?.updatedAt : undefined);
+          const snapshot = App.io.snapshotFromRecognition(plan, furniture);
+          if (!snapshot) return {ok:false, errors:[App.core.tr('识别结果缺少有效户型。','The result contains no valid floor plan.')]};
+          return switchProject(current, {snapshot, reviewVersion:reviewApplied ? review?.updatedAt : undefined});
         }, {jobId:current.jobId, reviewState:projectReview(current)?.state, mode:'preview'});
         break;
       }
       case 'review': {
-        if (!row.jobId || !row.snapshot) break;
-        // 对比和「应用到当前项目」都针对当前打开的方案：不是当前项目时先切换过去
+        if (!row.jobId || !savedProject(row)) break;
         if (row.id !== activeProjectId){
-          const result = await switchProject(row, current => loadProjectScene(current.snapshot));
+          const result = await switchProject(row);
           if (!result.ok) break;
         }
         closeProjects();
-        const current = projectRows.get(row.id) || row;
-        App.importer.impOpenResult({plan:current.snapshot.plan, furniture:current.snapshot.state?.furniture || []}, null,
-          {jobId:current.jobId, reviewState:projectReview(current)?.state, mode:'project', rowId:current.id});
+        const current = getActiveProject();
+        const baseline = current.baseline;
+        App.importer.impOpenResult({plan:baseline.plan, furniture:baseline.state?.furniture || []}, null,
+          {jobId:current.jobId, reviewState:projectReview(current)?.state, mode:'project', rowId:current.id,
+            schemeId:activeSchemeId, sceneKey:activeSceneKey()});
         break;
       }
       case 'rerun': await projectReviewAgain(row); break;
@@ -667,7 +999,11 @@
         break;
       }
       case 'retry': closeProjects(); App.importer.impOpen({retryId:row.id, note:row.note}); break;
-      case 'hide': await putProject({...row, hidden:true}); renderProjects(); break;
+      case 'hide':
+        await updateStoredProject(row.id, current => current?.jobId === row.jobId && !savedProject(current)
+          ? {...current, hidden:true} : null, {memoryFallback:true});
+        renderProjects();
+        break;
       }
     } catch(e){ App.core.toast(e.message || App.core.tr('项目操作失败。','Project action failed.')); }
     finally {
@@ -786,34 +1122,53 @@
     App.interact.fitView(); App.draw2d.renderAll();
     projectBoot = (async () => {
       await App.io.hydrateDefaultPlan();
-      let recent, tabId;
+      let recent, tab;
       try {
         recent = JSON.parse(localStorage.getItem(projectActiveKey) || 'null');
-        tabId = sessionStorage.getItem(projectActiveKey);
+        const pointer = sessionStorage.getItem(projectActiveKey);
+        try { tab = JSON.parse(pointer); } catch(e){ tab = {id:pointer}; }
       } catch(e){}
       try {
         const rows = await projectTransaction('readonly', store => store.getAll());
         rows.forEach(row => projectRows.set(row.id, row));
       } catch(e){ projectStorageIssue = true; }
-      const id = tabId || recent?.id, row = projectRows.get(id);
-      activeProjectId = id || App.geom.uid();
-      if (row?.snapshot && !(recent?.id === id && recent.updatedAt >= row.updatedAt && App.io.hasStoredPlan())){
-        if (loadProjectScene(row.snapshot).ok) refreshProjectScene();
+      const id = tab?.id || recent?.id || newProjectId();
+      const restored = projectRows.get(id);
+      let row = savedProject(restored) ? migrateSavedProject(restored) : null;
+      if (row){
+        const requested = tab?.id === id ? tab.schemeId : recent?.schemeId;
+        if (row.schemes.some(scheme => scheme.id === requested)) row = {...row, activeSchemeId:requested};
+        const scheme = selectedScheme(row);
+        const cachedScheme = recent?.schemeId || (restored.snapshot ? 'scheme-1' : '');
+        const fromCache = recent?.id === id && cachedScheme === scheme.id &&
+          recent.updatedAt > scheme.updatedAt && App.io.hasStoredPlan();
+        if (!fromCache && !loadProjectScene(scheme.snapshot).ok) row = null;
       }
-      if (!row) projectRows.set(activeProjectId, {id:activeProjectId, createdAt:Date.now()});
+      if (!row){
+        const newId = restored ? newProjectId() : id;
+        row = projectWithFirstScheme({id:newId, createdAt:Date.now()}, App.io.studio.projectJSON(), 'blank');
+      }
+      activeProjectId = row.id;
+      activeSchemeId = selectedScheme(row).id;
+      projectRows.set(row.id, row);
+      refreshProjectScene();
       App.store.onProjectSave = saveActiveProject;
       App.store.save();
-      renderProjects();
+      void recoverLegacyBaseline(row);
+      updateSchemesUI();
       scheduleProjectSync(0);
     })();
   }
 
   Object.assign(App.projects, {
     projectEndpoint, projectRows, putProject, openNewProject, sceneSignature, renderProjects,
-    projectImportSubmitted, openProjects,
+    projectImportSubmitted, openProjects, getActiveProject, switchScheme, createScheme, renameScheme,
+    deleteScheme, renameProject, flushActiveProject, openImportedProject, projectSchemesJSON, defaultSchemeName,
   });
   Object.defineProperties(App.projects, {
     activeProjectId: {get: () => activeProjectId},
+    activeSchemeId: {get: () => activeSchemeId},
+    activeSceneKey: {get: activeSceneKey},
   });
   initialize();
 })();

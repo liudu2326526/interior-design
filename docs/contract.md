@@ -96,9 +96,32 @@ type CeilingRoom = {
 
 顶装灯具与设备存入 `furniture`，通过 `ceiling.zoneId` 指定顶面，省略时由坐标确定完成面。载入旧项目时，将天花记录的 `fixtures` 升级为家具并保留安装参数。图纸识别、预览和天花对话仍使用按房间汇总的 `fixtures` 投影，应用时更新对应家具。
 
-`walk` 随项目保存。`recent` 在退出漫游时记录各漫游范围最近的相机位置和方向，`views` 用于兼容已有项目数据。`x`、`y` 沿用户型毫米坐标，`height` 用米，`yaw`、`pitch` 用弧度。编辑撤销保留漫游记录。漫游截图用作当前项目会话的效果图参考。
+`walk` 随当前方案保存。`recent` 在退出漫游时记录各漫游范围最近的相机位置和方向，`views` 用于兼容已有项目数据。`x`、`y` 沿用户型毫米坐标，`height` 用米，`yaw`、`pitch` 用弧度。编辑撤销保留漫游记录。漫游截图用作当前方案会话的效果图参考。
 
-localStorage 键：方案 `interior-plan-v1`，状态 `interior-state-v1`（新键，避免读旧站数据）。
+### 2.1 项目存储与完整项目 JSON
+
+每个项目在浏览器 IndexedDB 中保存一份项目底稿和多套方案。确认识别结果时，识别的户型和家具成为项目底稿，同时创建方案一。从底稿新建会复制底稿，从当前方案新建会复制当前设计并单独建立效果图历史。项目名、方案名和 `Plan.name` 各自保存。切换活动方案按项目 ID 和方案 ID 定位，编辑撤销历史在当前会话内按方案保留。
+
+```ts
+type SceneSnapshot = {version: 2, plan: Plan, state: Partial<State>}
+type ProjectFile = {
+  version: 3,
+  name: string,
+  baseline: SceneSnapshot,
+  baselineSource: 'recognized' | 'saved' | 'blank',
+  schemes: {
+    id: string, name: string, snapshot: SceneSnapshot,
+    origin: 'initial' | 'legacy' | 'baseline' | 'copy' | 'review',
+    copiedFrom?: string, createdAt: number, updatedAt: number
+  }[],
+  activeSchemeId: string,
+  nextSchemeNumber: number
+}
+```
+
+完整导出保留底稿和所有方案的漫游机位及效果图记录。设计 JSON、PNG 和 DWG 都导出当前方案。单方案 v2 文件和更早的纯家具文件仍可导入，打开时创建方案一。旧浏览器项目的已存设计迁入方案一。可读到识别任务时用识别结果补齐底稿，其余旧项目用迁移时的存档作底稿。
+
+`interior-plan-v1`、`interior-state-v1` 和 `interior-renders-v1` 保存最近活动场景的浏览器缓存，`interior-active-project-v1` 记录缓存所属的项目和方案。
 
 ## 3. 页面运行时 API（`window.Studio`）
 
@@ -302,6 +325,7 @@ pending / running 期间服务重启 → unavailable（同时删除 review.json�
 
 - `GET /api/jobs/<id>/review`：无请求体。`match` 或 `differ` 时返回 `200` 和 `JobReviewDetail`；`pending`、`running`、`unavailable`、任务不存在或不属于当前访问范围时返回 `404`（`{error}`），前端据此轮询。
 - `POST /api/jobs/<id>/review`：无请求体。服务端从归档读取原件，并沿用识别时保存的用户备注。返回 `202 {ok:true}` 后异步复核，模型回合最长 60 分钟，结果通过上面的 `GET` 轮询。任务不存在或已过期、识别未完成、复核进行中返回 `409`。原件缺失或未启用复核返回 `404`。codex 不可用返回 `503`。
+- 项目初次打开时可将复核修正作为确认底稿。已保存项目的复核页面比较项目底稿和修正后的户型，用户可以用修正版新建一套方案。
 - 复核失败后，任务 `review.state` 变为 `unavailable`，项目卡片显示复核未完成，复核结果 `GET` 返回 `404`。`STUDIO_PLAN_REVIEW=off` 时不再启动自动复核（任务的 `review` 保持 `null`），`POST` 返回 `404`，已存在的复核结果仍可读取。
 - 任务和结果保存在 `~/.interior-design-studio/import-jobs`，可设置 `STUDIO_IMPORT_JOBS_DIR`。已归档的任务将源文件放在各自的 `source/`，原件和结果可长期按任务 ID 读取。默认历史列表返回 7 天内每个访问范围最近 32 条完成任务，以及进行中的任务。原图归档独立于工作副本和服务重启。打开和编辑后的项目由浏览器保存。
 
@@ -352,7 +376,7 @@ type PlanImportResponse = {
 
 直梯段 `stairs` 沿局部 `-z` 到 `+z` 上升，`steps` 为 1–32。扇形梯段 `winder` 的 `steps` 为 2–32，`pivot` 和 `edges` 都使用部件各轴 `[-0.5,0.5]` 的坐标，端点数为 `steps + 1`。内角与相邻两端点构成一块踏步，三角形方向需一致且面积大于零。
 
-页面预览家具及构件数量，并展示中文摘要供用户核对估算的尺寸、轮廓和布置关系。应用后，识别结果进入 `state.furniture`，并和户型一起保存为一次撤销操作。「保留现有家具」会一并带入画布原有布置。
+页面预览家具及构件数量，并展示中文摘要供用户核对估算的尺寸、轮廓和布置关系。确认后，识别的户型和家具一起进入新项目的底稿及方案一，识别家具写入该方案的 `state.furniture`。
 
 失败返回 `{ "error": "..." }`（HTTP 4xx/5xx）。
 

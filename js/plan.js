@@ -203,6 +203,47 @@
     return {ok:true, plan, errors};
   }
 
+  // 同一门洞的左右门扇可能分别保存为半幅门洞，也可能各自带完整门洞。
+  function groupSwingDoors(doors){
+    const tolerance = 20; // mm，容纳图纸识别误差。
+    const near = (a, b) => Math.abs(a - b) <= tolerance;
+    const spans = doors.map(({rect, h, c, o, len}) => {
+      const axis = rect[2] - rect[0] >= rect[3] - rect[1] ? 0 : 1;
+      const across = 1 - axis;
+      const direction = Math.sign(c[axis]), opens = Math.sign(o[across]);
+      if (!direction || !opens || Math.abs(c[across]) > Math.abs(c[axis]) * .05 ||
+          Math.abs(o[axis]) > Math.abs(o[across]) * .05 ||
+          !near(h[axis], rect[axis + (direction > 0 ? 0 : 2)]) ||
+          h[across] < rect[across] - tolerance || h[across] > rect[across + 2] + tolerance) return null;
+      return {axis, across, direction, opens, rect, pivot:h[across], tip:h[axis] + len * direction};
+    });
+    const matches = doors.map(() => []);
+    spans.forEach((left, i) => {
+      if (left?.direction !== 1) return;
+      const {axis, across} = left;
+      spans.forEach((right, j) => {
+        if (right?.direction !== -1 || right.axis !== axis || right.opens !== left.opens ||
+            !near(left.pivot, right.pivot) || !near(left.tip, right.tip) ||
+            !near(left.rect[across], right.rect[across]) ||
+            !near(left.rect[across + 2], right.rect[across + 2])) return;
+        const shared = near(left.rect[axis], right.rect[axis]) && near(left.rect[axis + 2], right.rect[axis + 2]);
+        const split = near(left.rect[axis + 2], right.rect[axis]) &&
+          near(left.tip, left.rect[axis + 2]) && near(right.tip, right.rect[axis]);
+        if (shared || split){ matches[i].push(j); matches[j].push(i); }
+      });
+    });
+    return doors.flatMap((door, index) => {
+      const candidates = matches[index], [other] = candidates;
+      if (candidates.length !== 1 || matches[other].length !== 1){
+        return [{index, rect:door.rect, leaves:[door]}];
+      }
+      if (other < index) return [];
+      const partner = doors[other], [x0, y0, x1, y1] = door.rect, [a0, b0, a1, b1] = partner.rect;
+      const rect = [Math.min(x0, a0), Math.min(y0, b0), Math.max(x1, a1), Math.max(y1, b1)];
+      return [{index, rect, leaves:[door, partner]}];
+    });
+  }
+
   /* ---------- 房间 / 墙体查找（Plan 与 state 的桥） ---------- */
   const validWallId = id => typeof id === 'string' && /^w\d+$/.test(id) && +id.slice(1) < App.store.WALLS.length;
   const matKey = k => (App.store.MATS && App.store.MATS[k]) ? k : (Object.keys(App.store.MATS || {})[0] || DEFAULT_ROOM_MAT);
@@ -212,6 +253,6 @@
 
   Object.assign(App.plan, {
     FALLBACK_PLAN, DEFAULT_WALL_HEIGHT, wallHeight, sanitizePlan, validWallId, matKey, matInfo,
-    roomDef, wallOf,
+    roomDef, wallOf, groupSwingDoors,
   });
 })();

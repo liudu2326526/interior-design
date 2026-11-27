@@ -20,7 +20,7 @@
   const lights = ['downlight','spot','pendant','linear','track'];
   const groups = {zone:'zones',edge:'edges',fixture:'fixtures'};
   const defaultCeilingColor = () => model.defaultColor || '#ffffff';
-  let presetWidth=400, arrayType='downlight', projectId='', lastPreset=null, pendingPreset=null;
+  let presetWidth=400, arrayType='downlight', sceneKey='', lastPreset=null, pendingPreset=null;
   let enabled=false, overlay=false, roomId='', selected=null, tool=null, points=[], hoverPoint=null, dragPreview=null, edgeIndex=0, vertexIndex=0, count=4;
   const active = () => enabled && !App.io.is3D?.();
   const rooms = () => App.store.ROOMS.filter(r => !r.bay);
@@ -79,7 +79,8 @@
     syncView();
   }
   async function open(id,kind,itemId){
-    if(App.io.is3D?.()){ await App.io.setView('2d'); if(App.io.is3D())return; }
+    const openingScene = App.projects.activeSceneKey;
+    if(App.io.is3D?.()){ await App.io.setView('2d'); if(App.io.is3D() || openingScene !== App.projects.activeSceneKey)return; }
     enter(id,kind,itemId);
   }
   function close(){enabled=false;clearTool();syncView();}
@@ -269,9 +270,9 @@
     if(!def||isPreview())lib.querySelectorAll('[data-cmd]').forEach(b=>{if (b.dataset.cmd!=='preview' && !(!def&&b.dataset.cmd==='scan'))b.disabled=true;});
   }
   function render(){
-    const project=App.projects.activeProjectId;
-    if(projectId && project && project!==projectId){roomId='';selected=null;edgeIndex=vertexIndex=0;holeIndex=-1;clearTool();}
-    if(project)projectId=project;
+    const current = App.projects.activeSceneKey;
+    if(sceneKey && current && current!==sceneKey){roomId='';selected=null;edgeIndex=vertexIndex=0;holeIndex=-1;lastPreset=null;clearTool();}
+    if(current)sceneKey=current;
     const edit=active(); if(edit)reconcile();
     document.body.classList.toggle('ceiling-edit',edit);
     const libName=tr('家具库','Library');

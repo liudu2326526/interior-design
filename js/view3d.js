@@ -1116,30 +1116,40 @@
         mu.position.set(cx + (hz ? t : 0), sill + gh/2, cz + (hz ? 0 : t)); mu.castShadow = true; archUp.add(mu); }
       [sill + .02, gTop - .02].forEach(y => { const tr = new THREE.Mesh(new THREE.BoxGeometry(hz ? L : .06, .04, hz ? .06 : L), frameMat); tr.position.set(cx, y, cz); archUp.add(tr); });
     });
-    App.store.DOORS.forEach((d, i) => {
-      const doorTop = openingTop(d.rect, walls, top);
-      const lintel = wallBox(d.rect, 2.1, doorTop);
-      const pivot = new THREE.Group(), L = M(d.len), dh = Math.min(2.05, doorTop);
-      pivot.position.set(wx(d.h[0]), 0, wz(d.h[1]));
-      const leaf = box(L, dh, .04, mat(d.entry ? '#6b4f3a' : '#efe6d8', {roughness:.5}), L/2);
-      const a0 = Math.atan2(-d.c[1], d.c[0]), a1 = Math.atan2(-d.o[1], d.o[0]);
-      const turn = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)), key = `swing-${i}`;
-      const door = addDoor({key, name:d.name, open:previousDoors.get(key) ?? true, rect:d.rect, height:dh,
-        move: t => { pivot.rotation.y = a0 + turn*t; },
+    App.plan.groupSwingDoors(App.store.DOORS).forEach(({index, rect, leaves}) => {
+      const doorTop = openingTop(rect, walls, top);
+      const dh = Math.min(2.05, doorTop), key = `swing-${index}`;
+      const pivots = leaves.map(d => {
+        const pivot = new THREE.Group(), length = M(d.len);
+        pivot.position.set(wx(d.h[0]), 0, wz(d.h[1]));
+        const start = Math.atan2(-d.c[1], d.c[0]), end = Math.atan2(-d.o[1], d.o[0]);
+        const turn = Math.atan2(Math.sin(end - start), Math.cos(end - start));
+        pivot.add(box(length, dh, .04, mat(d.entry ? '#6b4f3a' : '#efe6d8', {roughness:.5}), length/2));
+        if (dh > .05){
+          const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 8), metal());
+          knob.position.set(length - .07, Math.min(1, dh - .05), 0); knob.scale.z = 2.2;
+          pivot.add(knob);
+        }
+        return {pivot, length, start, turn};
+      });
+      const name = leaves.length === 1 ? leaves[0].name : leaves.map(d => d.name).join(' / ');
+      const door = addDoor({key, name, open:previousDoors.get(key) ?? true, rect, height:dh,
+        move(t){
+          for (const {pivot, start, turn} of pivots) pivot.rotation.y = start + turn*t;
+        },
         blocks(x, z, r){
-          const a = pivot.rotation.y, px = pivot.position.x, pz = pivot.position.z;
-          const dx = Math.cos(a)*L, dz = -Math.sin(a)*L;
-          const t = clamp01(((x-px)*dx + (z-pz)*dz)/(L*L));
-          return Math.hypot(x - px - t*dx, z - pz - t*dz) < r*.8;
+          return pivots.some(({pivot, length}) => {
+            const a = pivot.rotation.y, px = pivot.position.x, pz = pivot.position.z;
+            const dx = Math.cos(a)*length, dz = -Math.sin(a)*length;
+            const t = clamp01(((x-px)*dx + (z-pz)*dz)/(length*length));
+            return Math.hypot(x - px - t*dx, z - pz - t*dz) < r*.8;
+          });
         }});
-      door.lintel = lintel;
-      leaf.userData.door = door; pivot.add(leaf);
-      if (dh > .05){
-        const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 8), metal());
-        knob.position.set(L - .07, Math.min(1, dh - .05), 0); knob.scale.z = 2.2;
-        knob.userData.door = door; pivot.add(knob);
+      door.lintel = wallBox(rect, 2.1, doorTop);
+      for (const {pivot} of pivots){
+        for (const part of pivot.children) part.userData.door = door;
+        archUp.add(pivot);
       }
-      archUp.add(pivot);
     });
     App.store.SLIDES.forEach(({rect, v}, i) => {
       const [x0, y0, x1, y1] = rect, head = v ? 2.4 : 2.1, slideTop = openingTop(rect, walls, top);

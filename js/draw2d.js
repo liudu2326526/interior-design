@@ -106,20 +106,25 @@
     }
   }
 
+  function wallPaint(kind, demolished, bearing = false){
+    if (demolished) return 'fill="rgba(198,91,58,.12)" stroke="#c65b3a" stroke-width="1.2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"';
+    if (kind === 'low') return 'fill="#e9e3d8" stroke="#8f897d" stroke-width="1" vector-effect="non-scaling-stroke"';
+    const fill = kind === 'b' ? (bearing ? '#b8412c' : '#26241f') : kind === 'e' ? '#8f897d' : '#a7a195';
+    return `fill="${fill}"`;
+  }
+
   function renderWalls(){
-    App.core.$('#gWalls').innerHTML = App.store.WALLS.map((w,i) => {
-      const k = w[4], id = 'w'+i, dem = App.store.state.demolished.includes(id);
-      let fill = k==='b' ? (App.store.ui.layers.bearing ? '#b8412c' : '#26241f') : k==='low' ? '#e9e3d8' : k==='e' ? '#8f897d' : '#a7a195';
-      let ex = k==='low' ? 'stroke="#8f897d" stroke-width="1" vector-effect="non-scaling-stroke"' : '';
-      if (dem){ fill = 'rgba(198,91,58,.12)'; ex = 'stroke="#c65b3a" stroke-width="1.2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"'; }
-      return wallShape(w, `class="wall" data-wall="${id}" fill="${fill}" ${ex}`);
+    App.core.$('#gWalls').innerHTML = App.store.WALLS.map((wall, i) => {
+      const id = 'w' + i;
+      const paint = wallPaint(wall[4], App.store.state.demolished.includes(id), App.store.ui.layers.bearing);
+      return wallShape(wall, `class="wall" data-wall="${id}" ${paint}`);
     }).join('');
   }
 
-  function renderOpenings(){
+  function openingsMarkup(wins, doors, slides, bounds, showEntry = true){
     const WS = 'stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"';
     let s = '';
-    App.store.WINS.forEach(([x0,y0,x1,y1,curve]) => {
+    wins.forEach(([x0,y0,x1,y1,curve]) => {
       if (curve){
         s += `<path d="${curveBandPath(curve)}" fill="#f7fbfd" ${WS}/>`;
         for (const t of [-1/6, 1/6]) s += `<path d="${curveLinePath(curve, curve.thickness * t)}" fill="none" ${WS}/>`;
@@ -131,7 +136,7 @@
       else [1/3,2/3].forEach(t => s += `<line x1="${x0+w*t}" y1="${y0}" x2="${x0+w*t}" y2="${y1}" ${WS}/>`);
     });
     const DS = 'stroke="#3d3a34" stroke-width="1" vector-effect="non-scaling-stroke"';
-    App.store.DOORS.forEach(d => {
+    doors.forEach(d => {
       const [hx,hy] = d.h, L = d.len, T = 40;
       const ox = hx + d.o[0]*L, oy = hy + d.o[1]*L, cx = hx + d.c[0]*L, cy = hy + d.c[1]*L;
       const sweep = d.o[0]*d.c[1] - d.o[1]*d.c[0] > 0 ? 1 : 0;
@@ -139,23 +144,28 @@
       s += `<polygon points="${hx},${hy} ${ox},${oy} ${ox+d.c[0]*T},${oy+d.c[1]*T} ${hx+d.c[0]*T},${hy+d.c[1]*T}" fill="#fff" stroke="${col}" stroke-width="${d.entry?1.8:1}" vector-effect="non-scaling-stroke"/>`;
       s += `<path d="M${ox} ${oy}A${L} ${L} 0 0 ${sweep} ${cx} ${cy}" fill="none" ${DS} stroke-dasharray="5 3" opacity=".7"/>`;
     });
-    App.store.SLIDES.forEach(({rect:[x0,y0,x1,y1],v}) => {
+    slides.forEach(({rect:[x0,y0,x1,y1],v}) => {
       if (v){ const L = y1-y0, m = (x0+x1)/2; s += `<rect x="${m-45}" y="${y0}" width="40" height="${L*.55}" fill="#fff" ${DS}/><rect x="${m+5}" y="${y1-L*.55}" width="40" height="${L*.55}" fill="#fff" ${DS}/>`; }
       else { const L = x1-x0, m = (y0+y1)/2; s += `<rect x="${x0}" y="${m-45}" width="${L*.55}" height="40" fill="#fff" ${DS}/><rect x="${x1-L*.55}" y="${m+5}" width="${L*.55}" height="40" fill="#fff" ${DS}/>`; }
     });
     // 入户标识：由带 entry 标记的门推导（门外 900mm 处画箭头与文字）
-    const entry = App.store.DOORS.find(d => d.entry);
+    const entry = showEntry && doors.find(d => d.entry);
     if (entry){
       const [x0,y0,x1,y1] = entry.rect, ex = (x0+x1)/2, ey = (y0+y1)/2;
       const thinX = (x1-x0) <= (y1-y0);                         // 门洞在竖墙里 → 法线沿 x
-      const sgn = thinX ? (ex <= App.store.BOUNDS.x + App.store.BOUNDS.w/2 ? -1 : 1) : (ey <= App.store.BOUNDS.y + App.store.BOUNDS.h/2 ? -1 : 1);
+      const sgn = thinX ? (ex <= bounds.x + bounds.w/2 ? -1 : 1) : (ey <= bounds.y + bounds.h/2 ? -1 : 1);
       const dx = thinX ? sgn : 0, dy = thinX ? 0 : sgn, px = -dy, py = dx;
       const ax = ex + dx*900, ay = ey + dy*900, bx = ex + dx*200, by = ey + dy*200;
       s += `<path d="M${ax} ${ay}L${bx} ${by}M${bx+dx*220+px*150} ${by+dy*220+py*150}L${bx} ${by}L${bx+dx*220-px*150} ${by+dy*220-py*150}"
             fill="none" stroke="#b5653a" stroke-width="2" vector-effect="non-scaling-stroke"/>
           <text x="${ax+px*260}" y="${ay+py*260-60}" font-size="200" fill="#b5653a" text-anchor="middle">${App.core.tr('入户','Entry')}</text>`;
     }
-    App.core.$('#gOpen').innerHTML = s;
+    return s;
+  }
+
+  function renderOpenings(){
+    const {WINS, DOORS, SLIDES, BOUNDS} = App.store;
+    App.core.$('#gOpen').innerHTML = openingsMarkup(WINS, DOORS, SLIDES, BOUNDS);
   }
 
   function renderLabels(){
@@ -258,10 +268,14 @@
     App.view3d?.sync();
   }
 
-  let renaming = false;                 // 顶栏方案名就地编辑中：暂不覆写 #brandName
+  let renaming = false, renamingProjectId = '';
+  const currentProjectName = () => App.projects.getActiveProject?.()?.name || App.store.PLAN.name;
   function updateHeader(){
     const tot = App.store.ROOMS.filter(r => r.counted !== false).reduce((a,r) => a + App.geom.roomArea(r), 0);
-    if (!renaming) App.core.$('#brandName').textContent = `${App.store.PLAN.name} · ${App.core.tr('装修设计', 'Interior Design')}`;
+    const brand = App.core.$('#brandName');
+    brand.title = App.core.tr('点击重命名项目', 'Click to rename the project');
+    App.core.$('#brandEdit').setAttribute('aria-label', App.core.tr('项目名称', 'Project name'));
+    if (!renaming) brand.textContent = currentProjectName();
     App.core.$('#subtitle').textContent = App.core.tr(`套内使用面积约 ${App.geom.fmt(tot)} m² · 尺寸单位 mm · 原图比例 1:60`, `Net floor area ≈ ${App.geom.fmt(tot)} m² · Units: mm · Original scale 1:60`);
     const components = App.geom.componentCount(App.store.state.furniture) > 0;
     const layoutLabel = components ? App.core.tr('家具 / 构件', 'Furniture / Components') : App.core.tr('家具', 'Furniture');
@@ -272,23 +286,26 @@
     App.core.$('#undo').style.opacity = App.store.undoStack.length ? 1 : .4; App.core.$('#redo').style.opacity = App.store.redoStack.length ? 1 : .4;
   }
 
-  /* ---------- 顶栏方案名：点击就地重命名，写入 PLAN.name（可撤销） ---------- */
+  /* ---------- 顶栏项目名 ---------- */
   function startRename(){
     if (renaming) return;
     renaming = true;
+    renamingProjectId = App.projects.activeProjectId;
     const b = App.core.$('#brandName'), inp = App.core.$('#brandEdit');
-    inp.value = App.store.PLAN.name || '';
+    inp.value = currentProjectName() || '';
     b.hidden = true; inp.hidden = false;
     inp.focus(); inp.select();
   }
-  function endRename(save){
+  async function endRename(save){
     if (!renaming) return;
     renaming = false;
     const b = App.core.$('#brandName'), inp = App.core.$('#brandEdit');
     const name = inp.value.trim();
     inp.hidden = true; b.hidden = false;
-    if (save && name && name !== App.store.PLAN.name) App.store.mutate(() => { App.store.PLAN.name = name; });
-    else updateHeader();
+    if (save && name && name !== currentProjectName() && renamingProjectId === App.projects.activeProjectId){
+      await App.projects.renameProject(name);
+    }
+    updateHeader();
   }
   App.core.$('#brandName').onclick = startRename;
   App.core.$('#brandName').onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); startRename(); } };
@@ -300,6 +317,6 @@
 
   Object.assign(App.draw2d, {
     curveBandPath, roomShape, wallShape, furnitureShape, renderFurn, resizeMountedSymbols, renderOpenings, renderDims,
-    renderMeasure, renderSel, renderAll,
+    renderMeasure, renderSel, renderAll, fitLabel, wallPaint, openingsMarkup,
   });
 })();

@@ -394,10 +394,10 @@
     return [context, images];
   }
 
-  async function chatFurniture(raw, bubble){
+  async function chatFurniture(raw, bubble, sceneKey){
     if (!Array.isArray(raw) || !raw.length) return;
     const {items, persisted} = await App.customFurniture.add(raw);
-    if (!items.length) return;
+    if (!items.length || App.projects.activeSceneKey !== sceneKey) return;
     const {tr, esc} = App.core, cards = document.createElement('div');
     cards.className = 'chat-assets';
     cards.innerHTML = items.map((asset,index) => {
@@ -410,7 +410,7 @@
     }).join('');
     cards.addEventListener('click', e => {
       const button = e.target.closest('[data-place-asset]');
-      if (!button || chatState.sending) return;
+      if (!button || chatState.sending || App.projects.activeSceneKey !== sceneKey) return;
       const placed = App.interact.placeLibraryAsset(items[Number(button.dataset.placeAsset)]);
       if (placed){
         button.textContent = tr('再放一个','Place another');
@@ -468,7 +468,7 @@
       return;
     }
     cancelCeilingReply?.();
-    const projectId = App.projects.activeProjectId;
+    const sceneKey = App.projects.activeSceneKey;
     const roomId = focus?.room || context.ceilingSelection?.roomId || context.view.room || changes[0]?.path?.[3];
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -490,7 +490,7 @@
     cancelCeilingReply = () => discard(tr('预览已关闭', 'Preview closed'));
     cancel.onclick = cancelCeilingReply;
     apply.onclick = () => {
-      if (App.projects.activeProjectId !== projectId || App.store.ui.ceilingPreview !== preview || chatSceneChanged(context)){
+      if (App.projects.activeSceneKey !== sceneKey || App.store.ui.ceilingPreview !== preview || chatSceneChanged(context)){
         discard(tr('当前方案已改变，请重新生成天花修改。', 'The design changed. Generate the ceiling edit again.'));
         return;
       }
@@ -554,7 +554,7 @@
     const message = chatEls.in.value.trim();
     if (!message && !chatState.attachments.length) return;
     cancelCeilingReply?.();
-    const projectId = App.projects.activeProjectId;
+    const sceneKey = App.projects.activeSceneKey;
     const files = chatState.attachments.splice(0);
     resetChatDraft();
     const sent = chatAdd('me', message);
@@ -579,16 +579,18 @@
         attachments.push(await encodeChatAttachment(file));
       }
       ctrl.signal.throwIfAborted();
+      if (App.projects.activeSceneKey !== sceneKey) return;
       chatStatus(App.core.tr('正在思考…', 'Thinking…'), true);
       const chunks = aiTextChunks('chat', {
         method:'POST',
         headers:{'content-type':'application/json'},
-        body: JSON.stringify({sessionId: App.projects.activeProjectId ? `${chatSid}-${App.projects.activeProjectId}` : chatSid, message, context, images, attachments}),
+        body: JSON.stringify({sessionId: sceneKey ? `${chatSid}-${sceneKey}` : chatSid, message, context, images, attachments}),
         signal: ctrl.signal,
       });
       let buf = '', acc = '', got = false, erred = false;
       const ensure = () => cur || (cur = chatAdd('bot', ''));
       for await (const textChunk of chunks){
+        if (App.projects.activeSceneKey !== sceneKey) return;
         buf += textChunk;
         const step = takeSSE(buf); buf = step.rest;
         for (const ev of step.events){
@@ -598,20 +600,22 @@
             acc += ev.text; const m = ensure(); m.text = acc; m.el.innerHTML = mdLite(acc); chatScroll();
           }
           else if (type === 'result' && ev.result && typeof ev.result === 'object'){
-            if (App.projects.activeProjectId !== projectId) return;
             got = true;
             const r = ev.result;
             const reply = typeof r.reply === 'string' && r.reply.trim() ? r.reply : acc;
             const m = ensure(); m.text = reply; m.el.innerHTML = mdLite(reply);
             chatResult(r, m, context);
-            await chatFurniture(r.furniture, m);
+            await chatFurniture(r.furniture, m, sceneKey);
+            if (App.projects.activeSceneKey !== sceneKey) return;
             chatScroll();
           }
           else if (type === 'error'){ erred = true; chatAdd('err', String(ev.message || App.core.tr('服务返回错误', 'The service returned an error'))); }
         }
       }
-      if (!got && !erred && !ctrl.signal.aborted && !cur) chatAdd('err', App.core.tr('没有收到回复，请重试。', 'No reply received — please try again.'));
+      if (App.projects.activeSceneKey === sceneKey && !got && !erred && !ctrl.signal.aborted && !cur)
+        chatAdd('err', App.core.tr('没有收到回复，请重试。', 'No reply received — please try again.'));
     } catch(e){
+      if (App.projects.activeSceneKey !== sceneKey) return;
       if (e && e.name === 'AbortError'){
         if (cur) chatMeta(cur, App.core.tr('已停止生成', 'Generation stopped'));
         else chatAdd('err', App.core.tr('已停止', 'Stopped'));
@@ -922,14 +926,14 @@
 
   function currentRenderReference(){
     const capture = renderState.refCapture;
-    return capture && capture.url === renderState.refURL && capture.projectId === App.projects.activeProjectId ? capture : null;
+    return capture && capture.url === renderState.refURL && capture.sceneKey === App.projects.activeSceneKey ? capture : null;
   }
 
-  function resetRenderReference(){
+  function resetRenderReference({closeOutput = false} = {}){
     clearTimeout(renderState.refT);
     renderState.refT = 0;
     renderState.refRevision++;
-    if (renderState.lb?.url === renderState.refURL) closeLightbox();
+    if (renderState.lb && (closeOutput || renderState.lb.url === renderState.refURL)) closeLightbox();
     renderState.refURL = '';
     renderState.refCapture = null;
     if (!renderEls.ref) return;
@@ -1049,17 +1053,17 @@
     clearTimeout(renderState.refT);
     renderState.refT = 0;
     const revision = ++renderState.refRevision;
-    const projectId = App.projects.activeProjectId;
+    const sceneKey = App.projects.activeSceneKey;
     try {
       renderAvailability();
       const scene = renderScene({key:'current', roomId:null}, 'angle');
       const shot = await renderShot();
-      if (revision !== renderState.refRevision || projectId !== App.projects.activeProjectId) return false;
+      if (revision !== renderState.refRevision || sceneKey !== App.projects.activeSceneKey) return false;
       if (!shot) throw new Error('Empty reference capture');
       renderState.cam = 'current';
       renderEls.cam.value = 'current';
       renderCorners();
-      renderRefShow(shot, {url:shot, scene, projectId});
+      renderRefShow(shot, {url:shot, scene, sceneKey});
       if (openPanel){
         if (document.pointerLockElement) document.exitPointerLock?.();
         App.panel.drawer('panel', true);
@@ -1068,7 +1072,7 @@
       App.core.toast(App.core.tr('已将当前画面设为效果图参考。', 'Current view set as the render reference.'));
       return true;
     } catch {
-      if (revision === renderState.refRevision && projectId === App.projects.activeProjectId){
+      if (revision === renderState.refRevision && sceneKey === App.projects.activeSceneKey){
         App.core.toast(App.core.tr('截图失败，请重试', 'Screenshot failed. Try again.'));
       }
       return false;
@@ -1086,14 +1090,15 @@
   let renderRefPending = null;
   async function renderRefreshRef(){
     const revision = renderState.refRevision;
+    const sceneKey = App.projects.activeSceneKey;
     if (!App.io.studio.is3D() || currentRenderReference() || capturePending || renderRefPending === revision) return;
     renderRefPending = revision;
     try {
       await renderWaitFly();
       await new Promise(r => setTimeout(r, 80));    // 让镜头动效最后一帧落地
-      if (!App.io.studio.is3D() || revision !== renderState.refRevision) return;
+      if (!App.io.studio.is3D() || revision !== renderState.refRevision || sceneKey !== App.projects.activeSceneKey) return;
       const url = await App.io.studio.shot({scale: 1, clean: true});
-      if (url && revision === renderState.refRevision) renderRefShow(url);
+      if (url && revision === renderState.refRevision && sceneKey === App.projects.activeSceneKey) renderRefShow(url);
     } catch(e){}
     finally { if (renderRefPending === revision) renderRefPending = null; }
   }
@@ -1150,6 +1155,7 @@
     if (renderState.busy || capturePending || renderState.online === false) return null;
     if (!App.io.studio.is3D()){ renderViewSync(); return null; }
     if (!App.view3d){ App.core.toast(App.core.tr('3D 引擎尚未就绪', 'The 3D engine is not ready yet')); return null; }
+    const sceneKey = App.projects.activeSceneKey;
     const note = renderEls.note.value.trim();
     const style = renderState.style;
     const asRoom = opts.kind === 'room' && !!App.plan.roomDef(opts.roomId);
@@ -1168,7 +1174,9 @@
     let gotUrl = '', lastRec = null;
     try {
       if (!pinned) await renderWaitFly();
+      if (sceneKey !== App.projects.activeSceneKey) return null;
       const shot = pinned?.url ?? await renderShot();
+      if (sceneKey !== App.projects.activeSceneKey) return null;
       if (!shot) throw new Error(App.core.tr('截图失败（3D 画面为空）', 'Screenshot failed (empty 3D frame)'));
       if (!reference) renderRefShow(shot);
       const scene = pinned?.scene ?? renderScene(cam, kind);
@@ -1186,6 +1194,7 @@
       });
       let buf = '', err = '';
       for await (const textChunk of chunks){
+        if (sceneKey !== App.projects.activeSceneKey) return null;
         if (renderState.online !== true){ renderState.online = true; renderNotice(); renderAvailability(); }
         buf += textChunk;
         const step = takeSSE(buf); buf = step.rest;
@@ -1217,12 +1226,14 @@
           }
         }
       }
+      if (sceneKey !== App.projects.activeSceneKey) return null;
       if (ctrl.signal.aborted){ if (!gotUrl) renderStatus(App.core.tr('已取消', 'Cancelled'), false); return lastRec; }
       if (!gotUrl){
         if (!err) renderErr(App.core.tr('没有收到图片，请重试或在补充描述里写得更具体。', 'No image was returned — try again or add more detail.'));
         renderStatus(App.core.tr('生成失败', 'Failed'), false);
       }
     } catch(e){
+      if (sceneKey !== App.projects.activeSceneKey) return null;
       if (e && e.name === 'AbortError'){
         if (!gotUrl) renderStatus(App.core.tr('已取消', 'Cancelled'), false);
       } else {

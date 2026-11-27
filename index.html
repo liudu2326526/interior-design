@@ -282,6 +282,61 @@ main.animating #roomBar{opacity:.85}
 .app > header{position:relative;padding-inline-end:104px}
 html:lang(en) .app > header{padding-inline-end:126px}
 .toolbar-standalone{border:1px solid var(--line);background:#fff}
+#schemeBar{display:flex;align-items:center;gap:3px;min-width:0}
+#schemeBar[hidden]{display:none}
+#schemeBar select{min-width:0;max-width:168px;font-weight:600}
+.scheme-select{width:100%;border:1px solid var(--line);border-radius:7px;background:#fff;padding:5px 8px}
+#schemeBar .btn{border:1px solid var(--line);background:#fff}
+#schemeBar .btn:hover,#schemeMore[open]>summary{background:var(--paper)}
+#schemeBar .btn:disabled{opacity:.47;cursor:default}
+#schemeMore{position:relative}
+#schemeMore summary{list-style:none}
+#schemeMore summary::-webkit-details-marker{display:none}
+#schemeMore .menu-pop .btn{border:0}
+#schemeMore .menu-pop{min-width:132px}
+.scheme-dialog{max-height:calc(100dvh - 28px);padding:0;border:1px solid var(--line);border-radius:12px;
+  color:var(--ink);background:var(--panel);box-shadow:0 16px 50px #241b1940}
+.scheme-dialog::backdrop{background:#29251f75}
+.scheme-dialog h2,.scheme-dialog p{margin:0}
+.scheme-dialog h2{font-size:16px}
+.scheme-dialog-head{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+.scheme-dialog-close{min-width:32px;padding:1px 7px;font-size:20px;color:#776b5e}
+#schemeEditDialog{width:min(430px,calc(100vw - 28px))}
+#schemeEditForm{display:grid;gap:13px;padding:14px}
+#schemeSourceChoices{display:grid;gap:6px;min-width:0;border:0;margin:0;padding:0}
+#schemeSourceChoices[hidden],#schemeNameField[hidden]{display:none}
+#schemeSourceChoices legend{margin:0 0 5px;color:#6d6255;padding:0}
+.scheme-source-choice{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;
+  border:1px solid var(--line);border-radius:8px;padding:9px;background:#fff;cursor:pointer}
+.scheme-source-choice:has(input:checked){border-color:#bc8261;background:#faf0e8}
+.scheme-source-choice input{accent-color:var(--accent)}
+.scheme-source-choice b,.scheme-source-choice small{display:block}
+.scheme-source-choice small{color:#6d6255;overflow-wrap:anywhere}
+#schemeNameField{display:grid;gap:5px}
+#schemeName{width:100%;min-width:0;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:#fff}
+.scheme-confirm-actions{display:flex;justify-content:flex-end;gap:5px}
+.scheme-confirm-actions .btn:not(.primary){border:1px solid var(--line)}
+#schemeConfirm.danger{background:#b3372a;color:#fff}
+#schemeFormError{color:#b3372a}
+#schemeFormError:empty{display:none}
+#schemeCompareDialog{width:min(1550px,calc(100vw - 28px));max-width:none}
+.scheme-compare-head{flex-wrap:wrap}
+.scheme-compare-title{display:flex;align-items:baseline;gap:5px 12px;flex-wrap:wrap}
+.scheme-compare-title small{color:#6d6255}
+.scheme-compare-tools{display:flex;align-items:center;gap:5px}
+.scheme-compare-tools .btn{border:1px solid var(--line);background:#fff;min-width:32px}
+.scheme-compare-tools .btn:hover{background:var(--paper)}
+.scheme-compare-tools .btn:disabled{opacity:.46;cursor:default}
+#schemeCompareFit{font-variant-numeric:tabular-nums;min-width:53px}
+.scheme-compare-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.scheme-compare-column + .scheme-compare-column{border-inline-start:1px solid var(--line)}
+.scheme-compare-column label{display:flex;align-items:center;gap:8px;padding:9px 11px;color:var(--accent);font-weight:650}
+.scheme-compare-column select{min-width:0}
+.scheme-compare-column svg{display:block;width:100%;height:min(65dvh,700px);min-height:260px;
+  border-block:1px solid var(--line);background:var(--paper);cursor:grab;touch-action:none}
+.scheme-compare-column svg.panning{cursor:grabbing}
+.scheme-compare-column p{padding:7px 11px;color:#6d6255;font-size:12px}
+#schemeCompareDifferences{padding:7px 11px;border-top:1px solid var(--line);color:#874623;font-size:12px}
 #toolbarCommands,#toolbarOptions{display:contents}
 #toolbarMore{display:none}
 #projectShelf{position:absolute;inset:8px 14px auto auto;z-index:24}
@@ -787,7 +842,9 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
   #viewSeg{grid-area:2/2/2/4;justify-self:end}
   #viewSeg .btn,#viewSeg .pill{width:68px}
   body.m3d #viewSeg .pill{transform:translateX(70px)}
-  #toolbarCommands{grid-area:3/1/3/4;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+  #schemeBar{grid-area:3/1/3/4}
+  #schemeBar select{flex:1;max-width:none}
+  #toolbarCommands{grid-area:4/1/4/4;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
   #toolbarCommands .btn,#paneBtns .btn,#viewSeg .btn{padding-inline:6px}
   #paneBtns .btn,#viewSeg .btn{font-size:12px}
   #toolbarOptions{
@@ -815,6 +872,13 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
   #fab .name{flex:1 0 100%;max-width:100%;text-align:center}
   #fab .btn{padding-inline:6px}
   #fab .sep{display:none}
+}
+@media(max-width:600px){
+  #schemeCompareDialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}
+  .scheme-compare-pair{grid-template-columns:minmax(0,1fr)}
+  .scheme-compare-column + .scheme-compare-column{border-inline-start:0;border-top:1px solid var(--line)}
+  .scheme-compare-column svg{height:min(40dvh,310px);min-height:195px;touch-action:pan-y}
+  .scheme-compare-column svg.zoomed{touch-action:none}
 }
 #ceilingMode.on{background:var(--accent);color:#fff}
 #ceilingLibrary{display:none;padding:10px}
@@ -881,6 +945,18 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <button class="btn chip" id="tgPanel" aria-controls="propertyPane" data-en="Properties ◨">属性 ◨</button>
     </div>
     <div class="brand"><b id="brandName" tabindex="0" role="button" title="点击重命名方案" data-en-title="Click to rename the plan">三室两厅两卫 · 装修设计</b><input id="brandEdit" hidden maxlength="60" spellcheck="false" aria-label="方案名称"><span id="subtitle">原始户型 1:60 · 尺寸单位 mm</span></div>
+    <div id="schemeBar" hidden>
+      <select id="schemeSelect" class="scheme-select" aria-label="当前方案"></select>
+      <button id="schemeNew" class="btn" type="button" aria-haspopup="dialog" data-en="New scheme">新建方案</button>
+      <button id="schemeCompare" class="btn" type="button" aria-haspopup="dialog" data-en="Compare">对比方案</button>
+      <details id="schemeMore">
+        <summary class="btn" title="管理当前方案" data-en-title="Manage current scheme">⋯</summary>
+        <div class="menu-pop">
+          <button id="schemeRename" type="button" class="btn" aria-haspopup="dialog" data-en="Rename scheme">重命名方案</button>
+          <button id="schemeDelete" type="button" class="btn danger" aria-haspopup="dialog" data-en="Delete scheme">删除方案</button>
+        </div>
+      </details>
+    </div>
     <div class="grp seg" id="viewSeg" title="切换 2D / 3D (T)" data-en-title="Switch 2D / 3D (T)">
       <span class="pill"></span>
       <button class="btn" data-view="2d" data-en="2D Plan">2D 平面</button>
@@ -953,7 +1029,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
         <div class="menu-pop">
           <button class="btn" id="importPlanFile" data-en="Import drawing…">导入图纸…</button>
           <button class="btn" id="importProj" data-en="Import project or design JSON" title="选择已导出的项目或设计 JSON" data-en-title="Choose an exported project or design JSON">导入项目或设计 JSON</button>
-          <button class="btn" id="exportProj" data-en="Export full project JSON" title="包含可编辑设计、漫游机位和效果图记录" data-en-title="Includes the editable design, walk points, and render history">导出完整项目 JSON</button>
+          <button class="btn" id="exportProj" data-en="Export full project JSON" title="包含识别底稿及全部方案的设计、漫游机位和效果图记录" data-en-title="Includes the baseline and all schemes with their designs, walk points, and renders">导出完整项目 JSON</button>
           <button class="btn" id="exportPng" data-en="Export current view as PNG" title="生成当前平面或 3D 视图的图片" data-en-title="Save an image of the current floor plan or 3D view">导出当前视图 PNG</button>
           <button class="btn" id="exportDwg" type="button" data-en="Export floor plan as DWG" title="包含墙、门窗、家具和尺寸。天花设计可导出为设计 JSON 或当前视图 PNG" data-en-title="Includes walls, openings, furniture, and dimensions. Export ceiling designs as design JSON or a current-view PNG" hidden>导出户型平面 DWG</button>
           <button class="btn" id="exportJson" data-en="Export design JSON" title="包含户型、家具、尺寸和天花设计" data-en-title="Includes the floor plan, furniture, dimensions, and ceiling design">导出设计 JSON</button>
@@ -1287,8 +1363,63 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
   </div>
 </div>
 
+<dialog id="schemeEditDialog" class="scheme-dialog" aria-labelledby="schemeEditTitle">
+  <div class="scheme-dialog-head">
+    <h2 id="schemeEditTitle"></h2>
+    <button id="schemeEditClose" class="btn scheme-dialog-close" type="button" title="关闭" data-en-title="Close">×</button>
+  </div>
+  <form id="schemeEditForm">
+    <fieldset id="schemeSourceChoices" hidden>
+      <legend data-en="Start from">选择方案起点</legend>
+      <label class="scheme-source-choice">
+        <input type="radio" name="schemeSource" value="baseline" checked>
+        <span><b id="schemeBaselineLabel"></b><small id="schemeBaselineHint"></small></span>
+      </label>
+      <label class="scheme-source-choice">
+        <input type="radio" name="schemeSource" value="current">
+        <span><b data-en="Duplicate current scheme">复制当前方案</b><small id="schemeCopyHint"></small></span>
+      </label>
+    </fieldset>
+    <label id="schemeNameField"><span data-en="Scheme name">方案名称</span><input id="schemeName" maxlength="60" autocomplete="off" spellcheck="false"></label>
+    <p id="schemeDeleteNote" hidden></p>
+    <p id="schemeFormError" role="alert"></p>
+    <div class="scheme-confirm-actions">
+      <button id="schemeCancel" class="btn" type="button" data-en="Cancel">取消</button>
+      <button id="schemeConfirm" class="btn primary" type="submit"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="schemeCompareDialog" class="scheme-dialog" aria-labelledby="schemeCompareTitle">
+  <div class="scheme-dialog-head scheme-compare-head">
+    <div class="scheme-compare-title">
+      <h2 id="schemeCompareTitle" data-en="Compare schemes">方案对比</h2>
+      <small data-en="Same scale · linked zoom and pan">同尺度 · 同步缩放与平移</small>
+    </div>
+    <div class="scheme-compare-tools">
+      <button id="schemeCompareOut" class="btn" type="button" title="缩小" data-en-title="Zoom out">−</button>
+      <button id="schemeCompareFit" class="btn" type="button" title="适应视图" data-en-title="Fit plans">100%</button>
+      <button id="schemeCompareIn" class="btn" type="button" title="放大" data-en-title="Zoom in">+</button>
+      <button id="schemeCompareClose" class="btn" type="button" data-en="Back to editing">返回编辑</button>
+    </div>
+  </div>
+  <div class="scheme-compare-pair">
+    <section class="scheme-compare-column">
+      <label>A <select id="schemeCompareA" class="scheme-select" aria-label="方案 A"></select></label>
+      <svg id="schemeComparePlanA" role="img" aria-label="方案 A 平面图"></svg>
+      <p id="schemeCompareStatsA"></p>
+    </section>
+    <section class="scheme-compare-column">
+      <label>B <select id="schemeCompareB" class="scheme-select" aria-label="方案 B"></select></label>
+      <svg id="schemeComparePlanB" role="img" aria-label="方案 B 平面图"></svg>
+      <p id="schemeCompareStatsB"></p>
+    </section>
+  </div>
+  <p id="schemeCompareDifferences" aria-live="polite"></p>
+</dialog>
+
 <script src="./js/core.js?v=3"></script>
-<script src="./js/plan.js?v=2"></script>
+<script src="./js/plan.js?v=3"></script>
 <script src="./js/geom.js?v=5"></script>
 <script src="./js/custom-furniture.js?v=2"></script>
 <script src="./js/dimension-geometry.js"></script>
@@ -1297,18 +1428,20 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <script src="./js/ceiling-furniture.js?v=2"></script>
 <script src="./js/store.js?v=5"></script>
 <script src="./js/dimension-calibration.js?v=3"></script>
-<script src="./js/draw2d.js?v=7"></script>
+<script src="./js/draw2d.js?v=8"></script>
 <script src="./js/panel.js?v=6"></script>
 <script src="./js/interact.js?v=8"></script>
-<script src="./js/ceiling-editor.js?v=5"></script>
-<script src="./js/io.js?v=8"></script>
+<script src="./js/ceiling-editor.js?v=6"></script>
+<script src="./js/io.js?v=9"></script>
 <script src="./js/ceiling-showcase.js?v=2"></script>
-<script src="./js/import.js?v=7"></script>
-<script src="./js/ceiling-import.js?v=3"></script>
-<script src="./js/assistant.js?v=8"></script>
-<script src="./js/projects.js?v=10"></script>
+<script src="./js/import.js?v=8"></script>
+<script src="./js/ceiling-import.js?v=4"></script>
+<script src="./js/assistant.js?v=9"></script>
+<script src="./js/schemes-compare.js"></script>
+<script src="./js/schemes-ui.js"></script>
+<script src="./js/projects.js?v=11"></script>
 <script src="./js/tour.js?v=2"></script>
 <script src="./js/view3d-models.js?v=4"></script>
-<script src="./js/view3d.js?v=11"></script>
+<script src="./js/view3d.js?v=12"></script>
 </body>
 </html>

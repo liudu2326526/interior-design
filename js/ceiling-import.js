@@ -82,7 +82,7 @@
       App.core.toast(tr('连接本机服务或登录公网 AI 后即可识别天花。','Connect to the local service or sign in to use AI recognition.')); return;
     }
     const studio = App.io.studio, plan = studio.getPlan(), base = model.normalize(App.ceilingFurniture.current(), plan.rooms);
-    const projectId = App.projects.activeProjectId;
+    const sceneKey = App.projects.activeSceneKey;
     let items = [], controller = null, preview = null, urls = [], before = false;
     const dialog = document.createElement('dialog');
     dialog.className = 'walk-dialog'; dialog.id = 'ceilingImport'; dialog.setAttribute('aria-labelledby','ceilingImportTitle');
@@ -128,9 +128,9 @@
     dialog.addEventListener('close',()=>{ controller?.abort(); urls.forEach(url=>URL.revokeObjectURL(url)); dialog.remove(); },{once:true});
     const assertCurrent = () => {
       const now = App.ceilingFurniture.current();
-      if (App.projects.activeProjectId !== projectId || JSON.stringify(plan)!==JSON.stringify(studio.getPlan()) ||
+      if (App.projects.activeSceneKey !== sceneKey || JSON.stringify(plan)!==JSON.stringify(studio.getPlan()) ||
           JSON.stringify(base)!==JSON.stringify(model.normalize(now, plan.rooms))){
-        throw new Error(tr('项目、底图或天花已改变。请关闭后重新识别。','The project, floor plan or ceiling changed. Reopen recognition to use the current version.'));
+        throw new Error(tr('方案、底图或天花已改变。请关闭后重新识别。','The design, floor plan or ceiling changed. Reopen recognition to use the current version.'));
       }
     };
     const refresh = () => {

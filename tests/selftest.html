@@ -146,6 +146,24 @@ async function main(){
     return 'rooms=' + p.rooms.length + '，walls=' + p.walls.length + '，首个房间=' + ctx.roomId;
   });
 
+  await check('plan.doubleSwingOpenings', () => {
+    const {groupSwingDoors} = win().App.plan;
+    const left = {rect:[20710,9190,21280,9370], h:[20710,9370], c:[1,0], o:[0,1], len:570};
+    const right = {rect:[21280,9190,21850,9370], h:[21850,9370], c:[-1,0], o:[0,1], len:570};
+    const nextDoor = {...right, rect:[21850,9190,22550,9370], h:[22550,9370], len:700};
+    const split = groupSwingDoors([right, nextDoor, left]);
+    assert(split.length === 2 && split[0].leaves[0] === right && split[0].leaves[1] === left &&
+      split[1].leaves.length === 1, '拆分记录应按门洞几何配对，邻近单开门仍独立');
+    assert(JSON.stringify(split[0].rect) === '[20710,9190,21850,9370]', '未合并为完整门洞');
+    const rect = [100,1000,240,2160];
+    const top = {rect, h:[240,1000], c:[0,1], o:[-1,0], len:750};
+    const bottom = {rect, h:[240,2160], c:[0,-1], o:[-1,0], len:410};
+    assert(groupSwingDoors([top,bottom])[0].leaves.length === 2, '竖向大小扇共用门洞时未配对');
+    assert(groupSwingDoors([left,{...right, o:[0,-1]}]).length === 2, '两侧开门被误配对');
+    assert(groupSwingDoors([left,right,{...right}]).every(group => group.leaves.length === 1), '有歧义的门扇被强行配对');
+    return '拆分记录、共用门洞、大小扇与邻近独立门';
+  });
+
   await check('applyOps.setRoom', () => {
     const S = studio();
     const id = ctx.roomId;
@@ -698,11 +716,14 @@ async function main(){
   });
 
   await check('files.designAndProjectJSON', async () => {
-    const w = win(), doc = w.document, S = studio(), {store, ceilingEditor} = w.App;
-    const name = '可编辑设计 / 客户版';
+    const w = win(), doc = w.document, S = studio(), {store, ceilingEditor, projects} = w.App;
+    const name = '户型项目 / 客户版', schemeName = '家具方案 / 对照';
     const room = S.getPlan().rooms[0];
     const pose = {x:room.at[0], y:room.at[1], height:1.55, yaw:.5, pitch:0, roomId:room.id};
-    assert(S.applyOps([{op:'editScene',changes:[{action:'replace',path:['plan','name'],value:name}]}]).applied === 1, '测试项目重命名失败');
+    assert(await projects.renameProject(name), '测试项目重命名失败');
+    assert(await projects.renameScheme(projects.activeSchemeId, schemeName), '测试方案重命名失败');
+    const other = await projects.createScheme({from:'current', name:'另一套方案'});
+    assert(other && await projects.switchScheme(projects.getActiveProject().schemes.find(item => item.name === schemeName).id), '未创建并切回测试方案');
     await ceilingEditor.open(room.id);
     try { doc.querySelector('#ceilingLibrary [data-cmd="preset"][data-value="flat"]').click(); }
     finally { ceilingEditor.close(); }
@@ -731,19 +752,66 @@ async function main(){
       anchor.click = previousClick;
       w.fetch = previousFetch;
     }
-    assert(clicks.length === 2 && clicks[0].name === '可编辑设计 _ 客户版 - 完整项目.json' &&
-      clicks[1].name === '可编辑设计 _ 客户版 - 设计.json', '两个导出文件名无法区分或含路径分隔符');
+    assert(clicks.length === 2 && clicks[0].name === '户型项目 _ 客户版 - 完整项目.json' &&
+      clicks[1].name === '户型项目 _ 客户版 - 家具方案 _ 对照 - 设计.json', '完整项目和当前方案的导出文件名无法区分');
     const [project, design] = await Promise.all(clicks.map(item => item.json));
-    assert(project.version === 2 && design.version === 2 && project.renders.length === 1 &&
-      project.state.walk.recent[0].roomId === room.id, '完整项目缺少效果图或漫游记录');
-    assert(design.plan.name === name && design.state.ceiling.rooms[room.id]?.zones.length === 1 && !('renders' in design.state) &&
+    const active = project.schemes.find(item => item.id === project.activeSchemeId);
+    const otherExported = project.schemes.find(item => item.id === other.id);
+    assert(project.version === 3 && design.version === 2 && project.name === name && project.baseline.plan && active.name === schemeName &&
+      active.snapshot.state.renders.length === 1 && active.snapshot.state.walk.recent[0].roomId === room.id, '完整项目缺少方案、底稿、效果图或漫游记录');
+    assert(otherExported && !otherExported.snapshot.state.furniture.some(item => item.id === lamp.id), '导出其他方案时串入当前方案的编辑');
+    assert(design.plan.name === S.getPlan().name && design.state.ceiling.rooms[room.id]?.zones.length === 1 && !('renders' in design.state) &&
       !('walk' in design.state), '设计导出内容范围错误');
-    assert([project,design].every(file => file.state.furniture.some(item => item.id === lamp.id && item.ceiling?.roomId === room.id)),
+    assert([active.snapshot,design].every(file => file.state.furniture.some(item => item.id === lamp.id && item.ceiling?.roomId === room.id)),
       'JSON 丢失顶装灯具挂载数据');
-    assert(cadName === '可编辑设计 _ 客户版 - 户型平面.dwg' &&
+    assert(cadName === '户型项目 _ 客户版 - 家具方案 _ 对照 - 户型平面.dwg' &&
       dwg.state.furniture.some(item => item.id === sofa.id) && !dwg.state.furniture.some(item => item.id === lamp.id),
       '户型平面 DWG 的家具范围错误');
-    return '完整项目与设计文件保留顶装灯具，户型平面 DWG 保留落地家具';
+    assert(await projects.openImportedProject(project), '完整项目 JSON 未能重新导入');
+    assert(projects.getActiveProject().schemes.length === project.schemes.length && S.getState().renders.length === 1,
+      '重新导入时丢失方案或当前方案效果图');
+    return '完整项目导入导出保留全部方案，当前设计 JSON 和 DWG 保留各自的家具范围';
+  });
+
+  await check('projects.independentSchemesAndComparison', async () => {
+    const w = win(), doc = w.document, S = studio();
+    const {projects, store} = w.App;
+    assert(await projects.openNewProject({plan:{...dimensionFixture(S.getPlan()), name:'方案管理测试'}}), '无法打开项目');
+    const projectId = projects.activeProjectId;
+    const firstId = projects.activeSchemeId;
+    store.mutate(() => { store.state.demolished = ['w4']; });
+    const second = await projects.createScheme({from:'baseline', name:'从底稿'});
+    assert(second && !S.getState().demolished.length, '底稿新方案带入了当前方案的拆墙');
+    assert(await projects.switchScheme(firstId), '无法切回方案一');
+    assert(S.getState().demolished.includes('w4'), '方案一丢失拆墙');
+    const copied = await projects.createScheme({from:'current', name:'复制方案'});
+    assert(copied && S.getState().demolished.includes('w4'), '复制方案没有带入当前设计');
+    store.mutate(() => { store.state.demolished = []; });
+    assert(await projects.switchScheme(firstId), '无法从复制方案切回');
+    S.undo();
+    assert(!S.getState().demolished.length, '切换后未恢复方案一的撤销历史');
+    S.redo();
+    assert(S.getState().demolished.includes('w4'), '切换后未恢复方案一的重做历史');
+
+    const editor = JSON.stringify(S.projectJSON());
+    const comparison = doc.querySelector('#schemeCompareDialog');
+    doc.querySelector('#schemeCompare').click();
+    assert(await waitFor(() => comparison.open, 3000), '方案对比未打开');
+    try {
+      const a = doc.querySelector('#schemeComparePlanA'), b = doc.querySelector('#schemeComparePlanB');
+      assert(a.getAttribute('viewBox') === b.getAttribute('viewBox'), '两栏没有使用同一尺度');
+      assert(a.querySelector('[data-wall="w4"]').hasAttribute('stroke-dasharray') &&
+        !b.querySelector('[data-wall="w4"]').hasAttribute('stroke-dasharray'), '对比未体现拆墙差异');
+      assert(doc.querySelector('#schemeCompareDifferences').textContent.includes('墙体与拆改'), '对比未标明差异类别');
+      const fit = a.getAttribute('viewBox');
+      doc.querySelector('#schemeCompareIn').click();
+      assert(a.getAttribute('viewBox') !== fit && a.getAttribute('viewBox') === b.getAttribute('viewBox'), '缩放未同步');
+      assert(projects.activeProjectId === projectId && projects.activeSchemeId === firstId &&
+        JSON.stringify(S.projectJSON()) === editor, '对比改变了当前编辑方案');
+    } finally { comparison.close(); }
+    assert(await projects.switchScheme(copied.id), '无法打开复制方案');
+    assert(!S.getState().demolished.length, '编辑复制方案时串入了其他方案');
+    return '底稿新建、独立复制、切换、独立撤销和同尺度只读比较';
   });
 
   finished = true;

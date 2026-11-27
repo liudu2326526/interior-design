@@ -11,7 +11,7 @@
   const IMP_MAX_FILES = 20;
   const IMP_UPLOAD_TIMEOUT = 5 * 60_000;
   const impState = {files:[], result:null, onApply:null, retryId:null, submission:null, applying:false,
-    review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null,
+    review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null, reviewSceneKey:null,
     reviewVariant:'fixed', reviewBase:null, reviewApplied:false, reviewTimer:0,
     reviewRerun:true, reviewGen:0, reviewLastActiveAt:0};
   const impEls = {};
@@ -234,6 +234,7 @@
     impState.reviewState = typeof meta.reviewState === 'string' ? meta.reviewState : null;
     impState.reviewMode = meta.mode === 'project' ? 'project' : 'preview';
     impState.reviewRowId = typeof meta.rowId === 'string' ? meta.rowId : null;
+    impState.reviewSceneKey = impState.reviewMode === 'project' ? meta.sceneKey ?? App.projects.activeSceneKey : null;
     impState.reviewVariant = 'fixed';
     impState.reviewBase = null;
     impState.reviewApplied = false;
@@ -260,7 +261,7 @@
   function impReviewReset(){
     impReviewStop();
     impState.review = null; impState.reviewJobId = null; impState.reviewState = null;
-    impState.reviewMode = 'preview'; impState.reviewRowId = null;
+    impState.reviewMode = 'preview'; impState.reviewRowId = impState.reviewSceneKey = null;
     impState.reviewVariant = 'fixed'; impState.reviewBase = null; impState.reviewApplied = false;
     impState.reviewRerun = true; impState.reviewLastActiveAt = 0;
     impReviewRender();
@@ -304,9 +305,10 @@
     impReviewRender();
   }
 
-  // 当前这轮轮询是否仍然有效：job 未换、代次未变、弹窗仍打开。
+  // 轮询的任务、弹窗和编辑会话应仍是打开复核时的那一份。
   function impReviewAlive(jobId, gen){
     return impState.reviewJobId === jobId && impState.reviewGen === gen &&
+      (impState.reviewMode === 'preview' || impState.reviewSceneKey === App.projects.activeSceneKey) &&
       Boolean(impEls.wrap) && impEls.wrap.classList.contains('on');
   }
 
@@ -336,6 +338,7 @@
     impState.reviewTimer = 0;
     const tick = async () => {
       impState.reviewTimer = 0;
+      if (!impReviewAlive(jobId, gen)) return;
       const state = await impReviewJobState(jobId);
       if (!impReviewAlive(jobId, gen)) return;
       if (state === 'pending' || state === 'running'){
@@ -367,13 +370,13 @@
   }
 
   async function impReviewRetry(){
-    const jobId = impState.reviewJobId;
-    if (!jobId) return;
+    const jobId = impState.reviewJobId, requestGen = impState.reviewGen;
+    if (!jobId || !impReviewAlive(jobId, requestGen)) return;
     try {
       const response = await fetch(impReviewURL(jobId), {method:'POST', signal:AbortSignal.timeout(15000)});
       if (!response.ok) return;
     } catch(e){ return; }
-    if (impState.reviewJobId !== jobId) return;
+    if (!impReviewAlive(jobId, requestGen)) return;
     impReviewStop();
     const gen = impState.reviewGen;
     impState.review = null;
@@ -413,68 +416,28 @@
     impRenderPreview();
   }
 
-  // P2：把修正应用到已打开的当前项目，一次 Ctrl+Z 完整撤销户型与家具
-  async function impReviewApplyProject(){
+  async function impReviewCreateScheme(){
     const fixed = impReviewFixedData();
     if (!fixed) return;
-    // 对比弹窗不拦截背景点击：执行前必须确认用户还在被对比的那个项目上。
-    if (!impState.reviewRowId || impState.reviewRowId !== App.projects.activeProjectId){
+    const project = App.projects.getActiveProject(), expectedSceneKey = impState.reviewSceneKey;
+    if (!project || project.id !== impState.reviewRowId || expectedSceneKey !== App.projects.activeSceneKey){
       impClose();
-      App.core.toast(App.core.tr('当前项目已切换，请重新打开对比后再应用。', 'The project changed. Reopen the comparison to apply.'));
+      App.core.toast(App.core.tr('当前方案已切换，请重新打开图纸复核。', 'The active design changed. Reopen the drawing review.'));
       return;
     }
-    const before = App.store.snap();
-    const oldWalls = App.store.WALLS.slice();
-    App.store.installPlan({...fixed.plan, name:App.store.PLAN.name});
-    const taken = new Set(App.store.state.furniture.map(f => f.id));
-    App.store.state.furniture = fixed.furniture.map(f => {
-      let id = App.geom.uid();
-      while (taken.has(id)) id = App.geom.uid();
-      taken.add(id);
-      return {...f, id};
+    const label = App.core.tr('图纸修正版', 'Corrected drawing');
+    const names = new Set(project.schemes.map(scheme => scheme.name));
+    let name = label;
+    for (let n = 2; names.has(name); n++) name = `${label} ${n}`;
+    const snapshot = App.io.snapshotFromRecognition(fixed.plan, fixed.furniture);
+    if (!snapshot) return;
+    const created = await App.projects.createScheme({
+      from:'baseline', name, snapshot, origin:'review', expectedSceneKey,
+      reviewVersion:Number.isFinite(+impState.review?.updatedAt) ? +impState.review.updatedAt : 0,
     });
-    // 墙体列表可能被整份替换：拆除标记按几何重新映射，落空就丢弃，避免标到别的墙上。
-    App.store.state.demolished = remapDemolished(oldWalls, App.store.WALLS, App.store.state.demolished);
-    App.store.state.dimensionMarks = App.dimensions.remapMarks(App.store.state.dimensionMarks,
-      id => remapDemolished(oldWalls, App.store.WALLS, [id])[0]);
-    App.store.state = App.store.fixState(App.store.state);
-    App.store.commit(before);
-    App.store.afterHistory();
-    App.io.refit();
-    const current = App.projects.projectRows.get(App.projects.activeProjectId);
-    if (current){
-      // 记住应用时的场景指纹与复核版本：撤销或重新复核后「已应用」自动失效。
-      void App.projects.putProject({...current, reviewApplied:true,
-        reviewAppliedSig:App.projects.sceneSignature(App.io.studio.projectJSON()),
-        reviewAppliedReview:Number.isFinite(+impState.review?.updatedAt) ? +impState.review.updatedAt : 0,
-        updatedAt:current.updatedAt || Date.now()});
-    }
-    App.projects.renderProjects();
-    impClose();
-    App.core.toast(App.core.tr('已应用自动修正，可用 Ctrl+Z 撤销', 'Corrections applied. Press Ctrl+Z to undo.'));
-  }
-
-  // 按几何（先整条 JSON、再矩形范围）把旧墙下标映射到新墙体；匹配不到就丢弃。
-  function remapDemolished(oldWalls, walls, demolished){
-    const rectOf = wall => Array.isArray(wall) && wall.length >= 4 &&
-      [wall[0], wall[1], wall[2], wall[3]].every(Number.isFinite)
-      ? [Math.min(+wall[0], +wall[2]), Math.min(+wall[1], +wall[3]),
-        Math.max(+wall[0], +wall[2]), Math.max(+wall[1], +wall[3])]
-      : null;
-    const plain = wall => Array.isArray(wall) && wall.length <= 6 && rectOf(wall);
-    const sameRect = (a, b) => a && b && a.every((value, index) => Math.abs(value - b[index]) < 1);
-    const out = [];
-    for (const id of Array.isArray(demolished) ? demolished : []){
-      const index = +String(id).slice(1);
-      const old = oldWalls[index];
-      if (!old) continue;
-      const raw = JSON.stringify(old);
-      let next = walls.findIndex(wall => JSON.stringify(wall) === raw);
-      if (next < 0 && plain(old)) next = walls.findIndex(wall => plain(wall) && sameRect(rectOf(wall), rectOf(old)));
-      const mapped = next >= 0 ? 'w' + next : '';
-      if (mapped && !out.includes(mapped)) out.push(mapped);
-    }
-    return out;
+    if (!created) return;
+    if (impState.reviewSceneKey === expectedSceneKey) impClose();
+    App.core.toast(App.core.tr(`已创建方案「${name}」`, `Created design “${name}”`));
   }
 
   function impReviewDelta(delta){
@@ -658,7 +621,7 @@
     els.canvas.innerHTML = impReviewMap(shown.plan, shown.furniture, changed, viewBox);
     // 悬浮切换：与卡片共用状态，镜像到当前的识别 / 修正两版
     const projectMode = impState.reviewMode === 'project';
-    const segLabel = projectMode ? App.core.tr('当前项目', 'Current project') : App.core.tr('识别结果', 'Recognized');
+    const segLabel = projectMode ? App.core.tr('项目底稿', 'Project baseline') : App.core.tr('识别结果', 'Recognized');
     const segButton = (label, value) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -746,8 +709,7 @@
         issues.length === 1 ? 'Auto review found 1 difference from the source drawing'
           : `Auto review found ${issues.length} differences from the source drawing`)
       : App.core.tr('自动复核发现差异，详见修正后的图纸', 'Auto review found differences. See the corrected drawing.');
-    // 项目模式左侧是当前项目（可能已被编辑过），不是原始识别结果。
-    const segLabel = projectMode ? App.core.tr('当前项目', 'Current project') : App.core.tr('识别结果', 'Recognized');
+    const segLabel = projectMode ? App.core.tr('项目底稿', 'Project baseline') : App.core.tr('识别结果', 'Recognized');
     const variant = fixed && impState.reviewVariant === 'fixed' ? 'fixed' : 'recognized';
     const seg = document.createElement('div');
     seg.className = 'imp-review-seg';
@@ -806,15 +768,15 @@
     const hint = document.createElement('div');
     hint.className = 'imp-review-hint';
     if (projectMode){
-      const apply = impReviewButton(App.core.tr('应用到当前项目', 'Apply to this project'), true, async () => {
+      const apply = impReviewButton(App.core.tr('用修正版新建方案', 'Create design from corrections'), true, async () => {
         apply.disabled = true;
-        try { await impReviewApplyProject(); }
-        catch(e){ App.core.toast(e?.message || App.core.tr('应用失败，请重试。', 'Could not apply the corrections. Try again.')); }
+        try { await impReviewCreateScheme(); }
+        catch(e){ App.core.toast(e?.message || App.core.tr('创建方案失败，请重试。', 'Could not create the design. Try again.')); }
         finally { apply.disabled = false; }
       });
       apply.disabled = !fixed;
       foot.append(apply);
-      hint.textContent = App.core.tr('将替换当前户型与家具，可用 Ctrl+Z 撤销', 'This replaces the current plan and furniture. Press Ctrl+Z to undo.');
+      hint.textContent = App.core.tr('从修正后的户型与家具开始设计。', 'Start designing from the corrected floor plan and furniture.');
     } else {
       const keep = impReviewButton(App.core.tr('保留原识别', 'Keep recognized'), false, () => {
         impReviewStop();
@@ -927,22 +889,22 @@
 
   function impRelang(){
     if (!impEls.wrap) return;
-    impEls.title.textContent = impState.result ? App.core.tr('识别结果', 'Recognition result') : App.core.tr('导入图纸', 'Import drawing');
+    const compareMode = impState.reviewMode === 'project' && impState.result && typeof impState.onApply !== 'function';
+    impEls.title.textContent = compareMode ? App.core.tr('图纸复核', 'Drawing review') : impState.result
+      ? App.core.tr('识别结果', 'Recognition result') : App.core.tr('导入图纸', 'Import drawing');
     impEls.close.title = App.core.tr('关闭', 'Close');
     impEls.dropTitle.textContent = App.core.tr('选择图纸文件', 'Choose drawing files');
     impEls.dropHint.textContent = App.core.tr('支持图片、PDF、CAD 导出、JSON，不限格式', 'Images, PDF, CAD exports or JSON — any format');
     impEls.note.placeholder = App.core.tr('备注（可选，如：只识别一层）', 'Note (optional, e.g. "ground floor only")');
     impEls.pickHint.textContent = impState.retryId
       ? App.core.tr('请重新选择图纸文件以重试识别。', 'Choose the drawing files again to retry recognition.')
-      : App.core.tr('上传后会在后台识别，完成后可从「项目」打开新方案。', 'Recognition runs in the background. Open the new design from Projects when it is ready.');
+      : App.core.tr('上传后会在后台识别，完成后可从「项目」确认底稿并打开方案一。',
+        'Recognition runs in the background. Confirm the baseline in Projects to open the first design.');
     impEls.pickCancel.textContent = App.core.tr('取消', 'Cancel');
     impEls.cancel.textContent = App.core.tr('取消上传', 'Cancel upload');
     impEls.cancelApply.textContent = App.core.tr('关闭', 'Close');
     impEls.apply.textContent = App.core.tr('打开新项目', 'Open new project');
-    impEls.resultHint.textContent = App.core.tr('打开后会切换到这份新方案，当前项目会保存在「项目」列表中。',
-      'Opening this design switches projects. Your current project stays in Projects.');
-    // 已打开项目的对比模式：主按钮在复核卡里（应用到当前项目），不显示「打开新项目」
-    const compareMode = impState.reviewMode === 'project' && impState.result && typeof impState.onApply !== 'function';
+    impEls.resultHint.textContent = App.core.tr('确认后会保存项目底稿并打开方案一。', 'Confirm the baseline to save the project and open the first design.');
     impEls.apply.hidden = Boolean(compareMode);
     impEls.resultHint.hidden = Boolean(compareMode);
     impUpdateStart();

@@ -7,11 +7,16 @@
 
   /* ======================= 导入导出 ======================= */
   function download(name, blob){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
-  function projectFileName(label, extension){
+  function projectFileName(label, extension, includeScheme = true){
     const {tr} = App.core;
-    const cleaned = String(App.store.PLAN.name || '').replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, '_')
-      .replace(/^[.\s]+|[.\s]+$/g, '');
-    const name = [...cleaned].slice(0, 56).join('').trimEnd() || tr('未命名项目', 'Untitled project');
+    const project = App.projects.getActiveProject?.();
+    const scheme = includeScheme && project?.schemes?.find(item => item.id === App.projects.activeSchemeId);
+    const clean = (value, length) => [...String(value || '').replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, '_')
+      .replace(/^[.\s]+|[.\s]+$/g, '')].slice(0, length).join('').trimEnd();
+    const projectName = clean(project?.name || App.store.PLAN.name, 56) || tr('未命名项目', 'Untitled project');
+    const schemeName = clean(scheme?.name, 24);
+    const name = schemeName && schemeName !== projectName
+      ? `${clean(projectName, 53 - [...schemeName].length)} - ${schemeName}` : projectName;
     return `${name} - ${label}.${extension}`;
   }
   function dataURLBlob(url){
@@ -145,10 +150,12 @@
   // 2D 房间面板 / 房间列表的「进入房间」：必要时先切 3D，再飞到室内机位
   async function studioEnterRoom(id, options){
     if (!App.plan.roomDef(id)) return;
+    const sceneKey = App.projects.activeSceneKey;
     if (!is3D()){
       await setView('3d');
       if (!is3D()) return;                       // WebGL 不可用，setView 已提示
     }
+    if (sceneKey !== App.projects.activeSceneKey) return;
     App.view3d?.enterRoom?.(id, options);
   }
   document.querySelectorAll('.menu-pop .btn').forEach(b => b.addEventListener('click', () => b.closest('details').open = false));
@@ -202,11 +209,11 @@
   matchMedia('(max-width:1100px)').addEventListener('change', () => App.panel.drawer(null));
   App.panel.drawer(null);                                  // 恢复上次的面板收起状态
   App.core.$('#exportPng').onclick = exportPNG;
-  // 项目文件：plan + state + 效果图记录，换机 / 备份时完整带走
+  // 完整项目备份包含确认底稿、所有设计方案和上次打开的方案。
   App.core.$('#exportProj').onclick = () => {
-    const {renders, ...rest} = App.store.state;
-    const doc = {version:2, plan:App.core.deepCopy(App.store.PLAN), state:App.core.deepCopy(rest), renders:App.core.deepCopy(renders || [])};
-    download(projectFileName(App.core.tr('完整项目', 'Full project'), 'json'),
+    const doc = App.projects.projectSchemesJSON();
+    if (!doc) return App.core.toast(App.core.tr('项目正在打开，请稍后导出。', 'The project is opening. Export it in a moment.'));
+    download(projectFileName(App.core.tr('完整项目', 'Full project'), 'json', false),
       new Blob([JSON.stringify(doc, null, 2)], {type:'application/json'}));
   };
   App.core.$('#importProj').onclick = () => App.core.$('#fileIn').click();
@@ -250,6 +257,7 @@
     App.importer.impRelang();
     App.tour.tourRelang();
     App.projects.renderProjects();
+    App.schemesUI?.render();
     App.view3d?.relang();
   }
   App.core.$('#langSel').onclick = e => { const l = e.target.closest('[data-lang]')?.dataset.lang; if (l && l !== App.core.LANG) setLang(l); };
@@ -259,6 +267,29 @@
     return Array.isArray(list) ? list.filter(f => (App.geom.drawingItemTypes.has(f?.type) || App.ceilingFurniture.is(f)) &&
       [f.cx, f.cy, f.w, f.d, f.rot].every(Number.isFinite) && f.w > 0 && f.d > 0 &&
       (f.type !== 'component' || App.geom.normalizeComponentParts(f.parts).length > 0)) : [];
+  }
+
+  function mergeDrawingFurniture(recognized, current = []){
+    const ids = new Set(current.map(f => f.id));
+    const imported = recognized.map(f => {
+      let id = App.geom.uid();
+      while (ids.has(id)) id = App.geom.uid();
+      ids.add(id);
+      return {...f, id};
+    });
+    // 图纸位置不做避让，二维图先绘制地毯和构件，再绘制家具。
+    return [
+      ...imported.filter(f => f.type === 'rug'),
+      ...imported.filter(f => f.type === 'component'),
+      ...current,
+      ...imported.filter(f => f.type !== 'rug' && f.type !== 'component'),
+    ];
+  }
+
+  function snapshotFromRecognition(plan, furniture){
+    const result = App.plan.sanitizePlan(plan);
+    if (!result.ok) return null;
+    return {version:2, plan:result.plan, state:{furniture:mergeDrawingFurniture(drawingFurniture(furniture)), renders:[]}};
   }
 
   // 换方案：校验 → 安装 PLAN → 按新房间重建 state → 清越界拆除索引 / 无效选中 → 入撤销栈
@@ -279,20 +310,7 @@
     const recognized = drawingFurniture(opts.furniture);
     if (opts.clearFurniture || recognized.length){
       const current = opts.clearFurniture ? [] : App.store.state.furniture;
-      const ids = new Set(current.map(f => f.id));
-      const imported = recognized.map(f => {
-        let id = App.geom.uid();
-        while (ids.has(id)) id = App.geom.uid();
-        ids.add(id);
-        return {...f, id};
-      });
-      // 图纸位置不做避让，二维图先绘制地毯和构件，再绘制家具。
-      App.store.state.furniture = [
-        ...imported.filter(f => f.type === 'rug'),
-        ...imported.filter(f => f.type === 'component'),
-        ...current,
-        ...imported.filter(f => f.type !== 'rug' && f.type !== 'component'),
-      ];
+      App.store.state.furniture = mergeDrawingFurniture(recognized, current);
     }
     App.store.installPlan(res.plan);
     if (opts.freshState || opts.resetCeiling) delete App.store.state.ceiling;
@@ -324,9 +342,13 @@
     }
   }
 
-  // 导入：新版 {version:2, plan, state, renders}；旧版 {furniture,...} 按 125-C 示例户型导入（失败时退到空壳）
+  // 导入：完整项目 v3、单方案 v2，或只有家具的 125-C 旧文件。
   async function importProject(txt){
     let o; try { o = JSON.parse(txt); } catch(e){ return App.core.toast(App.core.tr('文件格式不正确', 'Invalid file format')); }
+    if (o?.version === 3){
+      if (await App.projects.openImportedProject(o)) App.core.toast(App.core.tr('已导入项目及其全部方案。', 'Imported the project and all its designs.'));
+      return;
+    }
     let project, note;
     if (o && o.plan){
       const res = App.plan.sanitizePlan(o.plan);
@@ -351,8 +373,10 @@
   }
 
   async function resetProject(){
+    const sceneKey = App.projects.activeSceneKey;
     // 优先用 data/empty-plan.json（可被用户改），取不到再退回内置副本
     const plan = (await loadPlanFile('data/empty-plan.json')) || App.plan.sanitizePlan(App.plan.FALLBACK_PLAN).plan;
+    if (sceneKey !== App.projects.activeSceneKey) return;
     applyPlan(plan);                               // 自带一次撤销快照
     App.store.state = App.store.fixState(App.store.defaultState());
     App.store.save(); App.draw2d.renderAll(); refit();
@@ -723,6 +747,6 @@
 
   Object.assign(App.io, {
     download, dataURLBlob, is3D, TIPS, setView, studioEnterRoom, toggleFullscreen, syncFullscreen,
-    drawingFurniture, applyPlan, loadPlanFile, hasStoredPlan, hydrateDefaultPlan, refit, studio,
+    drawingFurniture, snapshotFromRecognition, applyPlan, loadPlanFile, hasStoredPlan, hydrateDefaultPlan, refit, studio,
   });
 })();
