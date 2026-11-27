@@ -372,7 +372,8 @@
     if (!fixed) return null;
     const result = App.plan.sanitizePlan(fixed.plan);
     if (!result.ok) return null;
-    return {plan:result.plan, furniture:App.io.drawingFurniture(fixed.furniture)};
+    const plan = {...result.plan, name:impState.result?.plan?.name ?? result.plan.name};
+    return {plan, furniture:App.io.drawingFurniture(fixed.furniture)};
   }
 
   function impReviewApply(){
@@ -406,7 +407,7 @@
     }
     const before = App.store.snap();
     const oldWalls = App.store.WALLS.slice();
-    App.store.installPlan(fixed.plan);
+    App.store.installPlan({...fixed.plan, name:App.store.PLAN.name});
     const taken = new Set(App.store.state.furniture.map(f => f.id));
     App.store.state.furniture = fixed.furniture.map(f => {
       let id = App.geom.uid();

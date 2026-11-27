@@ -8,10 +8,14 @@
   /* ======================= 项目与后台识别 ======================= */
   const projectEndpoint = App.core.studioPath('/api/jobs/plan-import');
   const projectActiveKey = 'interior-active-project-v1' + App.core.projectScope;
+  const projectOrderKey = 'interior-project-order-v1' + App.core.projectScope;
   const projectRows = new Map();
   const jobProgress = new Map();
   const projectOpening = new Set();
+  const expandedProjects = new Map();
   const projectPanel = App.core.$('#projectPanel'), projectToggle = App.core.$('#projectToggle'), projectList = App.core.$('#projectList');
+  const projectSearch = App.core.$('#projectSearch'), projectSort = App.core.$('#projectSort');
+  const renameForm = App.core.$('#projectRenameForm'), renameInput = App.core.$('#projectRenameInput');
   const projectPending = row => row.phase === 'queued' || row.phase === 'running';
   const projectReview = row => row?.review && typeof row.review === 'object' ? row.review : null;
   const projectReviewPending = row => ['pending', 'running'].includes(projectReview(row)?.state);
@@ -19,7 +23,17 @@
   const projectAi = App.core.PUBLIC_ACCESS !== 'guest' && /^https?:$/.test(location.protocol);
   let activeProjectId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
   let projectTimer = 0, projectSyncing = false, projectSyncAgain = false;
-  let renderedProjectRows = '';
+  let renderedProjectRows = '', renamingProjectId = '', projectSorting = false, draggedProjectId = '';
+
+  function parseProjectOrder(raw){
+    try {
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids)) return [...new Set(ids.filter(id => typeof id === 'string' && id.length <= 128))];
+    } catch(e){}
+    return [];
+  }
+  let projectOrder = [];
+  try { projectOrder = parseProjectOrder(localStorage.getItem(projectOrderKey)); } catch(e){}
 
   const projectDb = new Promise(resolve => {
     try {
@@ -92,7 +106,7 @@
     App.geom.buildDefs(); App.draw2d.renderDims(); App.draw2d.renderOpenings(); App.draw2d.renderAll(); App.io.refit();
     if (App.io.studio.is3D()) App.view3d?.flyIso?.();
   }
-  async function switchProject(row, install){
+  async function switchProject(row, install, appliedReviewVersion){
     await projectBoot;
     if (projectSwitching || document.body.classList.contains('busy') || App.assistant.chatState.sending || App.assistant.renderState.busy){
       const message = App.core.tr('请等当前操作完成后再切换项目。', 'Finish the current operation before switching projects.');
@@ -106,12 +120,21 @@
         // 等待浏览器存储时，最后一次键盘操作也归到原来的项目。
         void putProject(projectCurrent());
       }
-      const result = install();
+      const current = projectRows.get(row.id) || row;
+      if (current.hidden || current.jobId !== row.jobId){
+        return {ok:false, errors:[App.core.tr('项目记录已更新，请重新打开。', 'The project was updated. Open it again.')]};
+      }
+      const result = install(current);
       if (!result.ok) return result;
       activeProjectId = row.id;
-      projectRows.set(row.id, {...row, result:undefined, snapshot:undefined, phase:'saved'});
+      projectRows.set(row.id, {...current, customName:undefined, result:undefined, snapshot:undefined, phase:'saved'});
       refreshProjectScene();
       const saved = projectCurrent();
+      if (Number.isFinite(appliedReviewVersion)){
+        saved.reviewApplied = true;
+        saved.reviewAppliedSig = sceneSignature(saved.snapshot);
+        saved.reviewAppliedReview = appliedReviewVersion;
+      }
       projectRecordActive(saved); await putProject(saved);
       closeProjects();
       return result;
@@ -136,10 +159,52 @@
     return new Intl.DateTimeFormat(App.core.LANG === 'en' ? 'en' : App.core.LANG === 'zht' ? 'zh-TW' : 'zh-CN',
       {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}).format(value);
   }
+
+  function orderedProjects(){
+    const positions = new Map(projectOrder.map((id, index) => [id,index]));
+    return [...projectRows.values()].filter(row => !row.hidden).sort((a,b) =>
+      (positions.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (positions.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+      Number(b.id === activeProjectId) - Number(a.id === activeProjectId) || b.updatedAt - a.updatedAt);
+  }
+  const projectSearchKey = value => String(value ?? '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+  function projectPartialMatch(name, query){
+    if (name.includes(query)) return true;
+    let start = 0;
+    for (const character of query){
+      const next = name.indexOf(character, start);
+      if (next === -1) return false;
+      start = next + character.length;
+    }
+    return true;
+  }
+  function visibleProjects(rows){
+    const terms = projectSearch.value.normalize('NFKC').split(/\s+/u).map(projectSearchKey).filter(Boolean);
+    if (!terms.length) return rows;
+    return rows.filter(row => {
+      const keys = [row.name,row.sourceName].map(projectSearchKey);
+      return terms.every(term => keys.some(name => projectPartialMatch(name,term)));
+    });
+  }
+  function moveProject(id, targetId, after){
+    const rows = orderedProjects(), matches = visibleProjects(rows).map(row => row.id);
+    if (id === targetId || !matches.includes(id) || !matches.includes(targetId)) return;
+    const reordered = matches.filter(key => key !== id);
+    reordered.splice(reordered.indexOf(targetId) + Number(after), 0, id);
+    if (reordered.every((key,index) => key === matches[index])) return;
+    const visible = new Set(matches);
+    let index = 0;
+    projectOrder = rows.map(row => visible.has(row.id) ? reordered[index++] : row.id);
+    try { localStorage.setItem(projectOrderKey, JSON.stringify(projectOrder)); }
+    catch(e){ projectStorageIssue = true; }
+    renderProjects();
+  }
+
   // 应用修正时记录的现场指纹：户型的可比较投影（渲染记录等无关字段不参与）。
   function sceneSignature(snapshot){
+    const plan = snapshot?.plan ? {...snapshot.plan} : null;
+    if (plan) delete plan.name;
     return JSON.stringify({
-      plan:snapshot?.plan ?? null,
+      plan,
       furniture:snapshot?.state?.furniture ?? [],
       demolished:snapshot?.state?.demolished ?? [],
     });
@@ -151,7 +216,13 @@
     if (Number.isFinite(+row.reviewAppliedReview) &&
         +row.reviewAppliedReview !== (+projectReview(row)?.updatedAt || 0)) return false;
     if (!row.reviewAppliedSig) return true;   // 旧数据：没有指纹时沿用原行为
-    return Boolean(row.snapshot) && row.reviewAppliedSig === sceneSignature(row.snapshot);
+    if (!row.snapshot) return false;
+    const current = sceneSignature(row.snapshot);
+    if (row.reviewAppliedSig === current) return true;
+    try {
+      const legacy = JSON.parse(row.reviewAppliedSig);
+      return Object.hasOwn(legacy.plan ?? {}, 'name') && sceneSignature({plan:legacy.plan,state:legacy}) === current;
+    } catch(e){ return false; }
   }
   const sameReview = (a, b) => (a?.state || '') === (b?.state || '') &&
     (+a?.count || 0) === (+b?.count || 0) && (+a?.updatedAt || 0) === (+b?.updatedAt || 0);
@@ -252,32 +323,86 @@
       ? button('rerun', App.core.tr('重新复核', 'Run review again')) : '';
     const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
       ? button('review', App.core.tr('查看对比', 'Compare')) : '';
-    if (row.id === activeProjectId) return reviewButton + rerunButton;
-    if (projectPending(row)) return button('cancel', App.core.tr('取消识别', 'Cancel analysis'));
-    if (row.phase === 'done') return button('preview', App.core.tr('查看识别结果', 'Review result'), true) + rerunButton;
+    const rename = button('rename', App.core.tr('重命名','Rename'));
+    if (row.id === activeProjectId) return reviewButton + rename + rerunButton;
+    if (projectPending(row)) return rename + button('cancel', App.core.tr('取消识别', 'Cancel analysis'));
+    if (row.phase === 'done') return button('preview', App.core.tr('查看识别结果', 'Review result'), true) + rename + rerunButton;
     if (row.phase === 'failed' || row.phase === 'canceled'){
-      return button('retry', App.core.tr('重新导入', 'Import again'), true) + button('hide', App.core.tr('移除记录', 'Remove entry'));
+      return button('retry', App.core.tr('重新导入', 'Import again'), true) + rename + button('hide', App.core.tr('移除记录', 'Remove entry'));
     }
-    return button('open', App.core.tr('打开项目', 'Open project'), true) + reviewButton + rerunButton;
+    return button('open', App.core.tr('打开项目', 'Open project'), true) + rename + reviewButton + rerunButton;
+  }
+
+  const findProjectRow = id => [...projectList.children].find(el => el.dataset.projectId === id);
+  function beginProjectRename(row){
+    renamingProjectId = row.id;
+    renameInput.value = row.name;
+    renameInput.setCustomValidity('');
+    renameForm.hidden = false;
+    renameInput.focus(); renameInput.select();
+  }
+  function closeProjectRename(returnFocus = false){
+    const id = renamingProjectId;
+    renameForm.hidden = true;
+    renamingProjectId = '';
+    if (returnFocus) (findProjectRow(id)?.querySelector('[data-project-action="rename"]') || projectSearch).focus();
+  }
+  async function renameProject(event){
+    event.preventDefault();
+    const row = projectRows.get(renamingProjectId), name = renameInput.value.trim();
+    if (!row || row.hidden || projectSwitching) return;
+    if (!name){
+      renameInput.setCustomValidity(App.core.tr('请输入项目名称。','Enter a project name.'));
+      renameInput.reportValidity();
+      return;
+    }
+    if (name === row.name){ closeProjectRename(true); return; }
+    closeProjectRename();
+    if (row.id === activeProjectId) App.store.mutate(() => { App.store.PLAN.name = name; });
+    else if (row.snapshot) await putProject({...row, name, snapshot:{...row.snapshot, plan:{...row.snapshot.plan,name}}});
+    else await putProject({...row, name, sourceName:row.sourceName || row.name, customName:name});
+    renderProjects();
+    if (!projectPanel.hidden && !renamingProjectId) (findProjectRow(row.id)?.querySelector('[data-project-action="rename"]') || projectSearch).focus();
+  }
+
+  function projectSortRow(row, title, index, length){
+    const {tr,esc} = App.core;
+    return `<div class="project-row project-sort-row" data-project-id="${esc(row.id)}">
+      <span class="project-drag-handle" data-project-drag draggable="true" aria-hidden="true" title="${esc(tr('拖动调整顺序','Drag to reorder'))}"></span>
+      ${title}${row.id === activeProjectId ? `<span class="project-status is-ready">${esc(tr('当前','Current'))}</span>` : ''}
+      <div class="project-sort-actions">
+        <button class="btn" type="button" data-project-move="up" aria-label="${esc(tr('上移','Move up') + ' ' + row.name)}" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button class="btn" type="button" data-project-move="down" aria-label="${esc(tr('下移','Move down') + ' ' + row.name)}" ${index === length - 1 ? 'disabled' : ''}>↓</button>
+      </div></div>`;
   }
   function renderProjects(){
-    const rows = [...projectRows.values()].filter(row => !row.hidden).sort((a, b) =>
-      Number(b.id === activeProjectId) - Number(a.id === activeProjectId) || b.updatedAt - a.updatedAt);
-    const pending = rows.filter(projectBusy).length, count = App.core.$('#projectCount');
+    const {tr,esc} = App.core, allProjects = orderedProjects();
+    const pending = allProjects.filter(projectBusy).length, count = App.core.$('#projectCount');
     count.hidden = pending === 0;
     count.textContent = pending > 99 ? '99+' : String(pending);
     projectToggle.setAttribute('aria-label', pending
       ? App.core.tr(`项目，${pending} 个任务进行中`, `Projects, ${pending} tasks in progress`) : App.core.tr('项目','Projects'));
-    if (projectPanel.hidden) return;
+    if (projectPanel.hidden || draggedProjectId) return;
+    const rows = visibleProjects(allProjects);
+    const searchLabel = tr('搜索项目','Search projects');
+    projectSearch.placeholder = searchLabel; projectSearch.setAttribute('aria-label',searchLabel);
+    projectSort.textContent = projectSorting ? tr('完成','Done') : tr('排序','Reorder');
+    projectSort.setAttribute('aria-pressed',String(projectSorting));
+    projectSort.disabled = !projectSorting && rows.length < 2;
     const warning = App.core.$('#projectWarning');
     warning.textContent = projectSyncIssue || (projectStorageIssue
       ? App.core.tr('浏览器存储不可用，项目请及时导出备份。', 'Browser storage is unavailable. Export projects to keep a copy.') : '');
     warning.hidden = !warning.textContent;
-    App.core.$('#projectEmpty').hidden = rows.length > 0;
-    const expanded = new Map([...projectList.children].map(el => [el.dataset.projectId, el.open]));
+    const empty = App.core.$('#projectEmpty');
+    empty.hidden = rows.length > 0;
+    empty.querySelector('strong').textContent = allProjects.length ? tr('没有匹配的项目','No matching projects')
+      : tr('还没有项目','No projects yet');
+    for (const el of projectList.children) if (el.matches('details')) expandedProjects.set(el.dataset.projectId, el.open);
     const focus = document.activeElement, focusRow = focus?.closest('[data-project-id]')?.dataset.projectId;
     const scroll = projectList.scrollTop;
-    const markup = rows.map(row => {
+    const markup = rows.map((row,index) => {
+      const title = `<span class="project-row-title"><b title="${esc(row.name)}">${esc(row.name)}</b><span class="project-row-meta">${esc(projectFormatTime(row.createdAt || row.updatedAt))}</span></span>`;
+      if (projectSorting) return projectSortRow(row,title,index,rows.length);
       const [status, tone] = projectStatus(row), detail = projectDetails(row), note = projectReviewMessage(row);
       const review = projectReview(row);
       const chip = row.jobId && review?.state === 'differ' && !projectReviewApplied(row) &&
@@ -287,9 +412,9 @@
           (row.phase === 'done' || row.phase === 'saved')
           ? `<span class="project-chip is-review">${App.core.esc(App.core.tr('复核中', 'Reviewing'))}</span>` : '';
       const icon = projectPending(row) || projectOpening.has(row.id) ? 'project-spinner' : 'project-folder';
-      return `<details class="project-row" data-project-id="${App.core.esc(row.id)}" ${(expanded.get(row.id) ?? projectBusy(row)) ? 'open' : ''}>
+      return `<details class="project-row" data-project-id="${App.core.esc(row.id)}" ${(expandedProjects.get(row.id) ?? projectBusy(row)) ? 'open' : ''}>
       <summary class="project-row-head"><span class="project-row-icon" aria-hidden="true"><i class="${icon}"></i></span>
-        <span class="project-row-title"><b title="${App.core.esc(row.name)}">${App.core.esc(row.name)}</b><span class="project-row-meta">${App.core.esc(projectFormatTime(row.createdAt || row.updatedAt))}</span></span>
+        ${title}
         <span class="project-status ${tone}">${App.core.esc(status)}</span>${chip}</summary>
       <div class="project-row-body">${detail ? `<p class="project-row-message">${App.core.esc(detail)}</p>` : ''}
         ${projectProgress(row)}${note ? `<p class="project-row-note">${App.core.esc(note)}</p>` : ''}
@@ -300,9 +425,10 @@
     projectList.innerHTML = markup;
     projectList.scrollTop = scroll;
     if (focusRow){
-      const node = [...projectList.children].find(el => el.dataset.projectId === focusRow);
-      (node?.querySelector(focus.dataset.projectAction ? `[data-project-action="${focus.dataset.projectAction}"]` : 'summary')
-        || node?.querySelector('summary'))?.focus({preventScroll:true});
+      const node = findProjectRow(focusRow);
+      const action = focus.dataset.projectAction, move = focus.dataset.projectMove;
+      const restored = node?.querySelector(action ? `[data-project-action="${action}"]` : move ? `[data-project-move="${move}"]` : 'summary');
+      (restored && !restored.disabled ? restored : node?.querySelector('summary, [data-project-move]:not(:disabled)'))?.focus({preventScroll:true});
     }
   }
 
@@ -350,20 +476,25 @@
         // 已打开的项目保留本地快照，只按 jobId 合并最新的复核状态
         if (prev?.snapshot){
           const latest = job.review === undefined ? (prev.review ?? null) : review;
-          if (!sameReview(prev.review, latest)) await putProject({...prev, review:latest});
+          const sourceName = prev.sourceName || meta.name;
+          if (!sameReview(prev.review, latest) || prev.sourceName !== sourceName) await putProject({...prev, sourceName, review:latest});
           continue;
         }
-        const row = {...meta, ...prev, id:prev?.id || job.id, jobId:job.id,
-          phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt,
-          review:job.review === undefined ? (prev?.review ?? null) : review};
-        if ((job.phase === 'done' && !row.result) || (job.phase === 'failed' && !row.error)){
-          try { row.result = await projectResult(row); row.name = row.result.plan.name || row.name; }
-          catch(e){ if (job.phase === 'failed') row.error = e.message; }
+        const id = prev?.id || job.id;
+        let result = prev?.result, error = prev?.error;
+        if ((job.phase === 'done' && !result) || (job.phase === 'failed' && !error)){
+          try { result = await projectResult({jobId:job.id}); }
+          catch(e){ if (job.phase === 'failed') error = e.message; }
         }
-        const latest = projectRows.get(row.id);
-        if (latest && (latest.jobId !== row.jobId || latest.hidden || latest.snapshot)) continue;
-        if (!prev || prev.phase !== row.phase || row.result !== prev.result || row.error !== prev.error ||
-            prev.updatedAt !== row.updatedAt || !sameReview(prev.review, row.review)) await putProject(row);
+        const latest = projectRows.get(id);
+        if (latest && (latest.jobId !== job.id || latest.hidden || latest.snapshot)) continue;
+        const row = {...meta, ...latest, id, jobId:job.id, result, error,
+          name:latest?.customName || result?.plan?.name || latest?.name || meta.name,
+          sourceName:latest?.sourceName || meta.name, phase:job.phase, startedAt:job.startedAt, updatedAt:job.updatedAt,
+          review:job.review === undefined ? (latest?.review ?? null) : review};
+        if (!latest || latest.phase !== row.phase || latest.name !== row.name || latest.sourceName !== row.sourceName ||
+            row.result !== latest.result || row.error !== latest.error || latest.updatedAt !== row.updatedAt ||
+            !sameReview(latest.review, row.review)) await putProject(row);
       }
       for (const row of projectRows.values()){
         const waiting = projectPending(row) || (row.phase === 'done' && !row.result);
@@ -392,8 +523,10 @@
     await projectBoot;
     const prev = projectRows.get(retryId) || projectRows.get(jobId);
     const id = prev?.id || jobId;
+    const sourceName = name;
     await putProject({
-      id, jobId, name:name.replace(/\.[a-z\d]{1,8}$/i, '') || name, note,
+      id, jobId, name:prev?.customName || name.replace(/\.[a-z\d]{1,8}$/i, '') || name, sourceName, note,
+      customName:prev?.customName,
       oldJobs:prev?.jobId && prev.jobId !== jobId ? [...(prev.oldJobs || []), prev.jobId] : prev?.oldJobs,
       phase:'queued', createdAt:Date.now(), updatedAt:Date.now(),
     });
@@ -441,6 +574,13 @@
   }
 
   async function projectClick(e){
+    const direction = e.target.closest('[data-project-move]');
+    if (direction && !direction.disabled){
+      const row = direction.closest('[data-project-id]');
+      const target = direction.dataset.projectMove === 'up' ? row.previousElementSibling : row.nextElementSibling;
+      if (target) moveProject(row.dataset.projectId, target.dataset.projectId, direction.dataset.projectMove === 'down');
+      return;
+    }
     const button = e.target.closest('[data-project-action]');
     if (!button) return;
     const row = projectRows.get(button.closest('[data-project-id]').dataset.projectId);
@@ -450,31 +590,37 @@
     if (opening){ projectOpening.add(row.id); renderProjects(); }
     try {
       switch (action){
+      case 'rename': beginProjectRename(row); break;
       case 'open':
-        await switchProject(row, () => loadProjectScene(row.snapshot));
+        await switchProject(row, current => loadProjectScene(current.snapshot));
         break;
       case 'preview': {
         const result = row.result || await projectResult(row);
         const current = projectRows.get(row.id);
         if (!current || current.snapshot || current.jobId !== row.jobId) break;
         closeProjects();
-        App.importer.impOpenResult(result, ({plan,furniture}) => switchProject(
-          {...row, reviewApplied:Boolean(App.importer.impState.reviewApplied)}, () => {
+        const preview = current.customName ? {...result, plan:{...result.plan,name:current.customName}} : result;
+        App.importer.impOpenResult(preview, ({plan,furniture}) => {
+          const {reviewApplied,review} = App.importer.impState;
+          return switchProject(current, latest => {
             App.store.state = {...App.store.defaultState(), renders:[]};
-            return App.io.applyPlan(plan, {furniture, clearFurniture:true, freshState:true, history:false});
-          }), {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'preview'});
+            return App.io.applyPlan(latest.customName ? {...plan,name:latest.customName} : plan,
+              {furniture, clearFurniture:true, freshState:true, history:false});
+          }, reviewApplied ? review?.updatedAt : undefined);
+        }, {jobId:current.jobId, reviewState:projectReview(current)?.state, mode:'preview'});
         break;
       }
       case 'review': {
         if (!row.jobId || !row.snapshot) break;
         // 对比和「应用到当前项目」都针对当前打开的方案：不是当前项目时先切换过去
         if (row.id !== activeProjectId){
-          const result = await switchProject(row, () => loadProjectScene(row.snapshot));
+          const result = await switchProject(row, current => loadProjectScene(current.snapshot));
           if (!result.ok) break;
         }
         closeProjects();
-        App.importer.impOpenResult({plan:row.snapshot.plan, furniture:row.snapshot.state?.furniture || []}, null,
-          {jobId:row.jobId, reviewState:projectReview(row)?.state, mode:'project', rowId:row.id});
+        const current = projectRows.get(row.id) || row;
+        App.importer.impOpenResult({plan:current.snapshot.plan, furniture:current.snapshot.state?.furniture || []}, null,
+          {jobId:current.jobId, reviewState:projectReview(current)?.state, mode:'project', rowId:current.id});
         break;
       }
       case 'rerun': await projectReviewAgain(row); break;
@@ -498,6 +644,9 @@
     projectPanel.style.setProperty('--project-panel-space', Math.max(90, window.innerHeight - trigger.bottom - 18) + 'px');
   }
   function closeProjects(returnFocus = false){
+    closeProjectRename();
+    projectSorting = false;
+    endProjectDrag();
     projectPanel.hidden = true;
     projectToggle.setAttribute('aria-expanded','false');
     if (returnFocus) projectToggle.focus({preventScroll:true});
@@ -507,27 +656,86 @@
     App.panel.closeDrawers();
     projectPanel.hidden = false;
     projectToggle.setAttribute('aria-expanded','true');
-    const findRow = () => [...projectList.children].find(el => el.dataset.projectId === expandId);
-    const row = expandId && findRow();
-    if (row) row.open = true;
+    if (expandId){
+      projectSearch.value = '';
+      projectSorting = false;
+      expandedProjects.set(expandId,true);
+      const row = findProjectRow(expandId);
+      if (row?.matches('details')) row.open = true;
+    }
     resizeProjects(); renderProjects(); scheduleProjectSync(0);
     if (expandId){
-      const expanded = findRow();
+      const expanded = findProjectRow(expandId);
       expanded?.scrollIntoView({block:'nearest'});
       expanded?.querySelector('summary')?.focus({preventScroll:true});
     }
+  }
+  function clearProjectDropMarker(){
+    projectList.querySelector('.is-drop-before,.is-drop-after')?.classList.remove('is-drop-before','is-drop-after');
+  }
+  function endProjectDrag(){
+    if (!draggedProjectId) return;
+    findProjectRow(draggedProjectId)?.classList.remove('is-dragging');
+    clearProjectDropMarker();
+    draggedProjectId = '';
+  }
+  function dropAfter(event,row){
+    const box = row.getBoundingClientRect();
+    return event.clientY > box.top + box.height/2;
   }
   projectToggle.onclick = () => projectPanel.hidden ? openProjects() : closeProjects();
   App.core.$('#projectClose').onclick = () => closeProjects(true);
   App.core.$('#projectNew').onclick = startBlankProject;
   App.core.$('#projectImport').onclick = () => { closeProjects(); App.importer.impOpen(); };
+  projectSearch.oninput = () => { projectList.scrollTop = 0; renderProjects(); };
+  projectSort.onclick = () => { closeProjectRename(); projectSorting = !projectSorting; renderProjects(); };
+  renameForm.onsubmit = renameProject;
+  renameInput.oninput = () => renameInput.setCustomValidity('');
+  App.core.$('#projectRenameCancel').onclick = () => closeProjectRename(true);
   projectList.onclick = projectClick;
+  projectList.addEventListener('dragstart', e => {
+    const handle = e.target.closest('[data-project-drag]');
+    if (!projectSorting || !handle || !e.dataTransfer) return;
+    const row = handle.closest('[data-project-id]');
+    draggedProjectId = row.dataset.projectId;
+    e.dataTransfer.setData('text/plain', draggedProjectId);
+    e.dataTransfer.effectAllowed = 'move';
+    row.classList.add('is-dragging');
+  });
+  projectList.addEventListener('dragover', e => {
+    if (!draggedProjectId) return;
+    clearProjectDropMarker();
+    const row = e.target.closest('[data-project-id]');
+    if (!row || row.dataset.projectId === draggedProjectId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    row.classList.add(dropAfter(e,row) ? 'is-drop-after' : 'is-drop-before');
+  });
+  projectList.addEventListener('dragleave', e => {
+    if (draggedProjectId && !projectList.contains(e.relatedTarget)) clearProjectDropMarker();
+  });
+  projectList.addEventListener('drop', e => {
+    if (!draggedProjectId) return;
+    e.preventDefault();
+    const id = draggedProjectId, target = e.target.closest('[data-project-id]');
+    endProjectDrag();
+    if (target) moveProject(id,target.dataset.projectId,dropAfter(e,target));
+    renderProjects();
+  });
+  projectList.addEventListener('dragend', () => { endProjectDrag(); renderProjects(); });
+  addEventListener('storage', e => {
+    if (e.key === projectOrderKey){ projectOrder = parseProjectOrder(e.newValue); renderProjects(); }
+  });
   addEventListener('resize', () => { if (!projectPanel.hidden) resizeProjects(); });
   document.addEventListener('pointerdown', e => { if (!projectPanel.hidden && !e.target.closest('#projectShelf')) closeProjects(); });
+  projectPanel.addEventListener('keydown', e => e.stopPropagation());
   document.addEventListener('keydown', e => {
-    if (projectPanel.hidden) return;
-    if (e.key === 'Escape'){ e.stopPropagation(); closeProjects(true); }
-    else if (projectPanel.contains(e.target)) e.stopPropagation();
+    if (projectPanel.hidden || e.key !== 'Escape' || e.isComposing) return;
+    e.preventDefault(); e.stopPropagation();
+    if (renamingProjectId) closeProjectRename(true);
+    else if (e.target === projectSearch && projectSearch.value){ projectSearch.value = ''; renderProjects(); }
+    else if (projectSorting){ projectSorting = false; renderProjects(); projectSort.focus(); }
+    else closeProjects(true);
   }, true);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleProjectSync(0); });
 
