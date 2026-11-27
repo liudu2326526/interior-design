@@ -175,6 +175,7 @@
   }
 
   function renderAll(){
+    App.ceilingShowcase?.sync();
     renderGrid(); renderRooms(); renderFurn(); renderWalls(); renderLabels(); renderMeasure(); renderSel(); renderDims(); App.ceilingEditor?.render(); App.panel.renderPanel(); updateHeader();
     App.view3d?.sync();
   }

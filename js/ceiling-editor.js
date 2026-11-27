@@ -7,7 +7,6 @@
   const state = () => App.store.state.ceiling;
   const displayed = () => App.store.ui.ceilingPreview || state();
   const isPreview = () => Boolean(App.store.ui.ceilingPreview);
-  const rect = (x,y,w,h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"/>`;
   const path = points => points?.length ? 'M'+points.map(p=>p.join(' ')).join('L') : '';
   const closed = points => path(points)+'Z';
   const names = {
@@ -21,7 +20,8 @@
   const lights = ['downlight','spot','pendant','linear','track'], equipment = ['vent','access','curtain'];
   const dimDefaults = {downlight:[90,90,0],spot:[100,100,40],pendant:[400,400,600],linear:[1200,45,0],track:[1500,55,0],vent:[1000,120,0],access:[450,450,0],curtain:[1600,180,0]};
   const groups = {zone:'zones',edge:'edges',fixture:'fixtures'};
-  let presetWidth=400, arrayType='downlight', projectId='';
+  const defaultCeilingColor = () => model.defaultColor || '#ffffff';
+  let presetWidth=400, arrayType='downlight', projectId='', lastPreset=null;
   let enabled=false, overlay=false, roomId='', selected=null, tool=null, points=[], hoverPoint=null, dragPreview=null, edgeIndex=0, count=4;
   const active = () => enabled && !App.io.is3D?.();
   const rooms = () => App.store.ROOMS.filter(r => !r.bay);
@@ -41,8 +41,10 @@
       selected=null; clearTool();
     }
     if (selected && !selectedObject()) selected=null;
+    if(lastPreset && (lastPreset.room!==roomId || selected?.kind!=='zone' || lastPreset.id!==selected.id))lastPreset=null;
     if(holeIndex>=0 && !selectedObject()?.holes?.[holeIndex])holeIndex=-1;
   }
+  function presetActive(type){return Boolean(lastPreset && lastPreset.type===type && lastPreset.room===roomId && selected?.kind==='zone' && lastPreset.id===selected.id && !tool);}
   function clearTool(){ tool=null; points=[]; hoverPoint=null; dragPreview=null; }
   function setRoom(id){
     if(!rooms().some(r=>r.id===id))return;
@@ -94,17 +96,82 @@
     }
     change(patch,null);
   }
-  function fixtureSymbol(f){
-    const [dl,dw]=dimDefaults[f.type]||dimDefaults.downlight,l=f.length||dl,w=f.width||dw;
-    switch(f.type){
-      case 'curtain':return rect(-l/2,-w/2,l,w)+`<path d="M${-l/2} 0h${l}" stroke-dasharray="4 2"/>`;
-      case 'vent':return rect(-l/2,-w/2,l,w)+`<path d="M${-l*.44} 0h${l*.88}"/>`;
-      case 'access':return rect(-l/2,-w/2,l,w)+`<path d="M${-l/2} ${w/2}L${l/2} ${-w/2}" stroke-dasharray="4 3"/>`;
-      case 'track':return rect(-l/2,-w/2,l,w)+[-.32,0,.32].map(t=>`<path d="M${l*t} 0l${w} ${w}"/>`).join('');
-      case 'linear':return rect(-l/2,-w/2,l,w);
-      case 'pendant':return `<ellipse rx="${l/2}" ry="${w/2}"/><ellipse rx="${l*.28}" ry="${w*.28}"/>`;
-      case 'spot':return `<circle r="${w/2}"/><path d="M0 0l${l*.72} ${l*.48}"/>`;
-      default:return `<circle r="${w/2}"/><path d="M${-w/4} 0h${w*.5}m${-w/4} ${-w/4}v${w*.5}"/>`;
+  // Artwork uses the same front faces for the reflected ceiling plan and the library.
+  // Outer dimensions come from the fixture. Thin strokes stay legible at drawing scales.
+  function fixtureSymbol(type, customColor){
+    const finish=/^#[0-9a-f]{6}$/i.test(customColor||'')?customColor:null;
+    const ink='#514c43', shell=finish||'#d9d6c9', optic='#494a44', brass='#ab8550', lens='#f6dfa5';
+    const line=(d,color=ink,sw=.65)=>`<path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const face=(d,fill,stroke=ink,sw=.85)=>`<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+    const oval=(x,y,rx,ry,fill,stroke='none',sw=.75)=>`<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+    const box=(x,y,w,h,rx,fill,stroke=ink,sw=.85)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ry="${Math.min(rx,h/2)}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
+    switch(type){
+      case 'downlight':
+        return oval(0,0,48,48,shell,ink)+oval(0,0,36,36,optic)+oval(0,0,25,25,lens,brass,.45)
+          +line('M-16 4Q-18 -14 -2 -17','#fff9e7',.8)+oval(8,9,6,5,'#e5bf75');
+      case 'spot':
+        return '<g transform="rotate(-32)">'+oval(0,-12,36,35,shell,ink)+oval(0,-12,25,24,optic)
+          +face('M-26 -20Q-26 -26 -20 -26H20Q26 -26 26 -20L31 20H-31Z',finish||'#777669')
+          +line('M-33 -10v21M33 -10v21','#80775f',1.3)+oval(0,20,31,22,'#b8a782',ink,.8)
+          +oval(0,20,24,16,lens)+line('M-16 18Q-7 9 6 13','#fff8db',.7)+'</g>';
+      case 'pendant': {
+        const rim=oval(0,0,49,49,finish||'#f4f0e7',ink);
+        const ribs=Array.from({length:8},(_,i)=>`<g transform="rotate(${i*45})">${line('M0 -48Q5 -36 0 -22','#b4a88d',.55)}</g>`).join('');
+        return rim+ribs+oval(0,0,23,23,'#b9aa8e',ink,.6)+oval(0,0,18,18,'#fff6e3')+line('M-12 -5Q-8 -13 2 -14','#fffaf0',.7);
+      }
+      case 'linear':
+        return box(-49,-47,98,94,3,finish||'#a9a9a0')+box(-45,-29,90,58,2,'#fbebc6','#8e8066',.6)
+          +line('M-39 -10H39','#fff9e9',.65)+line('M-46 -31V31M46 -31V31','#73766e',.55);
+      case 'track': {
+        const heads=[-32,0,32].map((x,i)=>`<g transform="translate(${x} 0) scale(${i===1?-1:1} 1)">`+
+          face('M-4 -14L4 -24L10 18L4 36L-4 21Z',finish||'#53534c')+
+          face('M2 23L8 12L10 24L4 42Z','#dfc18a',ink,.55)+'</g>').join('');
+        return box(-49,-15,98,30,2,'#4b4b46')+line('M-46 -5H46','#a5a297',.55)+heads;
+      }
+      case 'vent':
+        return box(-49,-48,98,96,2,finish||'#bcc7bd')+box(-46,-34,92,68,1,'#627770','#51655e',.6)
+          +[-20,0,20].map(y=>line(`M-44 ${y}H44`,'#d7e0d5',.7)).join('')
+          +line('M0 -31V31','#85948a',.85);
+      case 'access':
+        return box(-48,-48,96,96,3,finish||'#c6cfc4')+box(-40,-40,80,80,2,'#edf0e7','#788578',.6)
+          +box(-41,-25,5,12,1,'#8a998d','none')+box(-41,12,5,12,1,'#8a998d','none')+
+          box(26,-7,6,14,2,'#6c796d','none')+line('M-31 -33H32','#fffdf3',.55);
+      case 'curtain':
+        return box(-49,-48,98,96,2,finish||'#d8d7c9')+line('M-46 -29H46M-46 -13H46','#797c70',.65)
+          +face('M-46 0Q-42 28 -38 8T-30 8T-22 8T-14 8T-6 8T2 8T10 8T18 8T26 8T34 8T42 8Q45 18 46 2V36H-46Z','#eee8d8','#9b9c8a',.55);
+      default: return '';
+    }
+  }
+  const shapeGlyphs={
+    flat:'<rect x="-16" y="-11" width="32" height="22" rx="1" fill="#f9f8f1"/>',
+    perimeter:'<path fill="#e1d9c8" fill-rule="evenodd" d="M-17 -11h34v22h-34zM-12 -7v14h24V-7z"/>',
+    island:'<rect x="-14" y="-9" width="28" height="18" rx="6" fill="#f9f6ee"/><rect x="-11" y="-6" width="22" height="12" rx="4" fill="none" stroke="#b99e71" stroke-width=".7"/>',
+    side:'<rect x="-17" y="-11" width="34" height="22" rx="1" fill="#faf8f0"/><path d="M-17 -11h34v7h-34z" fill="#d9c6a4"/>',
+    rectangle:'<rect x="-15" y="-10" width="30" height="20" fill="#f8f6ed"/><path d="M-17 -12h4v4h-4zM13 8h4v4h-4z" fill="#c48859" stroke="#845c3d" stroke-width=".65"/>',
+    polygon:'<path d="M-16 7l4-15 15-4 14 11-8 12Z" fill="#f6efdd"/><circle cx="3" cy="-12" r="1.8" fill="#ad7952"/>'
+  };
+  const glyphSize={downlight:[22,22],spot:[23,23],pendant:[27,27],linear:[43,7],track:[45,16],vent:[40,13],access:[24,24],curtain:[42,12]};
+  function toolThumbnail(type){
+    const size=glyphSize[type];
+    const art=size?`<g transform="scale(${size[0]/100} ${size[1]/100})">${fixtureSymbol(type)}</g>`:
+      `<g stroke="#746d60" stroke-width="1.05" stroke-linejoin="round">${shapeGlyphs[type]||''}</g>`;
+    return `<svg viewBox="-28 -18 56 36" width="56" height="36" aria-hidden="true" focusable="false">${art}</svg>`;
+  }
+  function symbolScale(type,l,w,s){
+    const point=['downlight','spot','pendant'].includes(type);
+    const minSide=point?10:(type==='track'||type==='vent'||type==='curtain'?5:3);
+    // At whole-home scale the point symbol is centred on its true mounting point.
+    const factor=point?Math.max(1,10/(Math.max(l,w)*s)):1;
+    return `scale(${l*factor/100} ${(point?w*factor:Math.max(w,Math.min(l,minSide/s)))/100})`;
+  }
+  let symbolViewScale=0;
+  function resizeSymbols(){
+    const s=App.store.view.s;
+    if(symbolViewScale===s)return;
+    symbolViewScale=s;
+    for(const symbol of $('#gCeiling').querySelectorAll('[data-ceil-symbol]')){
+      const {ceilSymbol,length,width}=symbol.dataset;
+      symbol.setAttribute('transform',symbolScale(ceilSymbol,Number(length),Number(width),s));
     }
   }
   function attrs(kind,item,id){
@@ -124,22 +191,24 @@
       return `<g ${attrs('edge',edge,r.id)}><path d="${path(model.edgePoints(boundary,edge.edge))}" stroke="${edge.type==='cove'?'#d39728':'#846a56'}" fill="none" stroke-width="3" vector-effect="non-scaling-stroke"/><path d="${path(model.edgePoints(boundary,edge.edge))}" stroke="transparent" fill="none" stroke-width="9" vector-effect="non-scaling-stroke"/></g>`;
     });
     const fixtures=data.fixtures.map(f=>{
-      const color=equipment.includes(f.type)?'#286d71':'#996e24';
-      return `<g ${attrs('fixture',f,r.id)} transform="translate(${f.x} ${f.y}) rotate(${f.rotation||0})" stroke="${color}" fill="#fffdf4"><title>${esc(title(f.type))}</title>${fixtureSymbol(f)}<circle r="${Math.max(60,5/App.store.view.s)}" fill="transparent" stroke="none"/></g>`;
+      const [defaultLength,defaultWidth]=dimDefaults[f.type],l=f.length||defaultLength,w=f.width||defaultWidth;
+      const symbol=`<g data-ceil-symbol="${f.type}" data-length="${l}" data-width="${w}" transform="${symbolScale(f.type,l,w,App.store.view.s)}">${fixtureSymbol(f.type,f.color)}</g>`;
+      return `<g ${attrs('fixture',f,r.id)} transform="translate(${f.x} ${f.y}) rotate(${f.rotation||0})"><title>${esc(title(f.type))} · ${l}×${w} mm</title>${symbol}<circle r="${Math.max(60,5/App.store.view.s)}" fill="transparent" stroke="none"/></g>`;
     });
     return [...zones,...edges,...fixtures].join('');
   }
-  function button(label,cmd,value='',on=false){return `<button type="button" class="btn ${on?'on':''}" data-cmd="${cmd}" data-value="${esc(value)}"${cmd==='tool'?' aria-pressed="'+on+'"':''}>${label}</button>`;}
-  const actionButtons=(vs,cmd)=>vs.map(v=>button(title(v),cmd,v,tool===v)).join('');
+  function button(label,cmd,value='',on=false){return `<button type="button" class="btn ${on?'on':''}" data-cmd="${cmd}" data-value="${esc(value)}"${(cmd==='tool'||cmd==='preset')?' aria-pressed="'+on+'"':''}>${label}</button>`;}
+  const actionButtons=(vs,cmd)=>vs.map(v=>button(toolThumbnail(v)+'<span>'+title(v)+'</span>',cmd,v,cmd==='preset'?presetActive(v):tool===v)).join('');
   function options(list,value){return list.map(([key,label])=>`<option value="${esc(String(key))}" ${String(key)===String(value)?'selected':''}>${esc(label)}</option>`).join('');}
   function library(){
     const lib=$('#ceilingLibrary'), available=rooms(), def=roomDef();
     lib.innerHTML=`<h3>${tr('天花板设计','Ceiling design')}</h3><label class="ceil-field">${tr('设计房间','Room')}<select id="ceilingRoom">${options(available.map(r=>[r.id,roomName(r)]),roomId)}</select></label>
-    <h4>${tr('吊顶造型','Ceiling shapes')}</h4><label class="ceil-field">${tr('边宽 / 悬浮顶退距（mm）','Band width / island inset (mm)')}<input id="ceilingPresetWidth" type="number" min="10" max="10000" step="10" value="${presetWidth}"></label><div class="ceiling-tools">${actionButtons(['flat','perimeter','island'],'preset')}${actionButtons(['side','rectangle','polygon'],'tool')}</div>
-    <h4>${tr('灯具','Lights')}</h4><div class="ceiling-tools">${actionButtons(lights,'tool')}</div>
-    <h4>${tr('顶部设备','Ceiling equipment')}</h4><div class="ceiling-tools">${actionButtons(equipment,'tool')}</div>
+    <div class="ceil-buttons">${button(tr('室内 3D 预览','Preview in 3D'),'preview')}${button(tr('3D 样式展示','3D style gallery'),'showcase')}</div>
+    <h4>${tr('吊顶造型','Ceiling shapes')}</h4><label class="ceil-field">${tr('边宽 / 悬浮顶退距（mm）','Band width / island inset (mm)')}<input id="ceilingPresetWidth" type="number" min="10" max="10000" step="10" value="${presetWidth}"></label><div class="ceiling-tools fixture-catalog">${actionButtons(['flat','perimeter','island'],'preset')}${actionButtons(['side','rectangle','polygon'],'tool')}</div>
+    <h4>${tr('灯具','Lights')}</h4><div class="ceiling-tools fixture-catalog">${actionButtons(lights,'tool')}</div>
+    <h4>${tr('顶部设备','Ceiling equipment')}</h4><div class="ceiling-tools fixture-catalog">${actionButtons(equipment,'tool')}</div>
     <h4>${tr('等距布灯','Light array')}</h4><div class="ceiling-tools">${button(tr('两点等距布置','Place between two points'),'tool','array',tool==='array')}</div>
-    <div class="ceil-buttons">${button(tr('AI 识别天花','Recognize ceiling'),'scan')}${button(tr('室内 3D 预览','Preview in 3D'),'preview')}</div>`;
+    <div class="ceil-buttons">${button(tr('AI 识别天花','Recognize ceiling'),'scan')}</div>`;
     if(!def||isPreview())lib.querySelectorAll('[data-cmd]').forEach(b=>{if (b.dataset.cmd!=='preview' && !(!def&&b.dataset.cmd==='scan'))b.disabled=true;});
   }
   function render(){
@@ -165,6 +234,7 @@
   }
   const freeTool=()=>tool==='polygon'||tool==='hole';
   function renderSketch(){
+    resizeSymbols();
     const g=$('#ceilingSketch'), task=$('#ceilingTask'),edit=active();
     task.hidden=!edit||!tool||isPreview();document.body.classList.toggle('ceiling-draw',edit&&!!tool);
     if(!edit||!roomDef()){g.innerHTML='';return;}
@@ -207,7 +277,7 @@
     const value=z?h-z.drop:h;
     const offset=z?Math.max(1,Math.min(21,z.drop/14)):1;
     return `<p class="ceiling-note">${tr('完成面净高','Clear height')} <b>${Math.round(value)} mm</b></p>
-    <svg viewBox="0 0 220 38" width="100%" height="38" role="img" aria-label="${tr('顶面示意剖面','Ceiling section diagram')}"><path d="M5 3h210v4H5Z" fill="#776f62"/><path d="M40 7v${offset}h140V7" fill="${z?.color||'#f6f0e8'}" stroke="#ad7a51"/><path d="M12 7v${offset}m-4 0h8" fill="none" stroke="#716859"/></svg>`;
+    <svg viewBox="0 0 220 38" width="100%" height="38" role="img" aria-label="${tr('顶面示意剖面','Ceiling section diagram')}"><path d="M5 3h210v4H5Z" fill="#776f62"/><path d="M40 7v${offset}h140V7" fill="${z?.color||defaultCeilingColor()}" stroke="#ad7a51"/><path d="M12 7v${offset}m-4 0h8" fill="none" stroke="#716859"/></svg>`;
   }
   const edgesList = z => z?.poly || [];
   let holeIndex=-1;
@@ -217,7 +287,7 @@
     const arc=holeIndex<0?z.arcs?.find(a=>a.edge===edgeIndex):null;
     return `<section><h3>${tr('轮廓与边部','Outline and edges')}</h3><div class="ceil-fields">${pick(tr('轮廓','Boundary'),'boundary',[[-1,tr('外轮廓','Outer outline')],...(z.holes||[]).map((_,i)=>[i,tr('内圈','Opening')+' '+(i+1)])],holeIndex)}${pick(tr('边段','Edge'),'edgeIndex',poly.map((_,i)=>[i,tr('边','Edge')+' '+(i+1)]),edgeIndex)}
     ${holeIndex<0?field(tr('圆弧角度（°）','Arc sweep (°)'),'sweep',arc?.sweep||0,'number','min="-180" max="180" step="any"'):''}</div>
-    <div class="ceil-buttons">${button(tr('沿此边加灯槽','Add light cove'),'edge','cove')}${button(tr('沿此边加收边','Add trim'),'edge','trim')}${button(title('hole'),'tool','hole')}</div>
+    <div class="ceil-buttons">${button(tr('沿此边加灯槽','Add light cove'),'edge','cove')}${button(tr('沿此边加收边','Add trim'),'edge','trim')}${button(title('hole'),'tool','hole',tool==='hole')}</div>
     <p class="ceiling-note">${tr('拖动外轮廓节点调整边界。圆弧角度为 0 时按直线绘制。','Drag outer vertices to reshape. Set the sweep to 0 for a straight edge.')}</p></section>`;
   }
   function renderPanel(){
@@ -258,19 +328,30 @@
     if(!total)html+=`<p class="ceiling-note">${tr('从左侧选择造型，或选择灯具后在图上放置。','Pick a shape from the library, or choose a fixture and place it on the plan.')}</p>`;
     panel.innerHTML=html+'</div></section>';
   }
-  function startTool(next){
+  function startTool(next,trigger){
     if(!roomDef()||isPreview())return;
     if(next==='hole'&&selected?.kind!=='zone')return;
-    clearTool();tool=next;App.panel.closeDrawers();render();App.panel.renderPanel();
+    const toggledOff=tool===next;
+    const keyboard=trigger?.matches(':focus-visible'), container=trigger?.closest('#ceilingLibrary,#panel');
+    clearTool();
+    if(!toggledOff){lastPreset=null;tool=next;App.panel.closeDrawers();}
+    render();App.panel.renderPanel();
+    if(keyboard && (toggledOff||!App.core.narrow()))container?.querySelector(`[data-cmd="tool"][data-value="${CSS.escape(next)}"]`)?.focus({preventScroll:true});
   }
-  function preset(type){
+  function preset(type,trigger){
     const def=roomDef();if(!def||isPreview())return;
-    try{
-      const zone=model.preset(type,def,{id:uid(),width:presetWidth,drop:180,color:'#f4e6d6'});
-      zone.name=title(type);
-      clearTool();holeIndex=-1;edgeIndex=0;
-      if(change({zones:[...roomData().zones,zone]},{kind:'zone',id:zone.id}))App.panel.closeDrawers();
-    }catch(e){App.core.toast(e.message);}
+    const keyboard=trigger?.matches(':focus-visible');
+    if(presetActive(type)){
+      clearTool();select(null,null);
+    }else{
+      try{
+        const zone=model.preset(type,def,{id:uid(),width:presetWidth,drop:180,color:defaultCeilingColor()});
+        zone.name=title(type);
+        clearTool();holeIndex=-1;edgeIndex=0;lastPreset={room:roomId,type,id:zone.id};
+        if(change({zones:[...roomData().zones,zone]},{kind:'zone',id:zone.id}))App.panel.closeDrawers();
+      }catch(e){App.core.toast(e.message);}
+    }
+    if(keyboard&&!App.core.narrow())$('#ceilingLibrary').querySelector(`[data-cmd="preset"][data-value="${CSS.escape(type)}"]`)?.focus({preventScroll:true});
   }
   function addEdge(type){
     const z=selectedObject();if(!z||selected.kind!=='zone')return;
@@ -287,7 +368,7 @@
       const edited={...z,holes:[...(z.holes||[]),poly]};delete edited.preset;
       return replaceItem('zone',edited);
     }
-    const zone={id:uid(),name:title(tool==='rectangle'?'rectangle':'polygon'),poly,drop:180,color:'#f4e6d6'};
+    const zone={id:uid(),name:title(tool==='rectangle'?'rectangle':'polygon'),poly,drop:180,color:defaultCeilingColor()};
     return change({zones:[...data.zones,zone]},{kind:'zone',id:zone.id});
   }
   function finishPolygon(){
@@ -331,7 +412,7 @@
         const prev=nearest[Math.max(0,i-1)],next=nearest[Math.min(nearest.length-1,i+1)],dx=next[0]-prev[0],dy=next[1]-prev[1],len=Math.hypot(dx,dy);
         return [v[0]-direction*dy/len*presetWidth,v[1]+direction*dx/len*presetWidth];
       });
-      const zone={id:uid(),name:title('side'),poly:[...nearest,...inner.reverse()],drop:180,color:'#f4e6d6'};
+      const zone={id:uid(),name:title('side'),poly:[...nearest,...inner.reverse()],drop:180,color:defaultCeilingColor()};
       if(change({zones:[...roomData().zones,zone]},{kind:'zone',id:zone.id})){clearTool();holeIndex=-1;edgeIndex=0;render();App.panel.renderPanel();}
       return;
     }
@@ -389,6 +470,7 @@
   function hover(p){if(tool && points.length){hoverPoint=snap(p);renderSketch();}}
   function key(e){
     const k=e.key.toLowerCase(), mod=e.metaKey||e.ctrlKey;
+    if(k==='enter' && e.target.closest?.('button'))return false;
     if(mod){if(k==='d'){e.preventDefault();return true;}return false;}
     if(!tool&&!isPreview()&&selected?.kind==='fixture'&&(k.startsWith('arrow')||k==='r')){
       const f=selectedObject(),step=e.shiftKey?100:10,dirs={arrowleft:[-step,0],arrowright:[step,0],arrowup:[0,-step],arrowdown:[0,step]};
@@ -409,10 +491,17 @@
     const cmd=target.dataset.cmd,value=target.dataset.value;
     if(target.dataset.ceilSelect){clearTool();holeIndex=-1;select(target.dataset.ceilSelect,target.dataset.id);return;}
     if(cmd==='scan'){App.importer.openCeilingImport(roomId||null);return;}
-    if(cmd==='preview'){if(roomDef())App.io.studioEnterRoom(roomId,{ceiling:true});return;}
+    if(cmd==='preview'){
+      if(roomDef()){
+        App.panel.closeDrawers();
+        App.io.studioEnterRoom(roomId,{ceiling:true});
+      }
+      return;
+    }
     if(isPreview())return;
-    if(cmd==='preset')preset(value);
-    else if(cmd==='tool')startTool(value);
+    if(cmd==='showcase'){if(roomDef())App.ceilingShowcase.open(roomId);return;}
+    if(cmd==='preset')preset(value,target);
+    else if(cmd==='tool')startTool(value,target);
     else if(cmd==='edge')addEdge(value);
     else if(cmd==='back'){clearTool();select(null,null);}
     else if(cmd==='delete')removeSelection();
@@ -469,5 +558,5 @@
   $('#ceilingFinish').onclick=finishPolygon;
   $('#ceilingCancel').onclick=()=>{clearTool();render();App.panel.renderPanel();};
   document.querySelector('[data-view="2d"]').addEventListener('click',()=>{if(active())close();});
-  App.ceilingEditor={active,context,open,focus:open,close,syncView,render,renderPanel,renderSketch,startPointer,movePointer,endPointer,hover,key,overlayVisible:()=>overlay,setOverlay};
+  App.ceilingEditor={active,context,open,focus:open,close,syncView,render,renderPanel,renderSketch,startPointer,movePointer,endPointer,hover,key,overlayVisible:()=>overlay,setOverlay,toolThumbnail};
 })();

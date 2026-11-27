@@ -1,7 +1,7 @@
 // Shared by the browser and the Node import/assistant validators. Plan units are millimetres.
 (() => {
   'use strict';
-  const DEFAULT_HEIGHT = 2800, DEFAULT_COLOR = '#f6f2eb';
+  const DEFAULT_HEIGHT = 2800, DEFAULT_COLOR = '#ffffff';
   const fixtureTypes = ['downlight','spot','pendant','linear','track','vent','access','curtain'];
   const own = (obj, key) => Object.hasOwn(obj, key);
   const record = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -282,7 +282,7 @@
     }
     return zone;
   }
-  const api={normalize,validate,apply,room,baseHeight,outline,edgePoints,shapes,fixtureHeight,preset,fixtureTypes};
+  const api={normalize,validate,apply,room,baseHeight,outline,edgePoints,shapes,fixtureHeight,preset,fixtureTypes,defaultColor:DEFAULT_COLOR};
   globalThis.CeilingModel=api;
   if (globalThis.App) globalThis.App.ceilingModel=api;
 })();

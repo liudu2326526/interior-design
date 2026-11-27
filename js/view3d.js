@@ -80,7 +80,7 @@
       lookBy(dx,dy,-.002,Math.PI/2);
     });
 
-    hemi = new THREE.HemisphereLight(0xfff8ee, 0xb9a88f, 1.1);
+    hemi = new THREE.HemisphereLight(0xfffcf7, 0xf0efeb, 2.1);
     sun = new THREE.DirectionalLight(0xfff1dd, 2.6);
     sun.castShadow = true; sun.shadow.mapSize.setScalar(App.core.COARSE ? 2048 : 4096);   // 平板 GPU 用小一点的阴影贴图
     Object.assign(sun.shadow.camera, {left:-11, right:11, top:11, bottom:-11, near:1, far:60});
@@ -91,7 +91,7 @@
 
     const pm = new THREE.PMREMGenerator(renderer); envTex = pm.fromScene(new RoomEnvironment(), .04).texture; pm.dispose();
     glassMat = new THREE.MeshPhysicalMaterial({color:0xcfe6ef, roughness:.05, transparent:true, opacity:.28, depthWrite:false, side:THREE.DoubleSide});
-    wallMat = mat('#f4f1eb', {roughness:.92}); capMat = mat('#34312d', {roughness:.9}); frameMat = mat('#5d6166', {roughness:.5, metalness:.4});
+    wallMat = mat('#ffffff', {roughness:.93}); capMat = mat('#34312d', {roughness:.9}); frameMat = mat('#5d6166', {roughness:.5, metalness:.4});
 
     archFloor = new THREE.Group(); archUp = new THREE.Group(); furnG = new THREE.Group(); labelG = new THREE.Group();
     doorG = new THREE.Group(); lampG = new THREE.Group(); ceilingG = new THREE.Group();
@@ -603,18 +603,86 @@
     });
   }
 
-  const lightSites=[], luminousMaterials=new Set();
+  const lightSites=[], furnitureLightSites=[], lensMaterials=new Map();
+  const pointPool=[], spotPool=[];
+  const upAxis=new THREE.Vector3(0,1,0);
   const isClockwise=poly=>poly.reduce((sum,p,i)=>{
     const q=poly[(i+1)%poly.length]; return sum+p[0]*q[1]-p[1]*q[0];
   },0)>0; // in plan coordinates, Y points down
-  function surfaceMesh(poly,holes,bottom,top,color,index){
+  const ceilingJointMat = new THREE.MeshBasicMaterial({
+    vertexColors:true, transparent:true, depthWrite:false, side:THREE.DoubleSide,
+    polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-3,
+  });
+  // A narrow ambient-occlusion gradient follows the actual junction: on the slab just
+  // outside an exposed return, or on the soffit where a perimeter drop meets the wall.
+  function ceilingJoints(panel, loop, hole, footprint, rise, floating){
+    const positions=[], colors=[], indices=[];
+    const sign=(isClockwise(loop)?1:-1)*(hole?-1:1);
+    const width=Math.min(80,Math.max(18,rise*280));
+    const add=(p,y,alpha)=>{
+      positions.push(wx(p[0]),y,wz(p[1])); colors.push(.035,.04,.045,alpha);
+    };
+    const normals=loop.map((p,i)=>{
+      const q=loop[(i+1)%loop.length], dx=q[0]-p[0], dz=q[1]-p[1], len=Math.hypot(dx,dz)||1;
+      return [sign*dz/len,-sign*dx/len];
+    });
+    const offsets=normals.map((n,i)=>{
+      const prev=normals[(i+normals.length-1)%normals.length];
+      const k=1/Math.max(.4,1+n[0]*prev[0]+n[1]*prev[1]);
+      return [(n[0]+prev[0])*k,(n[1]+prev[1])*k];
+    });
+    for(let i=0;i<loop.length;i++){
+      const j=(i+1)%loop.length, a=loop[i], b=loop[j], n=normals[i];
+      const open=App.assistant.pointInPoly((a[0]+b[0])/2+n[0]*width,(a[1]+b[1])/2+n[1]*width,footprint);
+      const w=open?width:-Math.min(32,width), y=open?rise-.0015:-.0015;
+      const offset=(p,v)=>[p[0]+w*v[0],p[1]+w*v[1]];
+      const idx=positions.length/3, alpha=open ? (floating ? .13 : .19) : .11;
+      add(a,y,alpha);add(b,y,alpha);add(offset(b,offsets[j]),y,0);add(offset(a,offsets[i]),y,0);
+      indices.push(idx,idx+1,idx+2,idx,idx+2,idx+3);
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,4));geo.setIndex(indices);
+    const wash=new THREE.Mesh(geo,ceilingJointMat);wash.renderOrder=panel.renderOrder+1;panel.add(wash);
+  }
+  function surfaceMesh(zone,top,room,index){
+    const {poly,holes,color}=zone, bottom=M(zone.height), rise=Math.max(.001,top-bottom);
+    const floating=zone.preset?.type==='island' && rise>.03;
+    const thickness=floating?Math.min(.085,Math.max(.023,rise*.42)):rise;
     const outer=isClockwise(poly)?poly:poly.slice().reverse();
     const shape=shapeOf(outer);
     for (const h of holes) shape.holes.push(shapeOf(isClockwise(h)?h.slice().reverse():h));
-    const geometry=new THREE.ExtrudeGeometry(shape,{depth:Math.max(.001,top-bottom),bevelEnabled:false});
+    const geometry=new THREE.ExtrudeGeometry(shape,{depth:thickness,bevelEnabled:false});
     geometry.rotateX(-Math.PI/2);
-    const panel=new THREE.Mesh(geometry,mat(color,{roughness:.92,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-index-1}));
+    const pos=geometry.getAttribute('position'), normal=geometry.getAttribute('normal');
+    const shades=new Float32Array(pos.count*3);
+    const soffitLight=1-.14*Math.min(1,rise/.16);
+    for(let i=0;i<pos.count;i++){
+      const along=THREE.MathUtils.clamp(pos.getY(i)/thickness,0,1);
+      // Recessed vertical returns and the underside receive less indirect skylight.
+      const ny=normal.getY(i);
+      let shade=.92-along*(floating ? .18 : .27);
+      if(ny<-.85) shade=soffitLight;
+      else if(ny>.85) shade=1;
+      shades.fill(shade,i*3,i*3+3);
+    }
+    geometry.setAttribute('color',new THREE.BufferAttribute(shades,3));
+    const panel=new THREE.Mesh(geometry,mat(color,{vertexColors:true,roughness:.91,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-index-1}));
     panel.position.y=bottom; panel.receiveShadow=true; panel.renderOrder=index+1;
+    if(rise>.004){
+      ceilingJoints(panel,poly,false,room.poly,rise,floating);
+      for(const h of holes)ceilingJoints(panel,h,true,room.poly,rise,floating);
+    }
+    if(floating){
+      const [x0,y0,x1,y1]=App.geom.bbox(poly), gap=rise-thickness;
+      const stem=mat('#858b8b',{roughness:.57,metalness:.4});
+      for(const u of [.24,.76]) for(const v of [.24,.76]){
+        const x=x0+(x1-x0)*u, y=y0+(y1-y0)*v;
+        if(!App.assistant.pointInPoly(x,y,poly)||holes.some(h=>App.assistant.pointInPoly(x,y,h)))continue;
+        const hanger=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,gap,8),stem);
+        hanger.position.set(wx(x),thickness+gap/2,wz(y)); panel.add(hanger);
+      }
+    }
     return panel;
   }
   function warmLight(kelvin){
@@ -624,60 +692,151 @@
       : new THREE.Color('#fff6e8').lerp(new THREE.Color('#c4d9ff'),(k-5000)/5000);
   }
   function lens(color,brightness=1){
-    const m=mat(color,{emissive:color,roughness:.45,emissiveIntensity:brightness*.35});
-    m.userData.brightness=brightness; luminousMaterials.add(m); return m;
+    const key=color+':'+brightness;
+    if (!lensMaterials.has(key)){
+      const m=new THREE.MeshStandardMaterial({color,emissive:color,roughness:.45});
+      m.userData.brightness=brightness;
+      lensMaterials.set(key,m);
+    }
+    return lensMaterials.get(key);
   }
   function fixtureMesh(room,group,f,mount,implicit=false){
     const type=f.type, root=new THREE.Group(), pitch=(f.tilt??0)*Math.PI/180;
     root.position.set(wx(f.x),mount,wz(f.y)); root.rotation.y=-(f.rotation??0)*Math.PI/180;
-    group.add(root);
+    root.userData.fixtureType=type; group.add(root);
     const width=M(f.width ?? ({vent:160,curtain:180,access:400,pendant:240,track:37,linear:48}[type] || 90));
     const length=M(f.length ?? ({linear:1000,track:1200,vent:600,curtain:1800,access:400}[type] || 240));
     const power=(f.intensity??100)/100, lightColor='#'+warmLight(f.kelvin).getHexString();
-    const body=mat(f.color || (['track','spot','curtain'].includes(type)?'#474747':'#ece7dd'));
-    const luminous=lens(lightColor,power), dark=mat('#444048'), metalTrim=mat('#b4aca0');
-    const solid=(w,h,d,x,y,z,m=body,parent=root)=>{
-      const part=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);
-      part.position.set(x,y,z); parent.add(part); return part;
+    const painted=f.color || (['track','spot'].includes(type)?'#303437':'#f8f9f7');
+    const body=mat(painted,{roughness:.56,metalness:.13});
+    const luminous=lens(lightColor,power), dark=mat('#282c2d',{roughness:.87});
+    const alloy=mat('#b6bcbe',{roughness:.38,metalness:.64}), reflector=mat('#939b9c',{roughness:.25,metalness:.72});
+    const mesh=(geo,m,x,y,z,parent=root)=>{
+      const obj=new THREE.Mesh(geo,m);
+      obj.position.set(x,y,z);obj.receiveShadow=true;parent.add(obj);return obj;
     };
-    const cylinder=(r,h,x,y,m,parent=root)=>{
-      const part=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,24),m);
-      part.position.set(x,y,0); parent.add(part); return part;
+    const solid=(w,h,d,x,y,z,m=body,parent=root)=>mesh(new THREE.BoxGeometry(w,h,d),m,x,y,z,parent);
+    const cylinder=(r,h,x,y,m=body,parent=root,z=0)=>mesh(new THREE.CylinderGeometry(r,r,h,32),m,x,y,z,parent);
+    const ring=(inner,outer,x,y,m,parent=root)=>{
+      const rim=mesh(new THREE.RingGeometry(inner,outer,40),m,x,y,0,parent);
+      rim.rotation.x=Math.PI/2;
     };
+    const cone=(top,bottom,h,x,y,m,parent=root)=>mesh(new THREE.CylinderGeometry(top,bottom,h,40),m,x,y,0,parent);
     let offset=.05;
     if (type==='linear'){
-      solid(length,.034,width,0,-.017,0); solid(length*.98,.006,width*.74,0,-.036,0,luminous);
+      const depth=Math.min(.038,width*.72), trim=Math.min(.012,length*.035);
+      solid(length,depth,width,0,-depth/2,0,f.color ? body : alloy);
+      solid(length-2*trim,depth*.26,width*.83,0,-depth,0,luminous);
+      for(const end of [-1,1]) solid(trim,depth*1.04,width*1.015,end*(length-trim)/2,-depth/2,0);
+      offset=depth*1.3;
     } else if(type==='track' || type==='spot'){
       const centers=type==='track'?[-.33*length,0,.33*length]:[0];
-      if(type==='track') solid(length,.035,width,0,-.017,0);
-      for(const x of centers){
-        const head=new THREE.Group();head.position.set(x,-.038,0);head.rotation.z=pitch;root.add(head);
-        const r=type==='track'?.038:width/2;
-        cylinder(r,.095,0,-.044,body,head); cylinder(r*.82,.004,0,-.093,luminous,head);
+      if(type==='track'){
+        solid(length,.016,width,0,-.008,0,dark);
+        for(const side of [-1,1]) solid(length,.032,width*.17,0,-.02,side*width*.41);
+      }else{
+        cylinder(width*.55,.016,0,-.008);
+        cylinder(width*.22,.035,0,-.028,alloy);
       }
-      offset=.14;
+      for(const x of centers){
+        const r=type==='track'?Math.min(.047,Math.max(.022,width*.86)):width*.47;
+        if(type==='track') solid(r*2.1,.021,width*.74,x,-.03,0);
+        const pivotY=-.047-r*.37, len=Math.max(.031,r*1.94);
+        for(const side of [-1,1]) solid(r*.27,r*.63,r*.32,x+side*r*.91,pivotY+r*.19,0,alloy);
+        const head=new THREE.Group();
+        head.position.set(x,pivotY,0);head.rotation.z=pitch;root.add(head);
+        cylinder(r,len,0,-len*.34,body,head);
+        const face=-len*.84;
+        cylinder(r*.87,.004,0,face-.001,dark,head);
+        ring(r*.67,r*.8,0,face-.0032,reflector,head);
+        cylinder(r*.61,.004,0,face-.004,luminous,head);
+        const pin=cylinder(r*.16,r*2.04,0,0,alloy,head);
+        pin.rotation.z=Math.PI/2;
+        offset=Math.max(offset,-(pivotY+face)+.012);
+      }
     } else if(type==='pendant'){
-      const hang=M(f.hang??Math.min(480,mount*1000*.35));
-      cylinder(.045,.025,0,-.012,body); cylinder(.004,Math.max(.004,hang),0,-hang/2,metalTrim);
-      cylinder(width/2,.08,0,-hang-.04,body); cylinder(width*.46,.005,0,-hang-.08,luminous);
-      offset=hang+.095;
+      const hang=M(f.hang??Math.min(480,mount*1000*.35)),radius=width/2,shadeH=Math.min(.32,radius*.87);
+      cylinder(Math.min(.055,radius*.45),.028,0,-.014);
+      cylinder(.0028,Math.max(.001,hang-.025),0,-(hang+.025)/2,dark);
+      cylinder(Math.min(.027,radius*.2),.025,0,-hang,alloy);
+      const shade=new THREE.CylinderGeometry(radius*.32,radius,shadeH,96), p=shade.getAttribute('position');
+      for(let i=0;i<p.count;i++){
+        const x=p.getX(i),z=p.getZ(i),flute=1+.013*Math.cos(24*Math.atan2(z,x));
+        p.setXYZ(i,x*flute,p.getY(i),z*flute);
+      }
+      shade.computeVertexNormals();mesh(shade,body,0,-hang-shadeH/2,0);
+      const base=-hang-shadeH;
+      cylinder(radius,.009,0,base,alloy);cylinder(radius*.92,.008,0,base-.005,luminous);
+      offset=hang+shadeH+.018;
     } else if(type==='vent'){
-      solid(length,.018,width,0,-.01,0);
-      const n=Math.max(2,Math.min(12,Math.floor(width/.024)));
-      for(let i=0;i<n;i++) solid(length*.94,.003,width*.43/n,0,-.021,width*((i+.5)/n-.5),dark);
+      const rim=Math.min(.012,width*.085,length*.055), inner=width-rim*2, run=length-rim*2;
+      solid(length,.009,width,0,-.0045,0,dark);
+      for(const side of [-1,1]){
+        solid(length,.016,rim,0,-.008,side*(width-rim)/2);
+        solid(rim,.016,inner,side*(length-rim)/2,-.008,0);
+      }
+      const n=Math.max(2,Math.min(12,Math.round(inner/.022)));
+      for(let i=0;i<n;i++){
+        const blade=solid(run,.003,inner*.68/n,0,-.016,inner*((i+.5)/n-.5),alloy);
+        blade.rotation.x=-.40;
+      }
     } else if(type==='access'){
-      solid(length,.018,width,0,-.009,0,metalTrim);solid(length*.984,.004,width*.984,0,-.02,0);
+      const frame=Math.min(length,width)*.022, latchRadius=Math.min(.009,frame);
+      solid(length,.009,width,0,-.0045,0,alloy);
+      solid(length-frame,.004,width-frame,0,-.01,0,dark);
+      solid(length-2*frame,.005,width-2*frame,0,-.014,0);
+      for(const side of [-1,1]) solid(length*.08,.003,frame*.65,side*length*.27,-.017,-width*.47,alloy);
+      cylinder(latchRadius,.004,0,-.018,alloy,root,width*.40);
+      solid(latchRadius,.0015,Math.min(.002,frame*.2),0,-.020,width*.40,dark);
     } else if(type==='curtain'){
-      solid(length,.012,width,0,-.007,0,dark);
-      for(const side of [-1,1]) solid(length,.055,.013,0,-.028,side*(width-.013)/2);
+      const depth=Math.min(.07,width*.28), lip=width*.055;
+      solid(length,.006,width,0,-.003,0,mat('#4e5456',{roughness:.85}));
+      for(const side of [-1,1]){
+        solid(length,depth,lip,0,-depth/2,side*(width-lip)/2);
+        solid(length*.98,depth*.21,lip*.94,0,-depth*.19,side*width*.20,alloy);
+      }
+      const count=Math.max(2,Math.min(18,Math.round(length/.16)));
+      for(let i=0;i<count;i++) solid(lip,depth*.15,lip,length*((i+.5)/count-.5),-depth*.32,width*.20);
     } else {
-      cylinder(width/2,.028,0,-.015,body); cylinder(width*.39,.005,0,-.031,luminous);
+      const radius=width/2,depth=Math.min(.022,radius*.32);
+      cone(radius,radius*.98,depth,0,-depth/2,body);
+      ring(radius*.71,radius*.95,0,-depth-.001,alloy);
+      cylinder(radius*.72,.004,0,-depth-.0013,dark);
+      cone(radius*.48,radius*.60,.005,0,-depth-.0038,reflector);
+      cylinder(radius*.44,.003,0,-depth-.006,luminous);
+      offset=depth+.011;
     }
-    if (['vent','access','curtain'].includes(type)||!power) return;
-    const position=new THREE.Vector3(root.position.x,mount-offset,root.position.z);
+    registerFixtureLights(room,root,f,mount,offset,length,implicit);
+  }
+  function registerFixtureLights(room, root, fixture, mount, offset, length, implicit){
+    const type=fixture.type, level=(fixture.intensity??100)/100;
+    if (!level || ['vent','access','curtain'].includes(type)) return;
+    const color='#'+warmLight(fixture.kelvin).getHexString();
+    const pitch=(fixture.tilt??0)*Math.PI/180, rotation=root.rotation.y;
     const directed=!implicit && ['track','spot','downlight'].includes(type);
-    const direction=directed ? new THREE.Vector3(Math.sin(pitch),-Math.cos(pitch),0).applyAxisAngle(new THREE.Vector3(0,1,0),root.rotation.y) : null;
-    lightSites.push({roomId:room.id,position,direction,color:lightColor,power:power*(directed?12:6)});
+    const direction=directed ? new THREE.Vector3(Math.sin(pitch),-Math.cos(pitch),0).applyAxisAngle(upAxis,rotation) : null;
+    let positions=[];
+    if (type==='track'||type==='spot'){
+      // Derive the origin from the visible lens, including its head pivot, tilt and rotation.
+      root.updateWorldMatrix(true,true);
+      root.traverse(part=>{
+        if (part.isMesh && part.material.userData.brightness!==undefined){
+          positions.push(part.getWorldPosition(new THREE.Vector3()).addScaledVector(direction,.008));
+        }
+      });
+    } else {
+      const offsets=type==='linear' && length>.55 ? [-length*.28,length*.28] : [0];
+      positions=offsets.map(x=>{
+        const position=new THREE.Vector3(x,0,0).applyAxisAngle(upAxis,rotation).add(root.position);
+        position.y=mount-offset;
+        return position;
+      });
+    }
+    const power=implicit ? 10 : ({spot:20,track:14,downlight:16,pendant:9,linear:8})[type];
+    for (const position of positions){
+      lightSites.push({roomId:room.id,position,direction,color,power:level*power/(type==='linear'?positions.length:1),
+        range:directed?9:7,angle:type==='downlight'?.67:.39});
+    }
   }
   function ceilingEdge(group,def,zones,edge,base){
     const zone=zones.find(z=>z.id===edge.zoneId);
@@ -686,7 +845,7 @@
     const width=M(edge.width), depth=M(edge.depth), mount=base-M(zone?.drop||0);
     const sign=(isClockwise(ceilingModel.outline(surface)) ? 1 : -1)*(edge.hole!=null ? -1 : 1);
     const cove=edge.type==='cove', material=cove ? lens(edge.color,.65) : mat(edge.color,{roughness:.75});
-    let longest=0, glowPosition;
+    const spans=[]; let totalLength=0;
     for (let i=1;i<points.length;i++){
       const [a,b]=[points[i-1],points[i]], dx=M(b[0]-a[0]), dz=M(b[1]-a[1]);
       const len=Math.hypot(dx,dz); if (!len) continue;
@@ -701,13 +860,23 @@
         }
         const led=new THREE.Mesh(new THREE.BoxGeometry(len,.003,width*.70),material);
         led.position.y=-Math.max(.003,depth*.22); strip.add(led);
-        if(len>longest){longest=len; glowPosition=strip.position.clone(); glowPosition.y-=depth+.04;}
+        spans.push({a,b,len,start:totalLength}); totalLength+=len;
       }else{
         const trim=new THREE.Mesh(new THREE.BoxGeometry(len,depth,width),material);
         trim.position.y=-depth/2; strip.add(trim);
       }
     }
-    if(glowPosition) lightSites.push({roomId:def.id,position:glowPosition,color:edge.color,power:2.3,direction:null});
+    // Sample by arclength so curved and long coves wash the wall along their length.
+    const samples=Math.min(6,Math.ceil(totalLength/1.65));
+    for(let i=0;i<samples;i++){
+      const along=totalLength*(i+.5)/samples;
+      const span=spans.find(s=>along<=s.start+s.len);
+      const t=(along-span.start)/span.len, dx=span.b[0]-span.a[0], dz=span.b[1]-span.a[1];
+      const inset=width*.5+.035;
+      const position=new THREE.Vector3(wx(span.a[0]+t*dx)-sign*M(dz)/span.len*inset,mount-depth-.042,
+        wz(span.a[1]+t*dz)+sign*M(dx)/span.len*inset);
+      lightSites.push({roomId:def.id,position,color:edge.color,power:Math.min(2.4,1.25*totalLength/samples),range:2.6,direction:null});
+    }
   }
   function buildCeiling(def,openAir,bay){
     const data=ceiling(), design=ceilingModel.room(data,def.id), h=ceilingY(def.id);
@@ -715,11 +884,11 @@
     group.userData.room=def.id; group.userData.height=h; group.userData.footprint=def.poly; ceilingG.add(group);
     if (!openAir){
       const geom=new THREE.ShapeGeometry(shapeOf(def.poly,true)); geom.rotateX(Math.PI/2);
-      const original=new THREE.Mesh(geom,mat('#fbfaf7',{roughness:1}));
+      const original=new THREE.Mesh(geom,mat('#ffffff',{roughness:.97}));
       original.position.y=h; group.add(original);
     }
     ceilingModel.shapes(data,def).forEach((shape,i)=>{
-      const mesh=surfaceMesh(shape.poly,shape.holes,M(shape.height),h,shape.color,i);
+      const mesh=surfaceMesh(shape,h,def,i);
       mesh.userData.zone=shape.id; group.add(mesh);
     });
     for(const edge of design.edges) ceilingEdge(group,def,design.zones,edge,h);
@@ -732,7 +901,7 @@
   function updateCeilingVisibility(){
     const full=opt.cut===FULL_WALL_MODE && grow>.99;
     ceilingG.visible=full;
-    lampG.visible=grow>.99;
+    lampG.visible=opt.night && grow>.99;
     if (!full) return;
     const planOrigin=PC(), px=planOrigin.x+camera.position.x*1000, py=planOrigin.y+camera.position.z*1000;
     for(const group of ceilingG.children){
@@ -742,37 +911,89 @@
         (roomView.id ? selected : App.assistant.pointInPoly(px,py,footprint)));
     }
   }
-  function initializeCeilingLights(){
-    const point=lightSites.filter(site=>!site.direction).length, spot=lightSites.length-point;
-    // Limit actual GPU lights independently of the number of visible fixture meshes.
-    const nPoint=Math.min(point,Math.max(4,8-spot)), nSpot=Math.min(spot,8-nPoint);
-    for(let i=0;i<nPoint;i++) lampG.add(new THREE.PointLight(0xffffff,0,8,1.6));
-    for(let i=0;i<nSpot;i++) lampG.add(new THREE.SpotLight(0xffffff,0,9,.65,.48,1.6));
-  }
-  let lastLightUpdate=-Infinity;
-  function updateCeilingLights(force,now=performance.now()){
-    if (!force && (!opt.night || now-lastLightUpdate<220)) return;
-    lastLightUpdate=now;
-    const visible=opt.night ? lightSites.filter(site=>!roomView.id || site.roomId===roomView.id)
-      .sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position)) : [];
-    const spots=visible.filter(s=>s.direction), points=visible.filter(s=>!s.direction);
-    for(const light of lampG.children){
-      const site=(light.isSpotLight?spots:points).shift();
-      light.intensity=site?.power||0;
-      if (!site) continue;
-      light.position.copy(site.position);light.color.set(site.color);
-      if (light.isSpotLight){
-        light.target.position.copy(site.position).add(site.direction);
-        light.target.updateMatrixWorld();
-      }
+  function resizeLightPool(pool, count, spot){
+    while (pool.length>count){
+      const light=pool.pop();
+      lampG.remove(light);
+      light.shadow.dispose();
     }
+    while (pool.length<count){
+      const light=spot ? new THREE.SpotLight(0xffffff,0,8,.6,.42,2) : new THREE.PointLight(0xffffff,0,8,2);
+      // Only the nearest light of each kind gets a shadow map. Shadow maps are reused between edits.
+      light.castShadow=pool.length===0 && (spot || !App.core.COARSE);
+      if (light.castShadow){
+        light.shadow.mapSize.setScalar(spot ? 512 : 256);
+        light.shadow.camera.near=.035;
+        light.shadow.bias=-.00035; light.shadow.normalBias=.012;
+        light.shadow.autoUpdate=false; light.shadow.needsUpdate=true;
+      }
+      pool.push(light); lampG.add(light);
+    }
+  }
+
+  function syncLightPool(){
+    const all=lightSites.concat(opt.furn ? furnitureLightSites : []);
+    const spots=all.filter(s=>s.direction).length, points=all.length-spots;
+    const budget=App.core.COARSE ? 6 : 8;
+    const pointCount=Math.min(points,Math.max(Math.floor(budget/2),budget-spots));
+    resizeLightPool(pointPool,pointCount,false);
+    resizeLightPool(spotPool,Math.min(spots,budget-pointCount),true);
+  }
+
+  const lastLightPosition=new THREE.Vector3(Infinity,Infinity,Infinity);
+  let lastLightUpdate=-Infinity, lastLightRoom, furnitureWasLit=false;
+  function updateRoomLights(force, now=performance.now()){
+    lampG.visible=opt.night && grow>.99;
+    if (!force && (!lampG.visible || now-lastLightUpdate<160)) return;
+    lastLightUpdate=now;
+    const focus=opt.mode==='walk' || roomView.id ? camera.position : orbit.target;
+    const includeFurniture=opt.furn && furnGrow>.99;
+    const doorsMoving=doors.some(d=>Math.abs(Number(d.open)-d.progress)>.003);
+    if (!force && !doorsMoving && lastLightRoom===roomView.id && includeFurniture===furnitureWasLit &&
+        focus.distanceToSquared(lastLightPosition)<.015) return;
+    lastLightRoom=roomView.id;
+    furnitureWasLit=includeFurniture;
+    if (lampG.visible) lastLightPosition.copy(focus);
+    else lastLightPosition.set(Infinity,Infinity,Infinity);
+    const visible=lampG.visible ? lightSites.concat(includeFurniture ? furnitureLightSites : []) : [];
+    let nearRoom=roomView.id;
+    if (!nearRoom && opt.mode==='walk'){
+      const origin=PC(), x=origin.x+focus.x*1000, y=origin.y+focus.z*1000;
+      nearRoom=App.store.ROOMS.find(r=>App.assistant.pointInPoly(x,y,r.poly))?.id;
+    }
+    const points=[], spots=[];
+    for(const site of visible){
+      if (roomView.id && site.roomId!==roomView.id &&
+          !attachedBays.some(bay=>bay.id===site.roomId && bay.roomId===roomView.id)) continue;
+      // Rank neighboring rooms behind the walker's room; within it keep nearby task lighting active.
+      const score=site.position.distanceToSquared(focus)+(nearRoom && site.roomId!==nearRoom ? 64 : 0);
+      (site.direction ? spots : points).push({site,score});
+    }
+    function assign(pool,list){
+      list.sort((a,b)=>a.score-b.score);
+      pool.forEach((light,i)=>{
+        const site=list[i]?.site;
+        light.intensity=site?.power??0;
+        if (!site){ light.userData.site=null; return; }
+        const changed=light.userData.site!==site;
+        light.userData.site=site;
+        light.position.copy(site.position); light.color.set(site.color); light.distance=site.range;
+        if (light.isSpotLight){
+          light.angle=site.angle;
+          light.target.position.copy(site.position).add(site.direction); light.target.updateMatrixWorld();
+        }
+        if (light.castShadow && (force || changed || doorsMoving)) light.shadow.needsUpdate=true;
+      });
+    }
+    assign(pointPool,points); assign(spotPool,spots);
   }
 
   function buildArch(){
     const previousDoors = new Map(doorPlanRev === App.store.planRev ? doors.map(d => [d.key, d.open]) : []);
     doorPlanRev = App.store.planRev;
     doorG.clear(); lastDoorVisibility = -Infinity;
-    clearGroup(archFloor); clearGroup(archUp); clearGroup(ceilingG); lampG.clear(); lightSites.length = 0; doors.length = 0; colliders = [];
+    clearGroup(archFloor); clearGroup(archUp); clearGroup(ceilingG);
+    lensMaterials.forEach(m=>m.dispose()); lensMaterials.clear(); lightSites.length = 0; doors.length = 0; colliders = [];
     const top = opt.cut === FULL_WALL_MODE ? ceilingY() : opt.cut;
     const walls = ceilingWallHeights(App.store.WALLS.filter((_, i) => !App.store.state.demolished.includes('w'+i)));
     // 阴影相机跟着方案大小走，换大户型也不会被裁掉
@@ -792,7 +1013,6 @@
       buildCeiling(r,openAir,bay);
     });
     [...App.store.DOORS, ...App.store.SLIDES].forEach(d => { const [x0, y0, x1, y1] = d.rect; const s = box(M(x1-x0), .012, M(y1-y0), mat('#d8d0c0', {roughness:.3}), wx((x0+x1)/2), 0, wz((y0+y1)/2)); s.castShadow = false; archFloor.add(s); });
-    initializeCeilingLights();
     const glazing = buildOpenings(walls,App.store.WINS,bays,top);
     bays.forEach(bay => bay.mouths.forEach(edge => {
       const rect = edge.curve ? App.geom.curveBounds(edge.curve) : App.geom.bbox([edge.a,edge.b]);
@@ -866,12 +1086,26 @@
       door.lintel = lintel;
       panels.forEach(p => p.children.forEach(mesh => { mesh.userData.door = door; }));
     });
-    applyLight(); applyGrow();
+    applyGrow();
   }
 
   function buildFurn(){
     clearGroup(furnG);
-    App.store.state.furniture.forEach(f => furnG.add(buildFurniture(f)));
+    furnitureLightSites.length=0;
+    const origin=PC();
+    for (const f of App.store.state.furniture){
+      const group=buildFurniture(f);
+      furnG.add(group);
+      if (!group.userData.emitters) continue;
+      group.updateMatrix();
+      for (const source of group.userData.emitters){
+        const position=source.position.clone().applyMatrix4(group.matrix);
+        const x=origin.x+position.x*1000, y=origin.y+position.z*1000;
+        const room=App.store.ROOMS.find(r=>App.assistant.pointInPoly(x,y,r.poly));
+        const direction=source.direction?.clone().transformDirection(group.matrix);
+        furnitureLightSites.push({...source,position,direction,roomId:room?.id});
+      }
+    }
     furnG.visible = opt.furn; selKey = null; applyGrow();
   }
 
@@ -910,8 +1144,10 @@
     if (!inited || (!active && !force)) return;
     // 家具的 3D 坐标由 PLAN.bounds 中心换算（wx/wz），换方案时必须一起重建
     const a = JSON.stringify([App.store.planRev, App.store.PLAN.name, App.store.state.rooms, App.store.state.demolished, ceiling(), opt.cut]), f = JSON.stringify([App.store.planRev, App.store.state.furniture]), l = JSON.stringify([App.store.planRev, App.store.state.rooms, ceiling(), opt.cut]);
+    const sourcesChanged=force || a!==sigArch || f!==sigFurn;
     if (force || a !== sigArch){ sigArch = a; buildArch(); }
     if (force || f !== sigFurn){ sigFurn = f; buildFurn(); }
+    if (sourcesChanged){ syncLightPool(); applyLight(); }
     if (force || l !== sigLabels){ sigLabels = l; buildLabels(); }
     // 室内视角：面积 / 地面材质 / 名称变化后标题条实时更新，房间轮廓变了就重算裁切面
     if (roomView.id){
@@ -936,13 +1172,19 @@
   function applyLight(){
     const t = (opt.hour - 6) / 12, az = Math.PI * (.15 + t*.7), el = Math.sin(Math.PI*t) * 1.05 + .15, warm = 1 - Math.sin(Math.PI*t);
     sun.position.set(Math.cos(az)*18, Math.sin(el)*20 + 3, -Math.sin(az)*10 + 8); sun.target.position.set(0, 0, 0);
-    sun.color.setHSL(.09, .5 + warm*.4, .92 - warm*.12);
+    sun.color.setHSL(.095, .42 + warm*.36, .97 - warm*.13);
     sun.intensity = opt.night ? .05 : 1.4 + Math.sin(Math.PI*t)*1.6;
-    hemi.intensity = opt.night ? .12 : 1.1;
+    sun.castShadow=!opt.night;
+    hemi.color.set(opt.night ? 0xdce7ff : 0xfffcf7);
+    hemi.groundColor.set(opt.night ? 0xb8bfd1 : 0xf0efeb);
+    hemi.intensity = opt.night ? .14 : 2.1;
     scene.background = new THREE.Color(opt.night ? 0x1c2130 : 0xf7f4ee);
     ground.material.color.set(opt.night ? 0x2a2e38 : 0xf2eee7);
-    for (const m of luminousMaterials) m.emissiveIntensity=m.userData.brightness*(opt.night ? 1.8 : .35);
-    updateCeilingLights(true);
+    for (const m of lensMaterials.values()) m.emissiveIntensity=m.userData.brightness*(opt.night ? 2 : .22);
+    for (const m of matCache.values()){
+      if (m.userData.lampGlow) m.emissiveIntensity=m.userData.lampGlow*(opt.night ? 1.8 : .22);
+    }
+    updateRoomLights(true);
     renderer.toneMappingExposure = opt.night ? 1.25 : 1.05;
     envK = opt.night ? .15 : 1; matCache.forEach(m => { if (m.envMap) m.envMapIntensity = m.userData.env*envK; });
     const h = Math.floor(opt.hour), m = Math.round((opt.hour - h)*60);
@@ -1133,6 +1375,7 @@
     if (!inited || !active || !App.plan.roomDef(id)) return false;
     // 3D 入场 / 退场动画期间收到请求：等动画结束再进，避免和 animate() 抢相机
     if (anim){ setTimeout(() => { if (active && App.plan.roomDef(id)) enterRoom(id, opts); }, 140); return true; }
+    if (App.ceilingShowcase?.roomChanged(id)) sync();
     const P = opts.ceiling ? ceilingPose(id) : interiorPose(id);
     if (!P) return false;
     if (opt.mode === 'walk') setMode('orbit');
@@ -1159,6 +1402,7 @@
 
   function exitRoom(opts = {}){
     if (!roomView.id) return;
+    if (App.ceilingShowcase?.roomChanged(null)) sync();
     roomLens(false);
     roomView.id = null; roomView.arrived = false; roomView.fallback = false;
     stage.classList.remove('roomview');
@@ -1622,7 +1866,7 @@
     document.querySelectorAll('[data-cut]').forEach(b => b.onclick = () => { if (opt.mode === 'walk') return; opt.cut = +b.dataset.cut; syncCutBtns(); sync(); });
     document.querySelectorAll('#toggles3d .btn').forEach(b => b.onclick = () => {
       const k = b.dataset.t; opt[k] = !opt[k]; b.classList.toggle('on', opt[k]);
-      if (k === 'furn'){ furnG.visible = opt.furn; if (!opt.furn && App.store.ui.sel?.kind === 'furn') App.interact.select(null); }
+      if (k === 'furn'){ furnG.visible = opt.furn; syncLightPool(); updateRoomLights(true); if (!opt.furn && App.store.ui.sel?.kind === 'furn') App.interact.select(null); }
       if (k === 'labels') showLabels(opt.labels && opt.mode === 'orbit' && !roomView.id);
       if (k === 'night') applyLight();
     });
@@ -1660,7 +1904,7 @@
       d.progress += (Number(d.open) - d.progress) * Math.min(1, dt*6);
       d.move(d.progress);
     });
-    updateSel(); updateCeilingVisibility(); updateCeilingLights(false,now);
+    updateSel(); updateCeilingVisibility(); updateRoomLights(false,now);
     renderer.render(scene, camera);
     updateDoorControls(now);
     labelRenderer.render(scene, camera);
@@ -1671,9 +1915,10 @@
     if (!inited) return null;
     const scale = Math.max(.25, Math.min(4, Number(opts.scale) || 1));
     const clean = !!opts.clean;
+    if (opt.night) updateRoomLights(true);
     const labelVis = labelG.children.map(o => o.visible), labelsOn = labelG.visible;
     labelRenderer.render(scene, camera);
-    if (!clean && scale === 1) return renderer.domElement.toDataURL('image/png');
+    if (!clean && scale === 1){ renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); }
     try {
       if (selHelper){ scene.remove(selHelper); selHelper.geometry.dispose(); selHelper = null; selKey = null; }
       if (clean){ labelG.children.forEach(o => { o.visible = false; }); labelG.visible = false; }

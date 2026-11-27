@@ -693,7 +693,17 @@
       case 'beanbag': return ec(0,0,w/2,d/2,c) + ec(-w*.04,-d*.06,w*.3,d*.28,shade(c,1.12),'opacity=".9"');
       case 'sidetable': return details.topShape === 'rect' ? rc(x,y,w,d,c,'rx="18"')
         : ec(0,0,w/2,d/2,c) + (details.topShape ? '' : ec(0,0,w*.12,d*.12,'none','opacity=".5"'));
-      case 'floorlamp': return `<circle r="${m*.5}" fill="#fff6dd" fill-opacity=".85" ${ST}/>` + `<circle r="${m*.32}" fill="none" ${ST} ${DASH}/>` + `<circle r="${m*.07}" fill="${c}" ${ST}/>`;
+      case 'floorlamp': {
+        const shadePanels=Array.from({length:12},(_,i)=>{
+          const fill=['#f4ead5','#eee1c7','#e5d5b8','#eddfc4'][i%4];
+          return `<path transform="rotate(${i*30})" d="M0 -48A48 48 0 0 1 24 -41.57L15 -25.98A30 30 0 0 0 0 -30Z" fill="${fill}"/>`;
+        }).join('');
+        const spokes=[0,120,240].map(angle=>`<path transform="rotate(${angle})" d="M0 -28L0 -5" fill="none" stroke="${c}" stroke-width=".85" vector-effect="non-scaling-stroke"/>`).join('');
+        return `<g transform="scale(${m/100})"><circle r="48.5" fill="#e6d8bf" ${ST}/>${shadePanels}
+          <circle r="30" fill="#e1d0aa" stroke="#62594b" stroke-width=".8" vector-effect="non-scaling-stroke"/>
+          <circle r="26" fill="#f9efd6"/>${spokes}<circle r="7" fill="${c}"/><circle r="4.5" fill="#fff7db"/>
+          <path d="M-43 -14A45 45 0 0 1 -15 -42" fill="none" stroke="#fff8ea" stroke-width=".65" vector-effect="non-scaling-stroke"/></g>`;
+      }
       case 'island': return rc(x,y,w,d,c) + ln(x,y+d-250,x+w,y+d-250,DASH);
       case 'barstool': return `<circle r="${m/2}" fill="${c}" ${ST}/><circle r="${m*.3}" fill="${shade(c,1.15)}" ${ST}/>`;
       case 'waterheater': return rc(x,y,w,d,c,`rx="${d/2}" ${DASH}`) + ln(x+w*.2,0,x+w*.8,0,DASH);

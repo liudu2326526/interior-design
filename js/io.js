@@ -115,7 +115,7 @@
     viewMode = m;
     try {
       if (m === '3d'){ if (App.store.ui.tool !== 'select') App.interact.setTool('select'); App.store.ui.mA = null; document.body.classList.add('m3d'); await App.view3d.enter(); }
-      else { document.body.classList.remove('m3d'); await App.view3d.exit(); App.interact.applyView(); }
+      else { App.ceilingShowcase?.close(false); document.body.classList.remove('m3d'); await App.view3d.exit(); App.interact.applyView(); }
     } catch (e) {
       // WebGL 不可用（旧设备、无 GPU 环境）时退回 2D，避免停在半个状态
       document.body.classList.remove('m3d'); viewMode = '2d';

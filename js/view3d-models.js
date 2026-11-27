@@ -8,7 +8,7 @@
 
     /* ======================= 几何小工具（y = 底面高度） ======================= */
     const asMat = m => typeof m === 'string' ? mat(m) : m;
-    const sh = o => { o.castShadow = o.receiveShadow = true; return o; };
+    const sh = o => { o.castShadow = !o.material.userData?.lampGlow; o.receiveShadow = true; return o; };
     const mesh = (geo, m) => sh(new THREE.Mesh(geo, asMat(m)));
     const rot = (o, x = 0, y = 0, z = 0) => { o.rotation.set(x, y, z); return o; };
     function box(w, h, d, m, x = 0, y = 0, z = 0){
@@ -61,7 +61,16 @@
     const fabric = c => mat(c, {roughness:.96});
     const woodM = c => mat(c, {roughness:.55});
     const screenMat = (glow = '#1a2636') => mat('#0b0e13', {roughness:.1, metalness:.3, emissive:glow, emissiveIntensity:.35});
-    const glowMat = (c = '#fff4dc', e = '#ffdca0', k = .5) => mat(c, {emissive:e, emissiveIntensity:k, roughness:.9, side:THREE.DoubleSide});
+    function glowMat(c, e, brightness){
+      const material = mat(c, {emissive:e, emissiveIntensity:brightness, roughness:.9, side:THREE.DoubleSide});
+      material.userData.lampGlow = brightness;
+      return material;
+    }
+    // The source is stored in furniture coordinates, alongside the geometry it lights from.
+    function lampSource(group, xyz, color, power, range, direction=null, angle=1.05){
+      (group.userData.emitters ??= []).push({position:new THREE.Vector3(...xyz), color, power, range, angle,
+        direction:direction && new THREE.Vector3(...direction).normalize()});
+    }
 
     // 拉手：y 为拉手中心，z 为门板正面
     function pull(g, len, vert, x, y, z){
@@ -100,6 +109,7 @@
     function tableLamp(g, x, y, z, s = 1){
       g.add(lathe([[0, 0], [.06*s, 0], [.075*s, .05*s], [.08*s, .12*s], [.055*s, .2*s], [.018*s, .25*s], [.012*s, .3*s]], ceramic({roughness:.3}), x, y, z, 32));
       g.add(lathe([[.13*s, 0], [.1*s, .18*s]], glowMat('#f6ecd9', '#ffdca0', .35), x, y + .26*s, z, 40), blob(.03*s, .03*s, .03*s, glowMat('#fff', '#ffe2b0', 1), x, y + .31*s, z, 12));
+      lampSource(g,[x,y+.34*s,z],'#ffcf94',4,3.6);
     }
     const plate = (g, r, x, y, z) => g.add(lathe([[0, 0], [r*.6, 0], [r*.72, .008], [r, .02]], ceramic({side:THREE.DoubleSide}), x, y, z, 32));
 
@@ -223,6 +233,7 @@
           } else if (f.type === 'shoecab'){
             const h = 1.0, y0 = .16, n = Math.max(1, Math.round(w/.45));
             g.add(box(w, h - y0, d - .02, cm, 0, y0, -.01), box(w - .04, .01, .03, glowMat('#fff7e6', '#ffe9c4', .8), 0, y0 - .01, fz - .06));   // 悬空 + 底部灯带
+            for (const side of [-1,1]) lampSource(g,[side*w*.27,y0-.028,fz-.055],'#ffdda8',.18,1.5,[0,-.9,.42],1.12);
             fronts(g, -w/2, y0, w, h - y0, fz, n, 1, cm, 'edge');
             g.add(rbox(w + .01, .025, d, woodM(darker(c, .8)), 0, h, 0, .006));
             g.add(rbox(.22, .015, .14, woodM('#6b543f'), -w*.25, h + .025, 0, .006));
@@ -381,6 +392,7 @@
           g.add(rbox(w + .01, .04, d, stone, 0, .82, 0, .004), box(w, .62, .01, mat('#efece6', {roughness:.3}), 0, .86, bz + .005));
           g.add(box(w, .7, .33, cm, 0, 1.48, bz + .165)); fronts(g, -w/2, 1.48, w, .7, bz + .33, n, 1, cm, 'bar', 1.56);
           g.add(box(w - .04, .01, .02, glowMat('#fff7e6', '#ffe9c4', .8), 0, 1.47, bz + .29));
+          for (const side of [-1,1]) lampSource(g,[side*w*.26,1.448,bz+.29],'#ffe5bc',1.55,2.2,[0,-1,.12],1.06);
           if (w >= .8){
             g.add(rbox(.36, .018, .25, woodM('#c9a27a'), -w/2 + .3, .86, .0, .005));
             [.07, .06, .05].forEach((r, i) => g.add(cyl(r, r, .16 - i*.03, mat(['#e9e2d6', '#d6cfc3', '#bfb6a8'][i], {roughness:.4}), w/2 - .15 - i*.15, .86, bz + .1, 24)));
@@ -445,6 +457,7 @@
           }
           const mw = Math.min(w*.9, nb*.7);
           g.add(rbox(mw + .02, .82, .02, glowMat('#fff7e6', '#ffe9c4', .9), 0, 1.14, bz + .01, .01), box(mw, .8, .01, mirror(), 0, 1.15, bz + .025));
+          lampSource(g,[0,1.58,bz+.05],'#ffe9cd',2.8,2.8,[0,-.22,1],1.2);
           g.add(cyl(.028, .028, .12, mat('#c8b8a6', {roughness:.3}), w/2 - .08, .81, bz + .1, 16), rbox(.18, .03, .12, fabric('#e9e2d6'), -w/2 + .12, .81, .05, .012));
           break;
         }
@@ -515,7 +528,11 @@
           const r = Math.min(w, d)/2, lm = mat(c, {roughness:.35, metalness:.5});
           g.add(lathe([[0, 0], [r*.55, 0], [r*.58, .012], [r*.5, .03], [.02, .035]], lm, 0, 0, 0, 40), rod([0, .03, 0], [0, 1.36, 0], .011, lm));
           g.add(lathe([[r*.85, 0], [r*.55, .36]], glowMat('#f6ecd9', '#ffdca0', .45), 0, 1.22, 0, 48), blob(.035, .035, .035, glowMat('#fff', '#ffe2b0', 1.2), 0, 1.36, 0, 12));
-          g.add(ring(r*.85, .004, lm, 0, 1.22, 0), ring(r*.55, .004, lm, 0, 1.58, 0));
+          // The shade diffuses the bulb. Its thin rim must not project a hard circle across the room.
+          for (const [radius, y] of [[r*.85,1.22],[r*.55,1.58]]){
+            const rim=ring(radius,.004,lm,0,y,0); rim.castShadow=false; g.add(rim);
+          }
+          lampSource(g,[0,1.415,0],'#ffd19a',9.5,5.2);
           break;
         }
         case 'island': {

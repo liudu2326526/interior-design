@@ -769,6 +769,10 @@ body.ceiling-edit #gDims *{pointer-events:none!important}
 .ceiling-tools{display:flex;flex-wrap:wrap;gap:4px}
 .ceiling-tools .btn,.ceil-buttons .btn{border:1px solid var(--line);white-space:normal}
 .ceiling-tools .btn.on{border-color:var(--accent);background:var(--accent-soft);color:#854522}
+.ceiling-tools.fixture-catalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+.fixture-catalog .btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;padding:5px 3px;background:#fff}
+.fixture-catalog svg{display:block;width:56px;height:36px;pointer-events:none}
+.fixture-catalog .btn.on{background:var(--accent-soft)}
 .ceiling-note{color:var(--muted);font-size:12px;margin:7px 0}
 .ceil-buttons{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
 #ceilingLibrary select,.ceil-field select,.ceil-field input{width:100%;min-width:0;padding:5px 6px;border:1px solid var(--line);background:#fff;border-radius:6px}
@@ -779,7 +783,6 @@ body.ceiling-edit #gDims *{pointer-events:none!important}
 .ceil-list button{text-align:left;overflow-wrap:anywhere;white-space:normal}
 #ceilingOverlay{white-space:nowrap}
 #ceilingSketch,#gCeiling{pointer-events:none}
-#gCeiling [data-ceil-kind="fixture"] :is(path,rect,circle,ellipse){stroke-width:1.5;vector-effect:non-scaling-stroke}
 #gCeiling .ceil-selected{filter:drop-shadow(0 0 2px var(--accent))}
 .ceiling-outline{stroke:#b5653a;stroke-width:1.5;stroke-dasharray:5 3;fill:none;vector-effect:non-scaling-stroke}
 body.ceiling-edit #gCeiling [data-ceil-id],body.ceiling-edit #ceilingSketch [data-ceil-vertex]{pointer-events:all;cursor:pointer}
@@ -788,6 +791,13 @@ body.ceiling-draw #plan{cursor:crosshair}
 #ceilingTask{position:absolute;top:10px;left:50%;transform:translateX(-50%);max-width:90%;z-index:3;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 2px 8px #30271915;padding:5px 9px;display:flex;align-items:center;gap:5px}
 #ceilingTask[hidden],#ceilingTask button[hidden]{display:none}
 #ceilingTask button{padding:3px 6px}
+#ceilingShowcase{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:5;display:flex;align-items:end;justify-content:center;gap:8px;flex-wrap:wrap;width:max-content;max-width:calc(100% - 16px);padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 3px 14px #30271926}
+#ceilingShowcase[hidden]{display:none}
+#ceilingShowcase strong{align-self:center;font-size:13px}
+#ceilingShowcase label{display:grid;gap:2px;font-size:11.5px;color:var(--muted)}
+#ceilingShowcase select{height:31px;max-width:100%;padding:0 5px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit;font-size:13px}
+#ceilingShowcase .btn{border:1px solid var(--line);background:#fff}
+@media(max-width:520px){#ceilingShowcase{bottom:8px;gap:5px;padding:6px}#ceilingShowcase strong{width:100%;text-align:center}}
 html:has(meta[name="studio-public-access"][content="guest"]) #ceilingLibrary [data-cmd="scan"]{display:none}
 html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile,#projectImport,#rbRender,#ptabs [data-pane="chat"],#ptabs [data-pane="render"]){display:none}
 </style>
@@ -972,6 +982,37 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
         </div>
         <span class="rb-msg" id="rbMsg"></span>
       </div>
+      <section id="ceilingShowcase" aria-labelledby="ceilingShowcaseTitle" hidden>
+        <strong id="ceilingShowcaseTitle" data-en="Ceiling sample">天花样板</strong>
+        <label for="ceilingShowcaseShape"><span data-en="Ceiling style">吊顶造型</span>
+          <select id="ceilingShowcaseShape">
+            <option value="original" data-en="White original ceiling">白色原顶</option>
+            <option value="flat" data-en="Flat ceiling">整面平吊</option>
+            <option value="perimeter" data-en="Perimeter drop">回形边吊</option>
+            <option value="island" data-en="Floating island">悬浮顶</option>
+            <option value="side" data-en="Single-edge drop">单侧边吊</option>
+            <option value="rectangle" data-en="Rectangular zone">矩形吊顶</option>
+            <option value="polygon" data-en="Custom outline">自由轮廓</option>
+          </select>
+        </label>
+        <label for="ceilingShowcaseFixtures"><span data-en="Components">展示组件</span>
+          <select id="ceilingShowcaseFixtures">
+            <option value="lights" data-en="Lighting set">灯具组合</option>
+            <option value="equipment" data-en="Ceiling equipment">顶部设备</option>
+            <option value="array" data-en="Evenly spaced downlights">等距筒灯</option>
+            <option value="none" data-en="Ceiling only">只看吊顶</option>
+            <option value="downlight" data-en="Downlight">筒灯</option>
+            <option value="spot" data-en="Spotlight">射灯</option>
+            <option value="pendant" data-en="Pendant">吊灯</option>
+            <option value="linear" data-en="Linear light">线性灯</option>
+            <option value="track" data-en="Magnetic track">磁吸轨道</option>
+            <option value="vent" data-en="Air grille">条形风口</option>
+            <option value="access" data-en="Access hatch">检修口</option>
+            <option value="curtain" data-en="Curtain pocket">窗帘盒</option>
+          </select>
+        </label>
+        <button type="button" class="btn" id="ceilingShowcaseClose" data-en="Close sample">关闭样板</button>
+      </section>
     </div>
     <div class="scalebar" id="scalebar"><span id="sbText">1 m</span><div class="bar" id="sbBar"></div></div>
     <div id="ceilingTask" hidden><span id="ceilingTaskHint" role="status"></span><button type="button" class="btn primary" id="ceilingFinish" data-en="Close shape">闭合</button><button type="button" class="btn" id="ceilingCancel" data-en="Finish">结束</button></div>
@@ -1174,24 +1215,25 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 
 <script src="./js/core.js?v=2"></script>
 <script src="./js/plan.js?v=2"></script>
-<script src="./js/geom.js?v=3"></script>
+<script src="./js/geom.js?v=4"></script>
 <script src="./js/custom-furniture.js"></script>
 <script src="./js/dimension-geometry.js"></script>
 <script src="./js/dimensions.js?v=2"></script>
-<script src="./js/ceiling-model.js?v=2"></script>
+<script src="./js/ceiling-model.js?v=3"></script>
 <script src="./js/store.js?v=4"></script>
 <script src="./js/dimension-calibration.js?v=2"></script>
-<script src="./js/draw2d.js?v=4"></script>
+<script src="./js/draw2d.js?v=5"></script>
 <script src="./js/panel.js?v=4"></script>
 <script src="./js/interact.js?v=6"></script>
-<script src="./js/ceiling-editor.js?v=2"></script>
-<script src="./js/io.js?v=5"></script>
+<script src="./js/ceiling-editor.js?v=3"></script>
+<script src="./js/io.js?v=6"></script>
+<script src="./js/ceiling-showcase.js"></script>
 <script src="./js/import.js?v=6"></script>
 <script src="./js/ceiling-import.js?v=2"></script>
 <script src="./js/assistant.js?v=5"></script>
 <script src="./js/projects.js?v=8"></script>
 <script src="./js/tour.js"></script>
-<script src="./js/view3d-models.js?v=3"></script>
-<script src="./js/view3d.js?v=6"></script>
+<script src="./js/view3d-models.js?v=4"></script>
+<script src="./js/view3d.js?v=7"></script>
 </body>
 </html>

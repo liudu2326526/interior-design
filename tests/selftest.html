@@ -403,6 +403,35 @@ async function main(){
     }
   });
 
+  await check('ceiling.toolsToggleAndWhiteDefault', () => {
+    const S = studio(), {App:app, document:doc} = win();
+    const before = S.projectJSON();
+    try {
+      assert(S.applyPlan(dimensionFixture(before.plan), {freshState:true}).ok, '样板户型未安装');
+      S.select({kind:'room',id:'west'});
+      doc.querySelector('#ceilingMode').click();
+      const button = type => doc.querySelector('#ceilingLibrary [data-value="' + type + '"]');
+      assert(button('downlight').querySelector('svg'), '灯具缩略图缺失');
+      button('downlight').click();
+      assert(app.ceilingEditor.context()?.tool === 'downlight', '筒灯工具未启动');
+      button('downlight').click();
+      assert(app.ceilingEditor.context()?.tool === 'select', '再次点击没有退出筒灯布置');
+      button('flat').click();
+      const zone = S.getState().ceiling.rooms.west?.zones[0];
+      assert(zone?.color === '#ffffff', '新吊顶的默认饰面应为白色');
+      assert(button('flat').getAttribute('aria-pressed') === 'true', '当前预设未标为选中');
+      button('flat').click();
+      assert(S.getState().ceiling.rooms.west.zones.length === 1, '退出预设时重复新增了吊顶');
+      assert(button('flat').getAttribute('aria-pressed') === 'false', '再次点击没有退出预设');
+      assert(app.ceilingEditor.context()?.kind === 'room', '二次点击未返回房间选区');
+    } finally {
+      app.ceilingEditor.close();
+      S.applyPlan(before.plan, {history:false});
+      app.store.state = app.store.fixState(before.state);
+      app.store.afterHistory();
+    }
+  });
+
   await check('dimensions.geometryAndSelection', () => {
     const S = studio(), doc = win().document, original = S.projectJSON();
     const fixture = dimensionFixture(original.plan);
