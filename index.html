@@ -8,6 +8,18 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#fffdf9">
 <title>户型装修设计</title>
+<script>
+{
+  const firstInput = new AbortController();
+  const markInput = () => {
+    document.documentElement.dataset.studioInteracted = 'true';
+    firstInput.abort();
+  };
+  const options = {capture:true, signal:firstInput.signal};
+  document.addEventListener('pointerdown', markInput, options);
+  document.addEventListener('keydown', markInput, options);
+}
+</script>
 <style>
 :root{
   --bg:#f3efe7; --paper:#f7f4ee; --panel:#fffdf9; --line:#e3dccf; --ink:#2b2824; --muted:#8a8174;
@@ -97,7 +109,7 @@ main{position:relative;overflow:hidden;background:var(--paper)}
 #gDims .dim-manual .dim-label{pointer-events:auto;cursor:pointer}
 #dimensionEditor{position:absolute;z-index:4;right:12px;top:54px;max-width:calc(100% - 24px);width:275px;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 28px rgba(43,40,36,.16);font-size:12px}
 body.m3d #dimensionEditor{display:none}
-#dimensionEditor header,#dimensionEditor form,#dimensionEditor .dimension-actions{display:flex;align-items:center;gap:6px;padding:0}
+#dimensionEditor header,#dimensionEditor form,#dimensionEditor .dimension-target,#dimensionEditor .dimension-actions{display:flex;align-items:center;gap:6px;padding:0}
 #dimensionEditor header{background:transparent;border:0;justify-content:space-between}
 #dimensionEditor p{margin:7px 0}
 #dimensionEditor input{width:84px;padding:4px 6px;border:1px solid var(--line);border-radius:5px}
@@ -125,7 +137,10 @@ tr.click:hover td{background:#faf5ee}
 .form input,.form select{border:1px solid var(--line);border-radius:6px;padding:5px 7px;background:#fff;width:100%}
 .form input[type=color]{padding:2px;height:30px}
 .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.actions .btn{border:1px solid var(--line);background:#fff}
+.actions .btn:not(.primary){border:1px solid var(--line);background:#fff}
+.actions .btn.primary{background:#a95732}
+.actions .btn.primary:hover{background:#8f4828}
+.actions .btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 .mats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .mat{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff;cursor:pointer;text-align:left}
 .mat.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
@@ -266,6 +281,9 @@ main.animating #roomBar{opacity:.85}
 .menu-pop .btn{text-align:left}
 .app > header{position:relative;padding-inline-end:104px}
 html:lang(en) .app > header{padding-inline-end:126px}
+.toolbar-standalone{border:1px solid var(--line);background:#fff}
+#toolbarCommands,#toolbarOptions{display:contents}
+#toolbarMore{display:none}
 #projectShelf{position:absolute;inset:8px 14px auto auto;z-index:24}
 #projectToggle{position:relative;display:flex;align-items:center;gap:7px;padding:6px 10px;
   border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font-weight:600}
@@ -755,8 +773,53 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
   #tour h4{font-size:14px}
 }
 @media (max-width:700px){#layers{flex-wrap:wrap;max-width:100%}.ceil-field input,.ceil-field select{font-size:16px}}
+@media (max-width:760px){
+  .app > header,html:lang(en) .app > header{
+    display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 6px;padding:6px 8px;
+  }
+  .app > header .brand{grid-area:1/1;margin:0;min-width:0;overflow:hidden}
+  #brandName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #brandEdit{min-width:0;width:100%}
+  #projectShelf{grid-area:1/2;margin:0}
+  #toolbarMore{display:inline-flex;grid-area:1/3;align-items:center}
+  #toolbarMore[aria-expanded="true"]{background:var(--accent-soft)}
+  #paneBtns{grid-area:2/1;justify-self:start}
+  #viewSeg{grid-area:2/2/2/4;justify-self:end}
+  #viewSeg .btn,#viewSeg .pill{width:68px}
+  body.m3d #viewSeg .pill{transform:translateX(70px)}
+  #toolbarCommands{grid-area:3/1/3/4;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+  #toolbarCommands .btn,#paneBtns .btn,#viewSeg .btn{padding-inline:6px}
+  #paneBtns .btn,#viewSeg .btn{font-size:12px}
+  #toolbarOptions{
+    display:none;position:absolute;top:calc(100% + 4px);inset-inline:8px;z-index:23;
+    flex-wrap:wrap;align-items:flex-start;gap:6px;max-height:min(390px,55dvh);padding:8px;overflow:auto;
+    border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 10px 28px rgba(40,30,20,.16);
+  }
+  #toolbarMore[aria-expanded="true"] + #toolbarOptions{display:flex}
+  #toolbarOptions .spacer{display:none}
+  #toolbarOptions .grp{flex-wrap:wrap;max-width:100%}
+  #toolbarOptions .menu-pop{position:static;min-width:0;margin-top:4px;box-shadow:none}
+  #toolbarOptions .menu-pop .btn{white-space:normal}
+  aside.lib{width:min(270px,66vw)}
+  .app > aside:not(.open){visibility:hidden}
+  .lib-controls{position:static;padding:6px;gap:4px}
+  .lib-menu{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
+  .lib-menu .btn{flex:none;white-space:nowrap}
+  .lib-grid{grid-template-columns:1fr 1fr}
+  body.ceiling-edit aside.lib,aside.right{
+    width:100%;max-height:42dvh;align-self:end;transform:translateY(112%);
+    border:1px solid var(--line);border-radius:12px 12px 0 0;overscroll-behavior:contain;
+  }
+  body.ceiling-edit aside.lib.open,aside.right.open{transform:none}
+  #fab{width:max-content;flex-wrap:wrap;justify-content:center;gap:3px;bottom:6px}
+  #fab .name{flex:1 0 100%;max-width:100%;text-align:center}
+  #fab .btn{padding-inline:6px}
+  #fab .sep{display:none}
+}
 #ceilingMode.on{background:var(--accent);color:#fff}
 #ceilingLibrary{display:none;padding:10px}
+#ceilingPresetChoices{border:1px solid var(--line);border-radius:8px;background:#fff;padding:9px}
+#ceilingPresetChoices .btn{border:1px solid var(--line);white-space:normal}
 body.ceiling-edit #ceilingLibrary{display:block}
 body.ceiling-edit #lib,body.ceiling-edit #tools,body.ceiling-edit #fab,body.ceiling-edit #gSel,body.ceiling-edit #clearAll{display:none}
 body.ceiling-edit #gFurn{opacity:.25;pointer-events:none}
@@ -812,8 +875,8 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <div class="app">
   <header>
     <div class="grp" id="paneBtns">
-      <button class="btn chip" id="tgLib" data-en="◧ Library">◧ 家具库</button>
-      <button class="btn chip" id="tgPanel" data-en="Properties ◨">属性 ◨</button>
+      <button class="btn chip" id="tgLib" aria-controls="libraryPane" data-en="◧ Library">◧ 家具库</button>
+      <button class="btn chip" id="tgPanel" aria-controls="propertyPane" data-en="Properties ◨">属性 ◨</button>
     </div>
     <div class="brand"><b id="brandName" tabindex="0" role="button" title="点击重命名方案" data-en-title="Click to rename the plan">三室两厅两卫 · 装修设计</b><input id="brandEdit" hidden maxlength="60" spellcheck="false" aria-label="方案名称"><span id="subtitle">原始户型 1:60 · 尺寸单位 mm</span></div>
     <div class="grp seg" id="viewSeg" title="切换 2D / 3D (T)" data-en-title="Switch 2D / 3D (T)">
@@ -821,78 +884,82 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <button class="btn" data-view="2d" data-en="2D Plan">2D 平面</button>
       <button class="btn" data-view="3d" data-en="3D Scene">3D 场景</button>
     </div>
-    <div class="grp only2d" id="tools">
-      <button class="btn on" data-tool="select" title="选择 / 移动 (V)" data-en-title="Select / Move (V)" data-en="Select">选择</button>
-      <button class="btn" data-tool="measure" title="测量 (M)" data-en-title="Measure (M)" data-en="Measure">测量</button>
-      <button class="btn" data-tool="dimension" title="吸附墙面添加分段尺寸 (D)" data-en-title="Snap to faces to add a dimension (D)" data-en="Dimension">标注</button>
-      <button class="btn" data-tool="demolish" title="拆改非承重墙 (X)" data-en-title="Demolish non-bearing walls (X)" data-en="Demolish">拆改墙体</button>
+    <div id="toolbarCommands">
+      <div class="grp only2d" id="tools">
+        <button class="btn on" data-tool="select" title="选择 / 移动 (V)" data-en-title="Select / Move (V)" data-en="Select">选择</button>
+        <button class="btn" data-tool="measure" title="测量 (M)" data-en-title="Measure (M)" data-en="Measure">测量</button>
+        <button class="btn" data-tool="dimension" title="吸附墙面添加分段尺寸 (D)" data-en-title="Snap to faces to add a dimension (D)" data-en="Dimension">标注</button>
+        <button class="btn" data-tool="demolish" title="拆改非承重墙 (X)" data-en-title="Demolish non-bearing walls (X)" data-en="Demolish">拆改墙体</button>
+      </div>
+      <div class="grp only3d" id="modes3d">
+        <button class="btn on" data-mode="orbit" data-en="Orbit">鸟瞰</button>
+        <button class="btn" data-mode="walk" data-en="Walk">漫游</button>
+      </div>
+      <div class="grp">
+        <button class="btn" id="undo" title="撤销 (Ctrl+Z)" data-en-title="Undo (Ctrl+Z)" data-en="Undo">撤销</button>
+        <button class="btn" id="redo" title="重做 (Ctrl+Shift+Z)" data-en-title="Redo (Ctrl+Shift+Z)" data-en="Redo">重做</button>
+      </div>
+      <div class="grp only3d" id="walkTools">
+        <button class="btn" id="walkChoose" type="button" aria-haspopup="dialog" aria-controls="walkPicker" data-en="Standing point">站立点</button>
+        <button class="btn" id="walkShot" type="button" aria-keyshortcuts="P" style="white-space:normal" hidden
+          title="将当前漫游画面设为效果图的参考图" data-en-title="Use the current walkthrough view as the render reference"
+          data-en="Capture reference (P)">拍参考图 (P)</button>
+      </div>
+      <button class="btn toolbar-standalone only2d" id="fit" title="适应窗口 (F)" data-en-title="Fit to window (F)" data-en="Fit">适应</button>
+      <button id="ceilingMode" type="button" class="btn chip toolbar-standalone only2d" aria-pressed="false" data-en="Ceiling design">天花板设计</button>
     </div>
-    <div class="grp only2d">
-      <button class="btn" id="zoomOut" title="缩小" data-en-title="Zoom out">−</button>
-      <button class="btn" id="zoomIn" title="放大" data-en-title="Zoom in">＋</button>
-      <button class="btn" id="fit" title="适应窗口 (F)" data-en-title="Fit to window (F)" data-en="Fit">适应</button>
-      <button class="btn" id="s60" title="按 1:60 显示（与原图同比例）" data-en-title="Show at 1:60 (same scale as the original plan)">1:60</button>
-      <button class="btn" id="s100" title="按 1:100 显示" data-en-title="Show at 1:100">1:100</button>
+    <button class="btn toolbar-standalone" id="toolbarMore" type="button" aria-expanded="false" aria-controls="toolbarOptions" data-en="More">更多</button>
+    <div id="toolbarOptions">
+      <div class="grp only2d">
+        <button class="btn" id="zoomOut" title="缩小" data-en-title="Zoom out">−</button>
+        <button class="btn" id="zoomIn" title="放大" data-en-title="Zoom in">＋</button>
+        <button class="btn" id="s60" title="按 1:60 显示（与原图同比例）" data-en-title="Show at 1:60 (same scale as the original plan)">1:60</button>
+        <button class="btn" id="s100" title="按 1:100 显示" data-en-title="Show at 1:100">1:100</button>
+      </div>
+      <div class="grp only3d">
+        <button class="btn" id="vIso" data-en="Iso">斜视</button>
+        <button class="btn" id="vTop" data-en="Top">俯视</button>
+      </div>
+      <button class="btn danger toolbar-standalone" id="clearAll" title="清空所有家具家电（可撤销）" data-en-title="Remove all furniture and appliances (undoable)" data-en="Clear">清空布置</button>
+      <div class="grp only2d" id="layers">
+        <button class="btn chip on" data-layer="dims" data-en="Dims">尺寸</button>
+        <button class="btn chip on" data-layer="labels" data-en="Rooms">房间</button>
+        <button class="btn chip on" data-layer="furn" data-en="Furniture">家具</button>
+        <button class="btn chip" data-layer="grid" data-en="Grid">网格</button>
+        <button class="btn chip" data-layer="bearing" data-en="Bearing walls">承重墙</button>
+        <button class="btn chip on" data-layer="wallSnap" title="拖动家具时贴墙吸附" data-en-title="Snap furniture to walls while dragging" data-en="Wall snap">贴墙吸附</button>
+        <button id="ceilingOverlay" type="button" class="btn chip" aria-pressed="false" title="在普通平面图叠加天花方案" data-en-title="Overlay the ceiling plan on the floor plan" data-en="Ceiling overlay">顶面叠加</button>
+      </div>
+      <div class="grp only3d">
+        <button class="btn chip on" data-cut="2.8" data-en="Full walls">全高墙</button>
+        <button class="btn chip" data-cut="1.2" data-en="Cut walls">剖切墙</button>
+      </div>
+      <div class="grp only3d" id="toggles3d">
+        <button class="btn chip on" data-t="furn" data-en="Furniture">家具</button>
+        <button class="btn chip on" data-t="labels" data-en="Labels">房间名</button>
+        <button class="btn chip" data-t="night" data-en="Night">夜景</button>
+      </div>
+      <div class="grp only3d"><label class="range"><span data-en="Sun">日照</span> <input type="range" id="sun" min="7" max="18" step=".25" value="10" style="width:84px"><span id="sunT">10:00</span></label></div>
+      <div class="spacer"></div>
+      <div class="grp" id="langSel" role="group" aria-label="Language / 语言">
+        <button class="btn chip" data-lang="zh" title="简体中文">简</button>
+        <button class="btn chip" data-lang="zht" title="繁體中文">繁</button>
+        <button class="btn chip" data-lang="en" title="English">EN</button>
+      </div>
+      <button class="btn" id="fullscreen" title="全屏 (Shift+F)" style="border:1px solid var(--line);background:#fff">⛶ 全屏</button>
+      <details class="menu"><summary class="btn" data-en="File ▾">文件 ▾</summary>
+        <div class="menu-pop">
+          <button class="btn" id="importPlanFile" data-en="Import drawing…">导入图纸…</button>
+          <button class="btn" id="importProj" data-en="Import project or design JSON" title="选择已导出的项目或设计 JSON" data-en-title="Choose an exported project or design JSON">导入项目或设计 JSON</button>
+          <button class="btn" id="exportProj" data-en="Export full project JSON" title="包含可编辑设计、漫游机位和效果图记录" data-en-title="Includes the editable design, walk points, and render history">导出完整项目 JSON</button>
+          <button class="btn" id="exportPng" data-en="Export current view as PNG" title="生成当前平面或 3D 视图的图片" data-en-title="Save an image of the current floor plan or 3D view">导出当前视图 PNG</button>
+          <button class="btn" id="exportDwg" type="button" data-en="Export floor plan as DWG" title="包含墙、门窗、家具和尺寸。天花设计可导出为设计 JSON 或当前视图 PNG" data-en-title="Includes walls, openings, furniture, and dimensions. Export ceiling designs as design JSON or a current-view PNG" hidden>导出户型平面 DWG</button>
+          <button class="btn" id="exportJson" data-en="Export design JSON" title="包含户型、家具、尺寸和天花设计" data-en-title="Includes the floor plan, furniture, dimensions, and ceiling design">导出设计 JSON</button>
+          <button class="btn" id="load125c" data-en="Open 125-C sample in a new project" title="在新项目打开示例户型" data-en-title="Open the sample floor plan as a new project">在新项目打开 125-C 示例</button>
+          <button class="btn" id="tourStart" data-en="Quick tour">使用引导</button>
+          <button class="btn danger" id="reset" data-en="Reset to default">重置为默认方案</button>
+        </div></details>
     </div>
-    <div class="grp only3d" id="modes3d">
-      <button class="btn on" data-mode="orbit" data-en="Orbit">鸟瞰</button>
-      <button class="btn" data-mode="walk" data-en="Walk">漫游</button>
-    </div>
-    <div class="grp only3d" id="walkTools">
-      <button class="btn" id="walkChoose" type="button" aria-haspopup="dialog" aria-controls="walkPicker" data-en="Standing point">站立点</button>
-      <button class="btn" id="walkShot" type="button" aria-keyshortcuts="P" style="white-space:normal" hidden
-        title="将当前漫游画面设为效果图的参考图" data-en-title="Use the current walkthrough view as the render reference"
-        data-en="Capture reference (P)">拍参考图 (P)</button>
-    </div>
-    <div class="grp only3d">
-      <button class="btn" id="vIso" data-en="Iso">斜视</button>
-      <button class="btn" id="vTop" data-en="Top">俯视</button>
-    </div>
-    <div class="grp">
-      <button class="btn" id="undo" title="撤销 (Ctrl+Z)" data-en-title="Undo (Ctrl+Z)" data-en="Undo">撤销</button>
-      <button class="btn" id="redo" title="重做 (Ctrl+Shift+Z)" data-en-title="Redo (Ctrl+Shift+Z)" data-en="Redo">重做</button>
-      <button class="btn danger" id="clearAll" title="清空所有家具家电（可撤销）" data-en-title="Remove all furniture and appliances (undoable)" data-en="Clear">清空布置</button>
-    </div>
-    <div class="grp only2d" id="layers">
-      <button class="btn chip on" data-layer="dims" data-en="Dims">尺寸</button>
-      <button class="btn chip on" data-layer="labels" data-en="Rooms">房间</button>
-      <button class="btn chip on" data-layer="furn" data-en="Furniture">家具</button>
-      <button class="btn chip" data-layer="grid" data-en="Grid">网格</button>
-      <button class="btn chip" data-layer="bearing" data-en="Bearing walls">承重墙</button>
-      <button class="btn chip on" data-layer="wallSnap" title="拖动家具时贴墙吸附" data-en-title="Snap furniture to walls while dragging" data-en="Wall snap">贴墙吸附</button>
-      <button id="ceilingMode" type="button" class="btn chip" aria-pressed="false" data-en="Ceiling design">天花板设计</button>
-      <button id="ceilingOverlay" type="button" class="btn chip" aria-pressed="false" title="在普通平面图叠加天花方案" data-en-title="Overlay the ceiling plan on the floor plan" data-en="Ceiling overlay">顶面叠加</button>
-    </div>
-    <div class="grp only3d">
-      <button class="btn chip on" data-cut="2.8" data-en="Full walls">全高墙</button>
-      <button class="btn chip" data-cut="1.2" data-en="Cut walls">剖切墙</button>
-    </div>
-    <div class="grp only3d" id="toggles3d">
-      <button class="btn chip on" data-t="furn" data-en="Furniture">家具</button>
-      <button class="btn chip on" data-t="labels" data-en="Labels">房间名</button>
-      <button class="btn chip" data-t="night" data-en="Night">夜景</button>
-    </div>
-    <div class="grp only3d"><label class="range"><span data-en="Sun">日照</span> <input type="range" id="sun" min="7" max="18" step=".25" value="10" style="width:84px"><span id="sunT">10:00</span></label></div>
-    <div class="spacer"></div>
-    <div class="grp" id="langSel" role="group" aria-label="Language / 语言">
-      <button class="btn chip" data-lang="zh" title="简体中文">简</button>
-      <button class="btn chip" data-lang="zht" title="繁體中文">繁</button>
-      <button class="btn chip" data-lang="en" title="English">EN</button>
-    </div>
-    <button class="btn" id="fullscreen" title="全屏 (Shift+F)" style="border:1px solid var(--line);background:#fff">⛶ 全屏</button>
-    <details class="menu"><summary class="btn" data-en="File ▾">文件 ▾</summary>
-      <div class="menu-pop">
-        <button class="btn" id="importPlanFile" data-en="Import drawing…">导入图纸…</button>
-        <button class="btn" id="importProj" data-en="Import project">导入项目</button>
-        <button class="btn" id="exportProj" data-en="Export project">导出项目</button>
-        <button class="btn" id="exportPng" data-en="Export image">导出图片</button>
-        <button class="btn" id="exportDwg" type="button" data-en="Export DWG" hidden>导出 DWG</button>
-        <button class="btn" id="exportJson" data-en="Export plan JSON">导出方案 JSON</button>
-        <button class="btn" id="importJson" data-en="Import plan">导入方案</button>
-        <button class="btn" id="load125c" data-en="Load 125-C sample">加载 125-C 示例</button>
-        <button class="btn" id="tourStart" data-en="Quick tour">使用引导</button>
-        <button class="btn danger" id="reset" data-en="Reset to default">重置为默认方案</button>
-      </div></details>
     <div id="projectShelf">
       <button class="btn" id="projectToggle" type="button" aria-expanded="false" aria-controls="projectPanel">
         <i class="project-folder" aria-hidden="true"></i><span data-en="Projects">项目</span><span id="projectCount" aria-hidden="true" hidden></span>
@@ -910,7 +977,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
           <label for="projectRenameInput" data-en="Project name">项目名称</label>
           <div class="project-rename-fields">
             <input id="projectRenameInput" maxlength="60" type="text" required autocomplete="off" spellcheck="false">
-            <button class="btn primary" type="submit" data-en="Save">保存</button>
+            <button class="btn primary" type="submit">保存</button>
             <button class="btn" id="projectRenameCancel" type="button" data-en="Cancel">取消</button>
           </div>
         </form>
@@ -918,7 +985,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
         <div id="projectList"></div>
         <p id="projectEmpty"><strong data-en="No projects yet">还没有项目</strong></p>
         <div class="project-footer">
-          <button class="btn" id="projectNew" type="button" data-en="New blank">新建空白</button>
+          <button class="btn" id="projectNew" type="button" data-en="New project">新建项目</button>
           <button class="btn primary" id="projectImport" type="button" data-en="Import drawing">导入图纸</button>
         </div>
       </section>
@@ -927,7 +994,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
     <input type="file" id="impFile" multiple hidden>
   </header>
 
-  <aside class="lib">
+  <aside class="lib" id="libraryPane">
     <div id="lib3d" class="only3d">
       <h4 data-en="Rooms · click to fly · click the current room to exit">房间 · 点击飞到 · 再点当前房间退出</h4>
       <div id="roomList"></div>
@@ -1021,11 +1088,13 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <header><strong id="dimensionEditorTitle" data-en="Segment dimension">分段尺寸</strong>
         <button class="btn" id="dimensionClose" type="button" aria-label="关闭尺寸编辑">×</button></header>
       <p id="dimensionModel" aria-live="polite"></p>
+      <p id="dimensionRecorded"></p>
       <form id="dimensionForm">
         <label for="dimensionOriginal" data-en="Drawing (mm)">原图值（mm）</label>
         <input id="dimensionOriginal" type="number" min="1" step="any" inputmode="decimal" required>
         <button class="btn chip" type="submit" data-en="Record">记录</button>
       </form>
+      <div class="dimension-target"><label for="dimensionTarget" data-en="Calibration target (mm)">校准目标（mm）</label><input id="dimensionTarget" type="number" min="1" step="any" inputmode="decimal" required></div>
       <div class="dimension-actions">
         <button class="btn chip" id="dimensionMove" type="button" data-en="Move second wall" hidden>移动第二面墙</button>
         <button class="btn chip" id="dimensionScale" type="button" title="等比缩放户型，保留家具实际尺寸，可撤销" data-en-title="Scale the plan uniformly, keep furniture sizes, and allow undo" data-en="Scale plan">等比校准</button>
@@ -1036,7 +1105,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
     <div id="fab"></div>
   </main>
 
-  <aside class="right">
+  <aside class="right" id="propertyPane">
     <div class="ptabs" id="ptabs">
       <button class="btn on" data-pane="props" data-en="Properties">属性</button>
       <button class="btn" data-pane="chat" data-en="Assistant">助手</button>
@@ -1213,27 +1282,27 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
   </div>
 </div>
 
-<script src="./js/core.js?v=2"></script>
+<script src="./js/core.js?v=3"></script>
 <script src="./js/plan.js?v=2"></script>
 <script src="./js/geom.js?v=4"></script>
 <script src="./js/custom-furniture.js"></script>
 <script src="./js/dimension-geometry.js"></script>
-<script src="./js/dimensions.js?v=2"></script>
-<script src="./js/ceiling-model.js?v=3"></script>
+<script src="./js/dimensions.js?v=3"></script>
+<script src="./js/ceiling-model.js?v=4"></script>
 <script src="./js/store.js?v=4"></script>
 <script src="./js/dimension-calibration.js?v=2"></script>
-<script src="./js/draw2d.js?v=5"></script>
-<script src="./js/panel.js?v=4"></script>
-<script src="./js/interact.js?v=6"></script>
-<script src="./js/ceiling-editor.js?v=3"></script>
-<script src="./js/io.js?v=6"></script>
+<script src="./js/draw2d.js?v=6"></script>
+<script src="./js/panel.js?v=5"></script>
+<script src="./js/interact.js?v=7"></script>
+<script src="./js/ceiling-editor.js?v=4"></script>
+<script src="./js/io.js?v=7"></script>
 <script src="./js/ceiling-showcase.js"></script>
 <script src="./js/import.js?v=7"></script>
 <script src="./js/ceiling-import.js?v=2"></script>
 <script src="./js/assistant.js?v=6"></script>
-<script src="./js/projects.js?v=9"></script>
-<script src="./js/tour.js"></script>
+<script src="./js/projects.js?v=10"></script>
+<script src="./js/tour.js?v=2"></script>
 <script src="./js/view3d-models.js?v=4"></script>
-<script src="./js/view3d.js?v=9"></script>
+<script src="./js/view3d.js?v=10"></script>
 </body>
 </html>

@@ -63,7 +63,28 @@
   const narrow = () => matchMedia('(max-width:1100px)').matches;
   const $ = s => document.querySelector(s);
   const svg = $('#plan');
+  const toolbarMore = $('#toolbarMore');
+  const toolbarOptions = $('#toolbarOptions');
+  function setToolbarOptions(open){
+    toolbarMore.setAttribute('aria-expanded', String(open));
+    if (!open) toolbarOptions.querySelector('details[open]')?.removeAttribute('open');
+  }
 
+  const toolbarOptionsOpen = () => toolbarMore.getAttribute('aria-expanded') === 'true';
+  toolbarMore.onclick = () => setToolbarOptions(!toolbarOptionsOpen());
+  document.addEventListener('pointerdown', e => {
+    if (toolbarOptionsOpen() && !e.target.closest('#toolbarMore,#toolbarOptions')) setToolbarOptions(false);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !toolbarOptionsOpen()) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    setToolbarOptions(false);
+    toolbarMore.focus();
+  }, true);
+  matchMedia('(max-width:760px)').addEventListener('change', () => {
+    if (toolbarOptionsOpen()) setToolbarOptions(false);
+  });
 
   const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   /* ======================= 杂项 ======================= */
@@ -72,7 +93,7 @@
 
   Object.assign(App.core, {
     LANG_KEY, tr, PUBLIC_ACCESS, studioPath, renderAssetUrl, nm, applyStaticLang, projectScope,
-    deepCopy, numOr, PX_MM, COARSE, TAP, narrow, $, svg, esc, toast,
+    deepCopy, numOr, PX_MM, COARSE, TAP, narrow, $, svg, esc, toast, setToolbarOptions,
   });
   Object.defineProperties(App.core, {
     LANG: {get: () => LANG, set: value => { LANG = value; }},

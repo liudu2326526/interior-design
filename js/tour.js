@@ -14,7 +14,9 @@
     title: App.core.$('#tourTitle'), body: App.core.$('#tourBody'), dots: App.core.$('#tourDots'),
     skip: App.core.$('#tourSkip'), prev: App.core.$('#tourPrev'), next: App.core.$('#tourNext'), hint: App.core.$('#tourHint'),
   };
-  let tourSteps = [], tourIdx = 0, tourOn = false, tourEntered = -1;
+  const app = App.core.$('.app');
+  const compact = () => matchMedia('(max-width:760px)').matches;
+  let tourSteps = [], tourIdx = 0, tourOn = false, tourEntered = -1, previousFocus;
 
   function tourDefs(){
     const guest = App.core.PUBLIC_ACCESS === 'guest';
@@ -24,18 +26,21 @@
                          'Pick furniture on the left, arrange it in the middle, and edit properties on the right.\nOne minute to get oriented.')
           : App.core.tr('左边挑家具，中间摆布局，右边改属性或让助手直接改方案。\n花一分钟熟悉一下界面。',
                'Pick furniture on the left, arrange it in the middle, and edit or ask the assistant on the right.\nOne minute to get oriented.') },
-      { sel: '#lib', title: App.core.tr('① 家具库', '1. Furniture library'),
-        body: App.core.tr('把床、沙发、柜子拖进平面图，松开后自动贴墙吸附。\n选中家具可拖动位置、拖角缩放，按 R 旋转。',
-                 'Drag beds, sofas and cabinets into the plan; they snap to walls.\nSelect one to move or resize it, press R to rotate.') },
+      { sel: () => App.core.narrow() || app.classList.contains('hide-lib') ? '#tgLib' : '#lib',
+        title: App.core.tr('① 家具库', '1. Furniture library'),
+        body: App.core.tr('点顶部「家具库」展开，从中点选家具添加，也可以拖到平面图。选中家具后可移动、调整大小或旋转。',
+                 'Use Library at the top to show furniture. Tap an item to add it or drag it onto the plan. Select an item to move, resize, or rotate it.') },
       { sel: '#viewSeg', title: App.core.tr('② 2D / 3D 随时切换', '2. Switch 2D / 3D anytime'),
         body: App.core.tr('按 T 或点这里切换。3D 里可以鸟瞰、漫游，也能直接拖动家具；\n左侧列表点房间可以飞过去，点「进入」看室内。',
                  'Press T or click here. In 3D you can orbit, walk and drag furniture;\nclick a room on the left to fly there, or step inside.') },
       ...(guest ? [
-        { sel: '#ptabs', title: App.core.tr('③ 属性', '3. Properties'),
-          body: App.core.tr('修改房间名称或地面材质，查看面积与材料费用。', 'Change room names or flooring and review areas and material costs.') },
-        { sel: '.menu', title: App.core.tr('④ 打开或保存项目', '4. Open or save a project'),
-          body: App.core.tr('从文件菜单导入已有方案，或打开 125-C 示例。可把调整后的方案导出为项目文件。',
-                   'Use the File menu to import a project or open the 125-C sample. Export your edits as a project file.') },
+        { sel: () => App.core.narrow() || app.classList.contains('hide-panel') ? '#tgPanel' : '#ptabs',
+          title: App.core.tr('③ 属性', '3. Properties'),
+          body: App.core.tr('点顶部「属性」打开面板，可修改房间名称或地面材质，查看面积与材料费用。',
+                   'Use Properties at the top to change room names or flooring and review areas and material costs.') },
+        { sel: () => compact() ? '#toolbarMore' : '.menu', title: App.core.tr('④ 打开或保存项目', '4. Open or save a project'),
+          body: App.core.tr('用「文件」导入设计、打开 125-C 新示例项目，或导出自己的项目。窄屏时「文件」位于「更多」。',
+                   'Use File to import a design, open the 125-C sample as a new project, or export your project. On narrow screens, find File under More.') },
       ] : [
         { sel: '#ptabs', title: App.core.tr('③ 右侧三个页签', '3. Three tabs on the right'),
           body: App.core.tr('属性：改房间名、换地面材质、看面积造价。\n助手：用一句话改方案，比如「客厅换个三人沙发」。\n效果图：选机位和风格，生成照片级渲染。',
@@ -73,7 +78,7 @@
 
   function tourPlace(step){
     const pad = 8, gap = 14, vw = innerWidth, vh = innerHeight;
-    const r = tourTarget(step.sel);
+    const r = tourTarget(typeof step.sel === 'function' ? step.sel() : step.sel);
     if (!r){
       tourEls.hole.hidden = true;
       const w = Math.min(400, vw - 24);
@@ -111,6 +116,7 @@
     tourEls.body.textContent = s.body;
     tourEls.dots.innerHTML = tourSteps.map((_, i) => `<i class="${i === tourIdx ? 'on' : ''}"></i>`).join('');
     tourEls.prev.style.visibility = tourIdx ? 'visible' : 'hidden';
+    if (!tourIdx && document.activeElement === tourEls.prev) tourEls.next.focus();
     tourEls.next.textContent = tourIdx === tourSteps.length - 1 ? App.core.tr('开始使用', 'Get started') : App.core.tr('下一步', 'Next');
     tourEls.prev.textContent = App.core.tr('上一步', 'Back');
     tourEls.skip.textContent = App.core.tr('跳过', 'Skip');
@@ -119,17 +125,29 @@
   }
 
   function tourKey(e){
-    if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); tourEnd(); }
-    else if (e.key === 'ArrowRight' || e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); tourGo(1); }
+    if (e.key === 'Tab'){
+      const buttons = tourIdx ? [tourEls.skip, tourEls.prev, tourEls.next] : [tourEls.skip, tourEls.next];
+      const index = buttons.indexOf(document.activeElement);
+      const start = index < 0 ? (e.shiftKey ? 0 : -1) : index;
+      const next = (start + (e.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
+      e.preventDefault();
+      buttons[next].focus();
+    }
+    else if (e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); tourEnd(); }
+    else if (e.key === 'ArrowRight'){ e.preventDefault(); e.stopPropagation(); tourGo(1); }
     else if (e.key === 'ArrowLeft'){ e.preventDefault(); e.stopPropagation(); tourGo(-1); }
   }
   function tourOnResize(){ if (tourOn) tourPlace(tourSteps[tourIdx]); }
 
   // 读屏 / 手机：卡片一起滑入，不做额外动画，避免和 2D/3D 过渡抢帧
   function tourStart(){
+    previousFocus = document.activeElement;
+    App.core.setToolbarOptions(false);
     tourSteps = tourDefs(); tourIdx = 0; tourEntered = -1; tourOn = true;
+    app.inert = true;
     tourEls.wrap.classList.add('on');
     tourRender();
+    tourEls.next.focus({preventScroll:true});
     document.addEventListener('keydown', tourKey, true);
     addEventListener('resize', tourOnResize);
   }
@@ -141,6 +159,11 @@
     tourOn = false;
     if (mark) try { localStorage.setItem(TOUR_KEY, '1'); } catch(e) {}
     tourEls.wrap.classList.remove('on');
+    app.inert = false;
+    const fallback = compact() ? '#toolbarMore' : previousFocus?.closest('.menu') ? '.menu summary' : '#viewSeg .btn';
+    const returnTarget = previousFocus?.getClientRects().length && previousFocus !== document.body
+      ? previousFocus : App.core.$(fallback);
+    returnTarget?.focus({preventScroll:true});
     document.removeEventListener('keydown', tourKey, true);
     removeEventListener('resize', tourOnResize);
   }
@@ -160,7 +183,10 @@
   // 首次访问：等默认方案与家具库渲染完再弹；iframe 内（自测）不自动弹
   try {
     if (localStorage.getItem(TOUR_KEY) !== '1' && window.top === window.self){
-      setTimeout(() => { if (!tourOn && !App.core.$('#lightbox')?.classList.contains('on')) tourStart(); }, 1100);
+      setTimeout(() => {
+        if (!document.documentElement.dataset.studioInteracted &&
+            !tourOn && !App.core.$('#lightbox')?.classList.contains('on')) tourStart();
+      }, 1100);
     }
   } catch(e) {}
 

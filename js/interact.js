@@ -17,6 +17,7 @@
     if (App.store.ui.sel?.kind !== 'furn') return;
     const f = App.store.getF(App.store.ui.sel.id), n = {...f, id:App.geom.uid(), cx:f.cx+200, cy:f.cy+200};
     App.store.ui.sel = {kind:'furn', id:n.id}; App.store.mutate(() => App.store.state.furniture.push(n));
+    reportPlacement(n);
   }
   // 新放下的家具若压在墙 / 窗上，沿穿透较浅的方向推出来，刚好贴墙
   function pushOut(f){
@@ -32,15 +33,72 @@
       if (!moved) return;
     }
   }
-  function addItem(entry, x, y){
+  function samePlacement(f, other){
+    return f.id !== other.id && f.type === other.type && f.w === other.w && f.d === other.d &&
+      f.rot % 180 === other.rot % 180 && Math.hypot(f.cx - other.cx, f.cy - other.cy) < 1;
+  }
+  function insideFloor(f, rooms = App.store.ROOMS){
+    if (!rooms.length) return true;
+    const a = f.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    // Inset samples slightly so a footprint placed flush on a room edge still fits.
+    const w = Math.max(0, f.w / 2 - 2), d = Math.max(0, f.d / 2 - 2);
+    const top = App.geom.tableTopType(f.type) && App.geom.tableTopShape(f);
+    const samples = f.type === 'roundtable' || top === 'round' || top === 'oval'
+      ? Array.from({length:8}, (_, i) => [w * Math.cos(i * Math.PI / 4), d * Math.sin(i * Math.PI / 4)])
+      : [[-w,-d], [0,-d], [w,-d], [w,0], [w,d], [0,d], [-w,d], [-w,0]];
+    return [[0, 0], ...samples].every(([u,v]) => rooms.some(room =>
+      App.assistant.pointInPoly(f.cx + u*c - v*s, f.cy + u*s + v*c, room.poly)));
+  }
+  function furnitureWarnings(f){
+    const { tr } = App.core, notes = [];
+    const { w, h } = App.store.BOUNDS;
+    if (Math.max(f.w, f.d) > Math.max(10000, w, h)){
+      notes.push(tr('家具尺寸很大，请核对毫米单位', 'This item is unusually large. Check the dimensions in millimetres.'));
+    }
+    if (!insideFloor(f)){
+      notes.push(tr('家具占地可能超出已绘制区域', 'Part of this footprint may be outside the drawn area.'));
+    }
+    if (App.store.state.furniture.some(other => samePlacement(f, other))){
+      notes.push(tr('这里有一件同样的家具完全重叠', 'An identical item overlaps this one.'));
+    }
+    return notes;
+  }
+  function reportPlacement(f, message){
+    const notes = furnitureWarnings(f);
+    if (message || notes.length) App.core.toast([message, ...notes].filter(Boolean).join(' · '));
+  }
+  function separateRepeatedPlacement(f, room){
+    const items = App.store.state.furniture;
+    if (!items.some(other => samePlacement(f, other))) return false;
+    const { hw, hh } = App.geom.aabb(f);
+    const x = hw*2 + 100, y = hh*2 + 100;
+    const spots = [[x,0],[-x,0],[0,y],[0,-y],[x,y],[x,-y],[-x,y],[-x,-y]];
+    for (const [dx,dy] of spots){
+      const next = {...f, cx:f.cx+dx, cy:f.cy+dy};
+      pushOut(next);
+      if (!insideFloor(next, room ? [room] : undefined)) continue;
+      const overlaps = items.some(other => {
+        const size = App.geom.aabb(other);
+        return Math.abs(next.cx-other.cx) < hw+size.hw && Math.abs(next.cy-other.cy) < hh+size.hh;
+      });
+      if (!overlaps){
+        f.cx = next.cx; f.cy = next.cy;
+        return true;
+      }
+    }
+    return false;
+  }
+  function addItem(entry, x, y, { automatic = false, room } = {}){
     const cx = Math.round(x/10)*10, cy = Math.round(y/10)*10;
     const f = App.geom.placeCatalogItem(entry, cx, cy);
     if (!f) return null;
     pushOut(f);
+    const moved = automatic && separateRepeatedPlacement(f, room);
     App.store.ui.sel = {kind:'furn', id:f.id};
     const {type, name, w, d} = f;
     App.store.mutate(() => type==='rug' ? App.store.state.furniture.unshift(f) : App.store.state.furniture.push(f));
-    App.core.toast(App.core.tr(`已添加「${name}」${w}×${d}`, `Added "${App.core.nm(name)}" ${w}×${d}`));
+    const message = App.core.tr(`已添加「${name}」${w}×${d}`, `Added "${App.core.nm(name)}" ${w}×${d}`);
+    reportPlacement(f, moved ? message + App.core.tr(' · 已避开重叠', ' · Moved to avoid overlap') : message);
     return f;
   }
   function toggleWall(id){
@@ -161,7 +219,11 @@
       if (!cancel && !d.moved) App.dimensions.addPoint(d.point);
       return;
     }
-    if (d.moved){ App.store.commit(d.before); App.draw2d.renderAll(); }
+    if (d.moved){
+      App.store.commit(d.before); App.draw2d.renderAll();
+      const f = App.store.getF(d.id);
+      if (!cancel && f) reportPlacement(f);
+    }
   }
 
   App.core.svg.addEventListener('pointerdown', e => {
@@ -459,10 +521,11 @@
     if (!entry) return null;
     // 轻点：放到选中房间中心，否则放到画面中心（3D 取屏幕中心对应的地面位置）
     let p = null;
-    if (App.store.ui.sel?.kind === 'room'){ const def = App.plan.roomDef(App.store.ui.sel.id); if (def){ const b = App.geom.bbox(def.poly); p = {x:(b[0]+b[2])/2, y:(b[1]+b[3])/2}; } }
+    const room = App.store.ui.sel?.kind === 'room' && App.plan.roomDef(App.store.ui.sel.id);
+    if (room){ const b = App.geom.bbox(room.poly); p = {x:(b[0]+b[2])/2, y:(b[1]+b[3])/2}; }
     else if (App.io.is3D()){ const r = App.core.$('#stage').getBoundingClientRect(); p = App.view3d.groundAt(r.left + r.width/2, r.top + r.height/2); }
     if (!p) p = {x:App.store.view.x0 + App.core.svg.clientWidth/2/App.store.view.s, y:App.store.view.y0 + App.core.svg.clientHeight/2/App.store.view.s};
-    const added = addItem(entry, p.x, p.y);
+    const added = addItem(entry, p.x, p.y, {automatic:true, room});
     if (added) App.panel.closeDrawers();
     return added;
   }
@@ -470,7 +533,7 @@
   addEventListener('pointercancel', e => endLibDrag(e, false));
 
   Object.assign(App.interact, {
-    select, rotateSel, deleteSel, duplicateSel, pushOut, toggleWall, setTool, syncModeHint, applyView,
+    select, rotateSel, deleteSel, duplicateSel, pushOut, furnitureWarnings, toggleWall, setTool, syncModeHint, applyView,
     fitView, zoomCenter, setRatio, snapMove, snapPoint, buildLib, placeLibraryAsset,
   });
 })();

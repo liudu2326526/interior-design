@@ -7,6 +7,28 @@
 
   /* ======================= 渲染 ======================= */
   const NOLABEL = ['plant','floorlamp','sidetable','barstool','beanbag'];
+  const textMetrics = document.createElement('canvas').getContext('2d');
+  const planFont = getComputedStyle(App.core.svg).fontFamily;
+
+  function fitLabel(name, width, size, weight){
+    if (width <= 0) return null;
+    if (textMetrics) textMetrics.font = `${weight} ${size}px ${planFont}`;
+    const measure = text => textMetrics ? textMetrics.measureText(text).width : Array.from(text).length * size;
+    const fullWidth = measure(name);
+    if (fullWidth <= width) return {text:name, width:fullWidth};
+    if (measure('…') >= width) return null;
+    const letters = Array.from(name);
+    let lo = 0, hi = letters.length - 1;
+    while (lo < hi){
+      const mid = Math.ceil((lo + hi) / 2);
+      if (measure(letters.slice(0, mid).join('') + '…') <= width) lo = mid;
+      else hi = mid - 1;
+    }
+    if (!lo) return null;
+    const text = letters.slice(0, lo).join('').trimEnd() + '…';
+    return {text, width:measure(text)};
+  }
+
   function svgArc(curve, end, offset = 0, reverse = false){
     const radius = curve.radius + offset, direction = (curve.sweep > 0) !== reverse ? 1 : 0;
     return `A${radius} ${radius} 0 0 ${direction} ${end.join(' ')}`;
@@ -37,7 +59,9 @@
     const rooms = App.store.ROOMS;
     [...rooms.filter(room => room.outdoor), ...rooms.filter(room => !room.outdoor)].forEach(r => {
       const fill = r.outdoor ? '#d3e2c9' : App.geom.patURL(App.store.roomState(r.id).mat);
-      s += roomShape(r, `class="room" data-room="${App.core.esc(r.id)}" fill="${fill}"`);
+      const title = App.core.esc(`${App.core.nm(App.store.roomState(r.id).name)} · ${App.geom.fmt(App.geom.roomArea(r))} m²`);
+      const shape = roomShape(r, `class="room" data-room="${App.core.esc(r.id)}" fill="${fill}"`);
+      s += `<g role="img" aria-label="${title}"><title>${title}</title>${shape}</g>`;
     });
     const sill = ([a,b,c,d]) => `<rect x="${a}" y="${b}" width="${c-a}" height="${d-b}" fill="#e2dacb" stroke="#b9b0a0" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none"/>`;
     App.store.DOORS.forEach(d => s += sill(d.rect)); App.store.SLIDES.forEach(d => s += sill(d.rect));
@@ -49,13 +73,17 @@
     const g = App.core.$('#gFurn');
     g.setAttribute('display', App.store.ui.layers.furn ? 'inline' : 'none');
     g.innerHTML = App.store.state.furniture.map(f => {
-      const component = f.type === 'component';
+      const name = App.core.nm(f.name);
       const fs = Math.max(80, Math.min(170, Math.min(f.w,f.d)*.2));
-      const label = Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type)
-        ? `<text transform="rotate(${-f.rot})" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#4a443c" opacity=".8" pointer-events="none">${App.core.esc(App.core.nm(f.name))}</text>` : '';
-      const title = component ? `<title>${App.core.esc(App.core.nm(f.name))}</title>` : '';
+      const angle = f.rot * Math.PI / 180;
+      const span = Math.min(f.w / Math.abs(Math.cos(angle)), f.d / Math.abs(Math.sin(angle)));
+      const shown = Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type) && fitLabel(name, span - fs, fs, 400);
+      const label = shown
+        ? `<text aria-hidden="true" transform="rotate(${-f.rot})" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#4a443c" opacity=".8" pointer-events="none">${App.core.esc(shown.text)}</text>` : '';
+      const title = App.core.esc(name);
       const shape = furnitureShape(f);
-      return `<g class="furn" data-fid="${App.core.esc(f.id)}" transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${title}${shape}${label}</g>`;
+      return `<g class="furn" data-fid="${App.core.esc(f.id)}" role="img" aria-label="${title}"
+        transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})"><title>${title}</title>${shape}${label}</g>`;
     }).join('');
   }
 
@@ -114,10 +142,33 @@
   function renderLabels(){
     const g = App.core.$('#gLabels');
     g.setAttribute('display', App.store.ui.layers.labels ? 'inline' : 'none');
-    g.innerHTML = App.store.ROOMS.filter(r => r.at).map(r => {
-      const [x,y] = r.at, halo = 'stroke="#fbf9f4" stroke-width="45" paint-order="stroke" stroke-linejoin="round"';
-      return `<text x="${x}" y="${y}" font-size="250" font-weight="600" text-anchor="middle" fill="#2b2824" ${halo}>${App.core.esc(App.core.nm(App.store.roomState(r.id).name))}</text>
-      <text x="${x}" y="${y+260}" font-size="175" text-anchor="middle" fill="#7d7366" ${halo}>${App.geom.fmt(App.geom.roomArea(r))} m²</text>`;
+    if (!App.store.ui.layers.labels) return;
+    const occupied = [], halo = 'stroke="#fbf9f4" stroke-width="40" paint-order="stroke" stroke-linejoin="round"';
+    const rooms = App.store.ROOMS.filter(room => room.at)
+      .sort((a,b) => Number(a.counted === false) - Number(b.counted === false));
+    g.innerHTML = rooms.map(room => {
+      const spans = App.dimensionGeometry.roomSpans(room, room.at);
+      if (!spans) return '';
+      const left = spans.x[0].value + 25, right = spans.x[1].value - 25;
+      const top = spans.y[0].value + 25, bottom = spans.y[1].value - 25;
+      const [anchorX, anchorY] = [spans.y[0].across, spans.x[0].across];
+      const size = Math.min(250, bottom - top - 40);
+      if (size < 100) return '';
+      const y = Math.min(Math.max(anchorY - size*.3, top + size/2), bottom - size/2);
+      const line = (label, at, fs, weight, color) => {
+        const measured = fitLabel(label, right-left, fs, weight);
+        if (!measured || at - fs/2 < top || at + fs/2 > bottom) return '';
+        const half = measured.width/2, x = Math.min(Math.max(anchorX, left+half), right-half);
+        const box = {left:x-half-20, right:x+half+20, top:at-fs/2-20, bottom:at+fs/2+20};
+        if (occupied.some(b => box.left < b.right && box.right > b.left && box.top < b.bottom && box.bottom > b.top)) return '';
+        occupied.push(box);
+        return `<text x="${x}" y="${at}" font-size="${fs}" font-weight="${weight}" text-anchor="middle"
+          dominant-baseline="central" fill="${color}" ${halo}>${App.core.esc(measured.text)}</text>`;
+      };
+      const name = line(App.core.nm(App.store.roomState(room.id).name), y, size, 600, '#2b2824');
+      if (!name) return '';
+      const area = line(`${App.geom.fmt(App.geom.roomArea(room))} m²`, y+size/2+130, 175, 400, '#7d7366');
+      return `<g data-room-label="${App.core.esc(room.id)}" aria-hidden="true">${name}${area}</g>`;
     }).join('');
   }
 

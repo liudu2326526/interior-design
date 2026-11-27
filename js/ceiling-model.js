@@ -2,7 +2,10 @@
 (() => {
   'use strict';
   const DEFAULT_HEIGHT = 2800, DEFAULT_COLOR = '#ffffff';
-  const fixtureTypes = ['downlight','spot','pendant','linear','track','vent','access','curtain'];
+  const fixtureDefaults = {downlight:[90,90,0],spot:[100,100,40],pendant:[400,400,600],
+    linear:[1200,45,0],track:[1500,55,0],vent:[1000,120,0],access:[450,450,0],curtain:[1600,180,0]};
+  const fixtureTypes = Object.keys(fixtureDefaults);
+  const roundFixtures = new Set(['downlight','spot','pendant']);
   const own = (obj, key) => Object.hasOwn(obj, key);
   const record = value => value && typeof value === 'object' && !Array.isArray(value);
   const error = message => { throw new Error(message); };
@@ -69,6 +72,29 @@
       const q = child[(i+1)%child.length];
       return pointIn(parent,p,touchAllowed) && pointIn(parent,[(p[0]+q[0])/2,(p[1]+q[1])/2],touchAllowed);
     }) && !boundaryCross(child,parent,touchAllowed);
+  }
+  const rings = shape => [shape.poly,...(shape.holes||[])];
+  const interior = (shape,p) => pointIn(shape.poly,p,false) && !(shape.holes||[]).some(h=>pointIn(h,p));
+  const bounds = poly => poly.reduce(([left,top,right,bottom],[x,y]) =>
+    [Math.min(left,x),Math.min(top,y),Math.max(right,x),Math.max(bottom,y)], [Infinity,Infinity,-Infinity,-Infinity]);
+  function shapeOverlaps(a,b){
+    const [ax,ay,ar,ab]=a.bounds||bounds(a.poly), [bx,by,br,bb]=b.bounds||bounds(b.poly);
+    if (Math.min(ar,br)-Math.max(ax,bx)<=1e-5 || Math.min(ab,bb)-Math.max(ay,by)<=1e-5) return false;
+    const arings=rings(a), brings=rings(b);
+    if (arings.some(p=>brings.some(q=>boundaryCross(p,q,true)))) return true;
+    const insideOther = (s,other,paths)=>paths.some(path=>path.some((p,i)=>{
+      if (interior(other,p)) return true;
+      const q=path[(i+1)%path.length], dx=q[0]-p[0], dy=q[1]-p[1], length=Math.hypot(dx,dy);
+      const x=(p[0]+q[0])/2, y=(p[1]+q[1])/2;
+      if (interior(other,[x,y])) return true;
+      // An inward probe detects coincident boundaries without treating a shared edge as overlap.
+      const step=Math.min(.005,length/8)/length;
+      return [-step,step].some(d=>{
+        const probe=[x-dy*d,y+dx*d];
+        return interior(s,probe) && interior(other,probe);
+      });
+    }));
+    return insideOther(a,b,arings) || insideOther(b,a,brings);
   }
   function ring(raw){
     if (!Array.isArray(raw) || raw.length < 3 || raw.length > 1024) error('顶面轮廓点数量无效');
@@ -148,6 +174,62 @@
     return surfaces.reduce((h,s)=>covers(s,[fixture.x,fixture.y]) ? Math.min(h,s.height) : h,base);
   }
   const fixtureHeight=(scene,def,f)=>mountHeight(shapes(scene,def),baseHeight(scene,def.id),f);
+  function fixtureFootprint(fixture){
+    const [defaultLength,defaultWidth]=fixtureDefaults[fixture.type];
+    const halfLength=(fixture.length??defaultLength)/2, halfWidth=(fixture.width??defaultWidth)/2;
+    const rotation=(fixture.rotation||0)*Math.PI/180, cos=Math.cos(rotation), sin=Math.sin(rotation);
+    const corners=[[-1,-1],[1,-1],[1,1],[-1,1]];
+    const units=roundFixtures.has(fixture.type) ? Array.from({length:24},(_,i)=>{
+      const angle=i*Math.PI/12;
+      return [Math.cos(angle),Math.sin(angle)];
+    }) : corners;
+    return units.map(([u,v])=>{
+      const x=u*halfLength, y=v*halfWidth;
+      return [fixture.x+x*cos-y*sin,fixture.y+x*sin+y*cos];
+    });
+  }
+  function installationProblem(roomOutline,surfaces,base,fixture,outdoor){
+    const footprint=fixtureFootprint(fixture);
+    if (!contained(footprint,roomOutline)) return '灯具或设备的完整轮廓超出房间边界';
+    const mount=mountHeight(surfaces,base,fixture);
+    const shape={poly:footprint,bounds:bounds(footprint)};
+    const supported=surface=>contained(footprint,surface.poly) &&
+      !surface.holes.some(poly=>shapeOverlaps(shape,{poly}));
+    if (fixture.zoneId || outdoor || mount<base){
+      const candidates=surfaces.filter(s=>fixture.zoneId ? s.id===fixture.zoneId : s.height===mount);
+      if (!candidates.some(supported)) return '灯具或设备必须完整落在同一安装面内，且避开镂空';
+    }
+    if (surfaces.some(s=>s.height<mount && shapeOverlaps(shape,s))) return '灯具或设备跨越了不同标高的顶面';
+    return null;
+  }
+  function installationSurfaces(scene,def){
+    return shapes(scene,def).map(s=>({...s,bounds:bounds(s.poly)}));
+  }
+  function fixturePlacementProblem(scene,def,fixture){
+    return installationProblem(outline(def),installationSurfaces(scene,def),baseHeight(scene,def.id),fixture,def.outdoor);
+  }
+  function snapFixture(scene,def,fixture,tolerance){
+    const poly=outline(def), sign=Math.sign(signedArea(poly)), footprint=fixtureFootprint(fixture);
+    const supports=installationSurfaces(scene,def), base=baseHeight(scene,def.id);
+    const candidates=[];
+    for (let i=0;i<poly.length;i++){
+      const [x,y]=poly[i], [qx,qy]=poly[(i+1)%poly.length], dx=qx-x, dy=qy-y, length=Math.hypot(dx,dy);
+      if (!length) continue;
+      const along=((fixture.x-x)*dx+(fixture.y-y)*dy)/length;
+      if (along<0 || along>length) continue;
+      const nx=-sign*dy/length, ny=sign*dx/length;
+      const distance=(fixture.x-x)*nx+(fixture.y-y)*ny;
+      if (distance< -1e-4) continue;
+      const extent=Math.max(...footprint.map(([px,py])=>(fixture.x-px)*nx+(fixture.y-py)*ny));
+      const score=Math.min(distance,Math.abs(distance-extent));
+      if (score>tolerance) continue;
+      const offset=extent-distance;
+      candidates.push({score,x:fixture.x+offset*nx,y:fixture.y+offset*ny});
+    }
+    candidates.sort((a,b)=>a.score-b.score);
+    const snapped=candidates.find(({x,y})=>!installationProblem(poly,supports,base,{...fixture,x,y},def.outdoor));
+    return snapped ? [snapped.x,snapped.y] : [fixture.x,fixture.y];
+  }
   function readRoom(raw,def,globalHeight,strict){
     if (!record(raw)) error('房间天花设计无效');
     if (strict) fields(raw,['baseHeight','zones','edges','fixtures']);
@@ -232,11 +314,43 @@
   }
   const normalize=(raw,roomDefs)=>parse(raw,roomDefs,false);
   const validate=(raw,roomDefs)=>parse(raw,roomDefs,true);
-  function apply(ceiling,def,change){
+  const zoneGeometry = zone => JSON.stringify([zone.drop,zone.poly,zone.arcs||[],zone.holes||[]]);
+  const fixtureGeometry = fixture=>JSON.stringify([fixture.type,fixture.x,fixture.y,fixture.zoneId??null,
+    fixture.rotation||0,fixture.length??fixtureDefaults[fixture.type][0],fixture.width??fixtureDefaults[fixture.type][1]]);
+  function validateEditedGeometry(before,after,def){
+    const oldRoom=room(before,def.id), newRoom=room(after,def.id);
+    const zoneById=new Map(oldRoom.zones.map(zone=>[zone.id,zone]));
+    const changed=new Set(newRoom.zones.filter(zone=>{
+      const previous=zoneById.get(zone.id);
+      return !previous || zoneGeometry(previous)!==zoneGeometry(zone);
+    }).map(zone=>zone.id));
+    const surfaces=installationSurfaces(after,def), base=baseHeight(after,def.id);
+    for (const s of surfaces){
+      if (!changed.has(s.id)) continue;
+      if (surfaces.some(t=>t.id!==s.id && t.height===s.height && shapeOverlaps(s,t))){
+        error('顶面与现有区域同标高重叠，请调整下吊量或替换旧顶面');
+      }
+    }
+    const fixtureById=new Map(oldRoom.fixtures.map(f=>[f.id,f]));
+    const surfaceChanged=changed.size>0 || oldRoom.zones.length!==newRoom.zones.length;
+    const bound=outline(def);
+    const oldSurfaces=surfaceChanged ? installationSurfaces(before,def) : [];
+    for (const f of newRoom.fixtures){
+      const previous=fixtureById.get(f.id);
+      const moved=!previous || fixtureGeometry(previous)!==fixtureGeometry(f);
+      if (!moved && !surfaceChanged) continue;
+      const problem=installationProblem(bound,surfaces,base,f,def.outdoor);
+      if (problem && (moved || !installationProblem(bound,oldSurfaces,baseHeight(before,def.id),previous,def.outdoor))) error(problem);
+    }
+  }
+  function apply(ceiling,def,change,{checkGeometry=false}={}){
     key(def.id);
     const source=ceiling ?? normalize(), merged={...room(source,def.id),...change};
     const result=readRoom(merged,def,source.baseHeight,true);
-    return {...source,rooms:{...source.rooms,[def.id]:result}};
+    const updated={...source,rooms:{...source.rooms,[def.id]:result}};
+    // Saved designs and temporary samples retain their original schema. Guard new editor changes prospectively.
+    if (checkGeometry) validateEditedGeometry(source,updated,def);
+    return updated;
   }
   function inset(poly,dist){
     num(dist,1,30000,'边吊宽度');
@@ -282,7 +396,8 @@
     }
     return zone;
   }
-  const api={normalize,validate,apply,room,baseHeight,outline,edgePoints,shapes,fixtureHeight,preset,fixtureTypes,defaultColor:DEFAULT_COLOR};
+  const api={normalize,validate,apply,room,baseHeight,outline,edgePoints,shapes,fixtureHeight,fixturePlacementProblem,
+    snapFixture,preset,fixtureTypes,fixtureDefaults,defaultColor:DEFAULT_COLOR};
   globalThis.CeilingModel=api;
   if (globalThis.App) globalThis.App.ceilingModel=api;
 })();

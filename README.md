@@ -17,7 +17,7 @@ npm start                    # 同上
 - 也可以直接用浏览器打开项目目录中的 `index.html`（`file://`）。2D / 3D 编辑照常，AI 功能降级（见下）。
 - AI 功能需要本机装有 [codex CLI](https://github.com/openai/codex)（≥ 0.158.0）并已 `codex login`；
   找不到时可设置 `CODEX_PATH` 指向可执行文件。
-- 「文件 → 导出 DWG」需要 Node 服务和 GNU LibreDWG 的 `dxf2dwg`。macOS 可运行 `brew install libredwg`，也可用 `STUDIO_DXF2DWG_PATH` 指定转换器的绝对路径。导出不需要登录 Codex。公网通过已登录的编辑器使用。
+- 「文件 → 导出户型平面 DWG」需要 Node 服务和 GNU LibreDWG 的 `dxf2dwg`。macOS 可运行 `brew install libredwg`，也可用 `STUDIO_DXF2DWG_PATH` 指定转换器的绝对路径。公网通过已登录的编辑器使用。天花设计可用设计 JSON 或当前顶面视图 PNG 导出。
 - 原生 DWG 导入可用同一软件的 `dwgread` 读取曲线，必要时用 `STUDIO_DWGREAD_PATH` 设置绝对路径。DXF 中的圆弧和折线弧段直接读取，图片中的连续圆角候选辅助识别和复核。
 
 ## 公网入口

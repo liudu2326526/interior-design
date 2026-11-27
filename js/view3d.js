@@ -32,7 +32,7 @@
   const SW = () => stage.clientWidth, SH = () => stage.clientHeight;
   const opt = {cut:2.8, furn:true, labels:true, night:false, hour:10, mode:'orbit'};
 
-  let inited = false, active = false, raf = 0, anim = null, fly = null;
+  let inited = false, active = false, raf = 0, anim = null, fly = null, wholeView = null;
   let renderer, labelRenderer, scene, camera, orbit, walkCtl, hemi, sun, ground, glassMat, wallMat, capMat, frameMat;
   let archFloor, archUp, furnG, labelG, doorG, lampG, ceilingG, colliders = [], selKey = null, selHelper = null;
   let attachedBays = [];
@@ -62,6 +62,7 @@
     camera = new THREE.PerspectiveCamera(FOV, SW()/SH(), .05, 300);
     orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true; orbit.maxPolarAngle = Math.PI*.495; orbit.minDistance = 1.5; orbit.maxDistance = 45;
+    orbit.addEventListener('start', () => { wholeView = null; });
     walkCtl = new PointerLockControls(camera, document.body);
     walkCtl.pointerSpeed = 0;
     walkCtl.addEventListener('lock', () => {
@@ -149,8 +150,15 @@
       else App.interact.select(null);
     });
     new ResizeObserver(() => {
-      renderer.setSize(SW(), SH()); labelRenderer.setSize(SW(), SH());
-      camera.aspect = SW()/SH(); camera.updateProjectionMatrix();
+      const width = SW(), height = SH();
+      if (!width || !height) return;
+      renderer.setSize(width, height); labelRenderer.setSize(width, height);
+      camera.aspect = width/height; camera.updateProjectionMatrix();
+      if (active && wholeView && !anim){
+        const fitted = fitWholePose(wholeView);
+        if (fly) fly.B = fitted;
+        else setPose(fitted);
+      }
     }).observe(stage);
     bindUI();
   }
@@ -1208,14 +1216,32 @@
     const dist = visH / 2 / Math.tan(FOV/2*Math.PI/180), t = new THREE.Vector3(wx(cx), 0, wz(cy));
     return pose(t, new THREE.Vector3(t.x, dist, t.z + 1e-4));
   }
-  function isoFrom(P){
-    const d = THREE.MathUtils.clamp(P.p.y, 5, 30), dir = new THREE.Vector3(.3, .82, .49).normalize();
-    return pose(P.t.clone(), P.t.clone().addScaledVector(dir, d));
+  function fitWholePose(view){
+    const dir = view === 'top' ? new THREE.Vector3(0, 1, 1e-4) : new THREE.Vector3(.29, .80, .52);
+    dir.normalize();
+    const right = new THREE.Vector3(dir.z, 0, -dir.x).normalize();
+    const up = dir.clone().cross(right);
+    const {w, h} = App.store.BOUNDS;
+    const halfWidth = M(w) / 2, halfDepth = M(h) / 2;
+    const halfHeight = App.store.ROOMS.reduce((height, room) => Math.max(height, ceilingY(room.id)), 2.8) / 2;
+    const target = new THREE.Vector3(0, halfHeight, 0);
+    const tanY = Math.tan(THREE.MathUtils.degToRad(FOV / 2)) * .86;
+    const tanX = tanY * Math.max(.05, SW() / Math.max(1, SH()));
+    const corner = new THREE.Vector3();
+    let distance = 7;
+    // 在相机横纵轴上分别把户型边界留在视口内，透视深度也随每个角点计算。
+    for (const x of [-halfWidth, halfWidth]) for (const y of [-halfHeight, halfHeight]) for (const z of [-halfDepth, halfDepth]){
+      corner.set(x, y, z);
+      distance = Math.max(distance, corner.dot(dir) +
+        Math.max(Math.abs(corner.dot(right)) / tanX, Math.abs(corner.dot(up)) / tanY));
+    }
+    orbit.maxDistance = Math.max(45, distance * 1.2);
+    const far = Math.max(300, orbit.maxDistance + Math.hypot(halfWidth, halfHeight, halfDepth) + 10);
+    if (camera.far !== far){ camera.far = far; camera.updateProjectionMatrix(); }
+    return { ...pose(target, target.clone().addScaledVector(dir, distance)), wholeView:view };
   }
-  const isoWhole = () => pose(new THREE.Vector3(0, 0, 0), new THREE.Vector3(.29, .80, .52).normalize().multiplyScalar(wholeDist()));
-  const topWhole = () => pose(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, wholeDist()*.98, 1e-4));
-  // 鸟瞰距离跟着方案大小走（125-C 约 19，空壳约 12）
-  const wholeDist = () => Math.max(7, Math.max(App.store.BOUNDS.w, App.store.BOUNDS.h) / 1000 * 1.22);
+  const isoWhole = () => fitWholePose('iso');
+  const topWhole = () => fitWholePose('top');
   const curPose = () => pose(orbit.target.clone(), camera.position.clone());
   // 以目标点为中心做球坐标插值：镜头沿弧线倾斜环绕，而不是直线穿越
   function camTween(A, B, e){
@@ -1228,7 +1254,10 @@
   function setPose(P){ camera.position.copy(P.p); orbit.target.copy(P.t); camera.lookAt(P.t); }
   function animate(dur, fn){ return new Promise(res => { anim = {t0:performance.now(), dur, fn, res}; }); }
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  function flyTo(B, dur = 900, done = null){ fly = {t0:performance.now(), dur, A:curPose(), B, done}; }
+  function flyTo(B, dur = 900, done = null){
+    wholeView = B.wholeView ?? null;
+    fly = {t0:performance.now(), dur, A:curPose(), B, done};
+  }
   function flyToRoom(id){
     const r = App.plan.roomDef(id); if (!r) return;
     const xs = r.poly.map(p => p[0]), ys = r.poly.map(p => p[1]);
@@ -1440,7 +1469,8 @@
     stage.classList.remove('roomview'); renderRoomBar();
     sync(true);
     opt.mode = 'orbit'; orbit.enabled = false; showLabels(false);
-    const A = planPose(), B = isoFrom(A);
+    const A = planPose(), B = isoWhole();
+    wholeView = B.wholeView;
     grow = 0; furnGrow = 0; applyGrow(); setPose(A);
     stage.classList.add('animating');
     startLoop(); renderer.render(scene, camera);
@@ -1452,6 +1482,7 @@
       furnGrow = ease(clamp01((t - .45)/.5));
       applyGrow();
     });
+    if (wholeView) setPose(fitWholePose(wholeView));
     orbit.enabled = true; showLabels(opt.labels);
     stage.classList.remove('animating');
   }
@@ -1459,7 +1490,7 @@
     if (opt.mode === 'walk'){ rememberWalkExit(); walkCtl.unlock(); stopTouchWalk(); clearWalkKeys(); App.core.$('#walkOverlay').style.display = 'none'; App.core.$('#cross').style.display = 'none';
       const dir = new THREE.Vector3(); camera.getWorldDirection(dir); orbit.target.copy(camera.position).addScaledVector(dir, 3).setY(0); opt.mode = 'orbit'; syncModeBtns(); syncHint3d(); }
     exitRoom({silent: true});                             // 清室内裁切 / 标题条，再走 3D → 2D 动画
-    fly = null; orbit.enabled = false; showLabels(false); stage.classList.add('animating');
+    fly = null; wholeView = null; orbit.enabled = false; showLabels(false); stage.classList.add('animating');
     const A = curPose(), B = planPose();
     await animate(1300, t => {
       camTween(A, B, ease(clamp01((t - .1)/.9)));
@@ -1726,7 +1757,7 @@
     if (m === 'walk'){
       App.interact.select(null);
       if (opt.cut !== FULL_WALL_MODE){ opt.cut = FULL_WALL_MODE; syncCutBtns(); sync(); }
-      orbit.enabled = false; fly = null;
+      orbit.enabled = false; fly = null; wholeView = null;
       const roomId = requestedPoint ? requestedPoint.roomId : currentRoom;
       const start = requestedPoint || lastWalkExit(roomId);
       roomView.id = roomId; roomView.arrived = !!roomId; roomView.fallback = false;

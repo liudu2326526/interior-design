@@ -16,6 +16,7 @@
   const projectPanel = App.core.$('#projectPanel'), projectToggle = App.core.$('#projectToggle'), projectList = App.core.$('#projectList');
   const projectSearch = App.core.$('#projectSearch'), projectSort = App.core.$('#projectSort');
   const renameForm = App.core.$('#projectRenameForm'), renameInput = App.core.$('#projectRenameInput');
+  const nameSubmit = renameForm.querySelector('[type="submit"]'), newProject = App.core.$('#projectNew');
   const projectPending = row => row.phase === 'queued' || row.phase === 'running';
   const projectReview = row => row?.review && typeof row.review === 'object' ? row.review : null;
   const projectReviewPending = row => ['pending', 'running'].includes(projectReview(row)?.state);
@@ -23,7 +24,7 @@
   const projectAi = App.core.PUBLIC_ACCESS !== 'guest' && /^https?:$/.test(location.protocol);
   let activeProjectId = '', projectSwitching = false, projectStorageIssue = false, projectSyncIssue = '';
   let projectTimer = 0, projectSyncing = false, projectSyncAgain = false;
-  let renderedProjectRows = '', renamingProjectId = '', projectSorting = false, draggedProjectId = '';
+  let renderedProjectRows = '', namingProject = '', projectSorting = false, draggedProjectId = '';
 
   function parseProjectOrder(raw){
     try {
@@ -150,9 +151,11 @@
     if (!result.ok && result.errors?.[0]) App.core.toast(result.errors[0]);
     return result.ok;
   }
-  async function startBlankProject(){
+  async function startBlankProject(name, request){
     const plan = await App.io.loadPlanFile('data/empty-plan.json') || App.plan.FALLBACK_PLAN;
-    await openNewProject({plan, state:App.store.defaultState()});
+    if (namingProject === request && renameInput.value.trim() === name){
+      await openNewProject({plan:{...plan, name}});
+    }
   }
 
   function projectFormatTime(value){
@@ -334,35 +337,59 @@
   }
 
   const findProjectRow = id => [...projectList.children].find(el => el.dataset.projectId === id);
-  function beginProjectRename(row){
-    renamingProjectId = row.id;
-    renameInput.value = row.name;
+  function syncProjectNameForm(){
+    const {tr} = App.core;
+    nameSubmit.textContent = typeof namingProject === 'symbol' ? tr('创建','Create') : tr('保存','Save');
+  }
+  function beginProjectName(action, name){
+    namingProject = action;
+    renameInput.value = name;
     renameInput.setCustomValidity('');
     renameForm.hidden = false;
+    syncProjectNameForm();
     renameInput.focus(); renameInput.select();
   }
-  function closeProjectRename(returnFocus = false){
-    const id = renamingProjectId;
-    renameForm.hidden = true;
-    renamingProjectId = '';
-    if (returnFocus) (findProjectRow(id)?.querySelector('[data-project-action="rename"]') || projectSearch).focus();
+  function beginProjectRename(row){ beginProjectName(row.id, row.name); }
+  function beginNewProject(){
+    const existing = new Set([...projectRows.values()].filter(row => !row.hidden).map(row => row.name));
+    const title = App.core.tr('新项目','New project');
+    let name = title;
+    for(let n = 2; existing.has(name); n++) name = `${title} ${n}`;
+    beginProjectName(Symbol('new project'), name);
   }
-  async function renameProject(event){
+  function closeProjectRename(returnFocus = false){
+    const action = namingProject;
+    renameForm.hidden = true;
+    namingProject = '';
+    if (returnFocus){
+      const button = typeof action === 'symbol' ? newProject : findProjectRow(action)?.querySelector('[data-project-action="rename"]');
+      (button || projectSearch).focus();
+    }
+  }
+  async function submitProjectName(event){
     event.preventDefault();
-    const row = projectRows.get(renamingProjectId), name = renameInput.value.trim();
-    if (!row || row.hidden || projectSwitching) return;
+    const action = namingProject, name = renameInput.value.trim();
+    if (!action || projectSwitching || nameSubmit.disabled) return;
     if (!name){
       renameInput.setCustomValidity(App.core.tr('请输入项目名称。','Enter a project name.'));
       renameInput.reportValidity();
       return;
     }
+    if (typeof action === 'symbol'){
+      nameSubmit.disabled = true;
+      try { await startBlankProject(name, action); }
+      finally { nameSubmit.disabled = false; }
+      return;
+    }
+    const row = projectRows.get(action);
+    if (!row || row.hidden) return;
     if (name === row.name){ closeProjectRename(true); return; }
     closeProjectRename();
     if (row.id === activeProjectId) App.store.mutate(() => { App.store.PLAN.name = name; });
     else if (row.snapshot) await putProject({...row, name, snapshot:{...row.snapshot, plan:{...row.snapshot.plan,name}}});
     else await putProject({...row, name, sourceName:row.sourceName || row.name, customName:name});
     renderProjects();
-    if (!projectPanel.hidden && !renamingProjectId) (findProjectRow(row.id)?.querySelector('[data-project-action="rename"]') || projectSearch).focus();
+    if (!projectPanel.hidden && !namingProject) (findProjectRow(row.id)?.querySelector('[data-project-action="rename"]') || projectSearch).focus();
   }
 
   function projectSortRow(row, title, index, length){
@@ -383,6 +410,7 @@
     projectToggle.setAttribute('aria-label', pending
       ? App.core.tr(`项目，${pending} 个任务进行中`, `Projects, ${pending} tasks in progress`) : App.core.tr('项目','Projects'));
     if (projectPanel.hidden || draggedProjectId) return;
+    if (!renameForm.hidden) syncProjectNameForm();
     const rows = visibleProjects(allProjects);
     const searchLabel = tr('搜索项目','Search projects');
     projectSearch.placeholder = searchLabel; projectSearch.setAttribute('aria-label',searchLabel);
@@ -693,11 +721,11 @@
   }
   projectToggle.onclick = () => projectPanel.hidden ? openProjects() : closeProjects();
   App.core.$('#projectClose').onclick = () => closeProjects(true);
-  App.core.$('#projectNew').onclick = startBlankProject;
+  newProject.onclick = beginNewProject;
   App.core.$('#projectImport').onclick = () => { closeProjects(); App.importer.impOpen(); };
   projectSearch.oninput = () => { projectList.scrollTop = 0; renderProjects(); };
   projectSort.onclick = () => { closeProjectRename(); projectSorting = !projectSorting; renderProjects(); };
-  renameForm.onsubmit = renameProject;
+  renameForm.onsubmit = submitProjectName;
   renameInput.oninput = () => renameInput.setCustomValidity('');
   App.core.$('#projectRenameCancel').onclick = () => closeProjectRename(true);
   projectList.onclick = projectClick;
@@ -740,7 +768,7 @@
   document.addEventListener('keydown', e => {
     if (projectPanel.hidden || e.key !== 'Escape' || e.isComposing) return;
     e.preventDefault(); e.stopPropagation();
-    if (renamingProjectId) closeProjectRename(true);
+    if (namingProject) closeProjectRename(true);
     else if (e.target === projectSearch && projectSearch.value){ projectSearch.value = ''; renderProjects(); }
     else if (projectSorting){ projectSorting = false; renderProjects(); projectSort.focus(); }
     else closeProjects(true);

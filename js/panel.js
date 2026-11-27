@@ -152,10 +152,13 @@
   function syncPaneBtns(){
     const els = {lib:App.core.$('aside.lib'), panel:App.core.$('aside.right')}, n = App.core.narrow();
     const vis = k => n ? els[k].classList.contains('open') : !panes[k === 'lib' ? 'hideLib' : 'hidePanel'];
-    App.core.$('#tgLib').classList.toggle('on', vis('lib')); App.core.$('#tgPanel').classList.toggle('on', vis('panel'));
-    App.core.$('#tgLib').title = vis('lib') ? App.core.tr('收起家具库 ( [ )', 'Hide library ( [ )') : App.core.tr('展开家具库 ( [ )', 'Show library ( [ )');
-    App.core.$('#tgPanel').title = vis('panel') ? App.core.tr('收起属性面板 ( ] )', 'Hide properties ( ] )') : App.core.tr('展开属性面板 ( ] )', 'Show properties ( ] )');
-    App.core.$('#stage').classList.toggle('drawer-panel', n && vis('panel'));   // 属性抽屉盖住画面时让出底部工具条
+    const lib = App.core.$('#tgLib'), panel = App.core.$('#tgPanel');
+    const libOpen = vis('lib'), panelOpen = vis('panel');
+    lib.classList.toggle('on', libOpen); panel.classList.toggle('on', panelOpen);
+    lib.setAttribute('aria-expanded', String(libOpen)); panel.setAttribute('aria-expanded', String(panelOpen));
+    lib.title = libOpen ? App.core.tr('收起家具库 ( [ )', 'Hide library ( [ )') : App.core.tr('展开家具库 ( [ )', 'Show library ( [ )');
+    panel.title = panelOpen ? App.core.tr('收起属性面板 ( ] )', 'Hide properties ( ] )') : App.core.tr('展开属性面板 ( ] )', 'Show properties ( ] )');
+    App.core.$('#stage').classList.toggle('drawer-panel', n && panelOpen);   // 属性抽屉盖住画面时让出底部工具条
   }
   function closeDrawers(){ if (App.core.narrow()) drawer(null); }
 
@@ -225,6 +228,7 @@
     <div class="muted" style="margin-top:8px">${App.core.tr('占地面积','Footprint')} ${App.geom.fmt(footprint/1e6)} m²${component
         ? App.core.tr(` · ${f.parts.length} 个部件 · 最高点 ${Math.round(Math.max(...f.parts.map(p => p.y + p.h)))} mm`,
           ` · ${f.parts.length} parts · max elevation ${Math.round(Math.max(...f.parts.map(p => p.y + p.h)))} mm`) : ''}</div>
+    ${App.interact.furnitureWarnings(f).map(message => `<p class="muted" role="status" style="margin:6px 0 0">${App.core.esc(message)}</p>`).join('')}
     <div class="actions">
       <button class="btn" id="aRot">${App.core.tr('旋转 90°','Rotate 90°')}</button><button class="btn" id="aDup">${App.core.tr('复制','Duplicate')}</button>
       <button class="btn" id="aTop">${App.core.tr('置于顶层','Bring to front')}</button><button class="btn" id="aBot">${App.core.tr('置于底层','Send to back')}</button>

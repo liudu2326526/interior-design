@@ -495,19 +495,26 @@ async function main(){
       assert(recorded?.original === 7440 && stored?.dimensionMarks?.[0]?.original === 7440, '原图尺寸未保存');
       assert(JSON.stringify(S.getPlan()) === before && value() === 6200, '记录原图值时不应移动几何');
 
+      const target = doc.querySelector('#dimensionTarget'), summary = doc.querySelector('#dimensionRecorded');
+      assert(target.value === '7440', '首个原图值应作为默认校准目标');
+      target.value = '9300';
       doc.querySelector('#dimensionScale').click();
       const scaled = S.getPlan();
       if (JSON.stringify(scaled) !== before) undoSteps++;
-      assert(scaled.walls[3][2] === 7440 && scaled.rooms[0].poly[1][0] === 3552, '按原图值校准后墙面与房间坐标不匹配');
-      assert(value() === 7440 && S.projectJSON().state.dimensionMarks[0].id === mark.id, '标注未跟随校准后的墙面');
+      assert(scaled.walls[3][2] === 9300 && scaled.rooms[0].poly[1][0] === 4440, '校准应使用独立的目标输入');
+      assert(value() === 9300 && S.projectJSON().state.dimensionMarks[0].id === mark.id, '标注未跟随校准后的墙面');
+      assert(doc.querySelector('#dimensionOriginal').value === '7440' && summary.textContent.includes('7440') &&
+        summary.textContent.includes('1860') && doc.querySelector('#dimensionEditorStatus').textContent.includes('9300'),
+        '记录原图、目标尺寸和校准结果应各自明确显示');
       S.undo();
       undoSteps--;
       assert(JSON.stringify(S.getPlan()) === before && value() === 6200 &&
-        S.projectJSON().state.dimensionMarks[0].original === 7440, '撤销校准应保留之前记录的原图值');
+        S.projectJSON().state.dimensionMarks[0].original === 7440 &&
+        !doc.querySelector('#dimensionEditorStatus').textContent, '撤销校准应保留原图值并清除成功提示');
 
       const move = doc.querySelector('#dimensionMove');
       assert(!move.hidden, '垂直墙面的标注应允许移动终点墙');
-      doc.querySelector('#dimensionOriginal').value = '6500';
+      target.value = '6500';
       move.click();
       const moved = S.getPlan();
       if (JSON.stringify(moved) !== before) undoSteps++;
@@ -526,6 +533,62 @@ async function main(){
     }
     assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original), '撤销未恢复校准前项目');
     return '墙面标注与原图值可保存，等比校准与移动终点墙均更新坐标并可撤销';
+  });
+
+  await check('floorPlan.furniturePlacementAndLabelFit', () => {
+    const S = studio(), w = win(), doc = w.document, {store} = w.App;
+    const before = S.projectJSON(), undo = store.undoStack.slice(), redo = store.redoStack.slice();
+    const search = doc.querySelector('#libSearch'), priorQuery = search.value;
+    const fixture = dimensionFixture(before.plan);
+    fixture.rooms[0].name = 'Children’s bedroom with a long descriptive name';
+    fixture.rooms[1].name = 'Children’s outdoor bay window with a long descriptive name';
+    fixture.rooms[1].outdoor = true;
+    try {
+      assert(S.applyPlan(fixture, {freshState:true, clearFurniture:true}).ok, '家具测试方案安装失败');
+      const label = id => doc.querySelector(`[data-room-label="${id}"] text`);
+      const roomA = label('west'), roomB = label('east');
+      assert(roomA?.textContent.includes('…') && roomB?.textContent.includes('…'), '长房间名应在可用宽度内省略');
+      assert(roomA.getBBox().x + roomA.getBBox().width < roomB.getBBox().x, '相邻房间名不应重叠');
+      assert(doc.querySelector('#gRooms [data-room="west"]').parentElement.getAttribute('aria-label').includes(fixture.rooms[0].name),
+        '房间图形应保留完整名称');
+
+      search.value = '单人沙发';
+      search.dispatchEvent(new w.Event('input'));
+      const add = () => doc.querySelector('#libItems [data-key="0"]').click();
+      S.select({kind:'room', id:'west'}); add();
+      S.select({kind:'room', id:'west'}); add();
+      const [first,second] = S.getState().furniture;
+      assert(first.id !== second.id && (first.cx !== second.cx || first.cy !== second.cy),
+        '连续添加同款家具应在房间允许时避开重叠');
+      assert(!doc.querySelector('#panel [role="status"]'), '合法室内摆放不应提示异常');
+      S.select({kind:'room', id:'east'}); add();
+      assert(!doc.querySelector('#panel [role="status"]'), '已划分的室外区域应允许正常摆放');
+      const edit = (id, value) => {
+        const field = doc.querySelector(id);
+        field.value = value;
+        field.dispatchEvent(new w.Event('change'));
+      };
+      const fullName = 'A long furniture name that must stay available in full';
+      edit('#fName', fullName);
+      const item = doc.querySelector(`#gFurn [data-fid="${S.getState().furniture.at(-1).id}"]`);
+      assert(item.getAttribute('aria-label') === fullName && item.querySelector('title').textContent === fullName,
+        '长家具名应可完整获取');
+      edit('#fX', '60000');
+      assert(doc.querySelector('#panel [role="status"]')?.textContent.includes('已绘制区域') &&
+        S.getState().furniture.at(-1).cx === 60000, '户型外摆放应提示且可保留');
+      edit('#fW', '100000');
+      assert(doc.querySelector('#panel [role="status"]')?.textContent.includes('毫米') &&
+        S.getState().furniture.at(-1).w === 100000, '极端尺寸应提示且可保留');
+    } finally {
+      S.applyPlan(before.plan, {history:false});
+      store.state = store.fixState(before.state);
+      store.undoStack.splice(0, store.undoStack.length, ...undo);
+      store.redoStack.splice(0, store.redoStack.length, ...redo);
+      store.afterHistory();
+      search.value = priorQuery;
+      search.dispatchEvent(new w.Event('input'));
+    }
+    return '房间名避让、家具重复添加、室外摆放与异常提示';
   });
 
   await check('walk.projectViewpoints', () => {
@@ -567,6 +630,76 @@ async function main(){
     const v = S.is3D();
     assert(typeof v === 'boolean', 'is3D() 返回 ' + typeName(v) + '，期望 boolean');
     return 'is3D() = ' + v;
+  });
+
+  await check('projects.newNameForm', () => {
+    const w = win(), doc = w.document, {projects} = w.App;
+    const click = selector => doc.querySelector(selector).click();
+    const original = projects.activeProjectId;
+    click('#projectToggle');
+    try {
+      click('#projectNew');
+      assert(projects.activeProjectId === original, '尚未确认名称就切换了项目');
+      const form = doc.querySelector('#projectRenameForm');
+      const input = doc.querySelector('#projectRenameInput');
+      assert(!form.hidden && input.value === '新项目', '新建项目未提供名称');
+      assert(form.querySelector('[type="submit"]').textContent === '创建', '表单没有标明创建动作');
+      click('#projectRenameCancel');
+      assert(form.hidden && projects.activeProjectId === original, '取消表单改变了项目');
+    } finally { click('#projectClose'); }
+    return '新建项目先提供名称，取消后保留当前项目';
+  });
+
+  await check('ceiling.activePlanTabKeepsDraft', () => {
+    const w = win(), doc = w.document, {ceilingEditor, plan} = w.App;
+    const click = selector => doc.querySelector(selector).click();
+    click('#ceilingMode');
+    try {
+      click('#ceilingLibrary [data-cmd="tool"][data-value="polygon"]');
+      const room = plan.roomDef(ceilingEditor.context()?.roomId);
+      assert(room && ceilingEditor.context()?.tool === 'polygon', '未进入顶面自由轮廓工具');
+      for (const offset of [-180, 180]){
+        const event = {target:doc.querySelector('#plan'), clientX:0, clientY:0};
+        const pointer = ceilingEditor.startPointer(event, {x:room.at[0] + offset, y:room.at[1]});
+        ceilingEditor.endPointer(pointer, false);
+      }
+      const draft = doc.querySelector('#ceilingSketch').innerHTML;
+      assert(draft && !doc.querySelector('#ceilingTask').hidden, '未添加顶面草稿顶点');
+      click('[data-view="2d"]');
+      assert(ceilingEditor.context()?.tool === 'polygon' &&
+        doc.querySelector('#ceilingSketch').innerHTML === draft, '再次点击 2D 平面清除了天花草稿');
+    } finally { ceilingEditor.close(); }
+    return '再次点击已选中的 2D 平面保留顶面自由轮廓草稿';
+  });
+
+  await check('files.designAndProjectJSON', async () => {
+    const w = win(), doc = w.document, S = studio(), {store, ceilingEditor} = w.App;
+    const name = '可编辑设计 / 客户版';
+    const room = S.getPlan().rooms[0];
+    const pose = {x:room.at[0], y:room.at[1], height:1.55, yaw:.5, pitch:0, roomId:room.id};
+    assert(S.applyOps([{op:'editScene',changes:[{action:'replace',path:['plan','name'],value:name}]}]).applied === 1, '测试项目重命名失败');
+    await ceilingEditor.open(room.id);
+    try { doc.querySelector('#ceilingLibrary [data-cmd="preset"][data-value="flat"]').click(); }
+    finally { ceilingEditor.close(); }
+    store.state.walk.recent = [pose];
+    store.state.renders = [{url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/Trv3yQAAAAASUVORK5CYII='}];
+    const clicks = [], anchor = w.HTMLAnchorElement.prototype;
+    const previous = anchor.click;
+    anchor.click = function(){
+      if (this.download) clicks.push({name:this.download, json:w.fetch(this.href).then(r => r.json())});
+    };
+    try {
+      doc.querySelector('#exportProj').click();
+      doc.querySelector('#exportJson').click();
+    } finally { anchor.click = previous; }
+    assert(clicks.length === 2 && clicks[0].name === '可编辑设计 _ 客户版 - 完整项目.json' &&
+      clicks[1].name === '可编辑设计 _ 客户版 - 设计.json', '两个导出文件名无法区分或含路径分隔符');
+    const [project, design] = await Promise.all(clicks.map(item => item.json));
+    assert(project.version === 2 && design.version === 2 && project.renders.length === 1 &&
+      project.state.walk.recent[0].roomId === room.id, '完整项目缺少效果图或漫游记录');
+    assert(design.plan.name === name && design.state.ceiling.rooms[room.id]?.zones.length === 1 && !('renders' in design.state) &&
+      !('walk' in design.state), '设计导出内容范围错误');
+    return '文件名包含项目名，两种导出保留天花设计，完整项目另含效果图与漫游机位';
   });
 
   finished = true;

@@ -18,11 +18,11 @@
   };
   const title = k => names[k] ? tr(...names[k]) : k;
   const lights = ['downlight','spot','pendant','linear','track'], equipment = ['vent','access','curtain'];
-  const dimDefaults = {downlight:[90,90,0],spot:[100,100,40],pendant:[400,400,600],linear:[1200,45,0],track:[1500,55,0],vent:[1000,120,0],access:[450,450,0],curtain:[1600,180,0]};
+  const dimDefaults = model.fixtureDefaults;
   const groups = {zone:'zones',edge:'edges',fixture:'fixtures'};
   const defaultCeilingColor = () => model.defaultColor || '#ffffff';
-  let presetWidth=400, arrayType='downlight', projectId='', lastPreset=null;
-  let enabled=false, overlay=false, roomId='', selected=null, tool=null, points=[], hoverPoint=null, dragPreview=null, edgeIndex=0, count=4;
+  let presetWidth=400, arrayType='downlight', projectId='', lastPreset=null, pendingPreset=null;
+  let enabled=false, overlay=false, roomId='', selected=null, tool=null, points=[], hoverPoint=null, dragPreview=null, edgeIndex=0, vertexIndex=0, count=4;
   const active = () => enabled && !App.io.is3D?.();
   const rooms = () => App.store.ROOMS.filter(r => !r.bay);
   const firstRoom = () => rooms().find(r=>!r.outdoor) || rooms()[0];
@@ -45,16 +45,16 @@
     if(holeIndex>=0 && !selectedObject()?.holes?.[holeIndex])holeIndex=-1;
   }
   function presetActive(type){return Boolean(lastPreset && lastPreset.type===type && lastPreset.room===roomId && selected?.kind==='zone' && lastPreset.id===selected.id && !tool);}
-  function clearTool(){ tool=null; points=[]; hoverPoint=null; dragPreview=null; }
+  function clearTool(){ tool=null; points=[]; hoverPoint=null; dragPreview=null; pendingPreset=null; }
   function setRoom(id){
     if(!rooms().some(r=>r.id===id))return;
-    if(roomId!==id){roomId=id; selected=null; clearTool(); edgeIndex=0;holeIndex=-1;}
+    if(roomId!==id){roomId=id; selected=null; clearTool(); edgeIndex=vertexIndex=0;holeIndex=-1;}
   }
   function enter(id,kind,itemId){
     const was=active(); enabled=true;
     const selectedRoom=App.store.ui.sel?.kind==='room'?App.store.ui.sel.id:'';
     setRoom(id||selectedRoom||roomId||firstRoom()?.id);
-    if(kind && groups[kind]){selected={kind,id:itemId};edgeIndex=0;holeIndex=-1;}
+    if(kind && groups[kind]){selected={kind,id:itemId};edgeIndex=vertexIndex=0;holeIndex=-1;}
     if(!was)App.interact.setTool('select');
     syncView();
   }
@@ -65,15 +65,14 @@
   function close(){enabled=false;clearTool();syncView();}
   function syncView(){
     document.body.classList.toggle('ceiling-edit',active());
-    if(!active())clearTool();
     App.draw2d.renderAll();
   }
   function context(){return active()?{roomId,kind:selected?.kind||'room',id:selected?.id||roomId,tool:tool||'select'}:null;}
-  function select(kind,id){selected=kind&&id?{kind,id}:null;edgeIndex=0;holeIndex=-1;render();App.panel.renderPanel();}
+  function select(kind,id){selected=kind&&id?{kind,id}:null;edgeIndex=vertexIndex=0;holeIndex=-1;render();App.panel.renderPanel();}
   function change(patch,nextSelection=selected){
     if(isPreview()||!roomDef())return false;
     try{
-      const next=model.apply(state(),roomDef(),patch);
+      const next=model.apply(state(),roomDef(),patch,{checkGeometry:true});
       selected=nextSelection;
       App.store.mutate(()=>{App.store.state.ceiling=next;});
       return true;
@@ -200,11 +199,27 @@
   function button(label,cmd,value='',on=false){return `<button type="button" class="btn ${on?'on':''}" data-cmd="${cmd}" data-value="${esc(value)}"${(cmd==='tool'||cmd==='preset')?' aria-pressed="'+on+'"':''}>${label}</button>`;}
   const actionButtons=(vs,cmd)=>vs.map(v=>button(toolThumbnail(v)+'<span>'+title(v)+'</span>',cmd,v,cmd==='preset'?presetActive(v):tool===v)).join('');
   function options(list,value){return list.map(([key,label])=>`<option value="${esc(String(key))}" ${String(key)===String(value)?'selected':''}>${esc(label)}</option>`).join('');}
+  function presetChoices(def){
+    if(!pendingPreset||!def||isPreview())return '';
+    const zones=roomData().zones;
+    if(!zones.length)return '';
+    return `<section id="ceilingPresetChoices" aria-labelledby="ceilingPresetChoiceTitle">
+      <h4 id="ceilingPresetChoiceTitle">${tr('应用「','Apply “')}${esc(title(pendingPreset.type))}${tr('」','”')}</h4>
+      <label class="ceil-field">${tr('要替换的顶面','Ceiling surface to replace')}<select id="ceilingPresetTarget">
+        ${options(zones.map(zone=>[zone.id,`${zone.name} · ${zone.drop} mm`]),pendingPreset.target)}
+      </select></label>
+      <div class="ceil-buttons">${button(tr('替换所选顶面','Replace selected surface'),'preset-replace')}</div>
+      <label class="ceil-field">${tr('新增层下吊量（mm）','New layer drop (mm)')}<input id="ceilingPresetDrop"
+        type="number" min="0" max="${model.baseHeight(state(),def.id)-1}" step="any" required value="${pendingPreset.drop}"></label>
+      <div class="ceil-buttons">${button(tr('新增顶面','Add surface'),'preset-add')}${button(tr('取消','Cancel'),'preset-cancel')}</div>
+    </section>`;
+  }
   function library(){
     const lib=$('#ceilingLibrary'), available=rooms(), def=roomDef();
     lib.innerHTML=`<h3>${tr('天花板设计','Ceiling design')}</h3><label class="ceil-field">${tr('设计房间','Room')}<select id="ceilingRoom">${options(available.map(r=>[r.id,roomName(r)]),roomId)}</select></label>
     <div class="ceil-buttons">${button(tr('室内 3D 预览','Preview in 3D'),'preview')}${button(tr('3D 样式展示','3D style gallery'),'showcase')}</div>
     <h4>${tr('吊顶造型','Ceiling shapes')}</h4><label class="ceil-field">${tr('边宽 / 悬浮顶退距（mm）','Band width / island inset (mm)')}<input id="ceilingPresetWidth" type="number" min="10" max="10000" step="10" value="${presetWidth}"></label><div class="ceiling-tools fixture-catalog">${actionButtons(['flat','perimeter','island'],'preset')}${actionButtons(['side','rectangle','polygon'],'tool')}</div>
+    ${presetChoices(def)}
     <h4>${tr('灯具','Lights')}</h4><div class="ceiling-tools fixture-catalog">${actionButtons(lights,'tool')}</div>
     <h4>${tr('顶部设备','Ceiling equipment')}</h4><div class="ceiling-tools fixture-catalog">${actionButtons(equipment,'tool')}</div>
     <h4>${tr('等距布灯','Light array')}</h4><div class="ceiling-tools">${button(tr('两点等距布置','Place between two points'),'tool','array',tool==='array')}</div>
@@ -213,7 +228,7 @@
   }
   function render(){
     const project=App.projects.activeProjectId;
-    if(projectId && project && project!==projectId){roomId='';selected=null;edgeIndex=0;holeIndex=-1;clearTool();}
+    if(projectId && project && project!==projectId){roomId='';selected=null;edgeIndex=vertexIndex=0;holeIndex=-1;clearTool();}
     if(project)projectId=project;
     const edit=active(); if(edit)reconcile();
     document.body.classList.toggle('ceiling-edit',edit);
@@ -247,7 +262,9 @@
         const vertices=contour.poly.map((v,i)=>dragPreview?.vertex===i?dragPreview.point:v);
         pieces.push(`<path d="${closed(model.outline({...contour,poly:vertices}))}" class="ceiling-outline"/>`);
         if(!dragPreview)pieces.push(`<path d="${path(model.edgePoints(contour,edgeIndex))}" fill="none" stroke="#cf8643" stroke-width="3" vector-effect="non-scaling-stroke"/>`);
-        vertices.forEach(([x,y],i)=>pieces.push(`<circle data-ceil-vertex="${i}" cx="${x}" cy="${y}" r="${4*k}" fill="#fff" stroke="#b5653a" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`));
+        vertices.forEach(([x,y],i)=>pieces.push(`<circle data-ceil-vertex="${i}" cx="${x}" cy="${y}" r="${16*k}" fill="transparent" aria-hidden="true"/>
+          <circle cx="${x}" cy="${y}" r="${4*k}" fill="${i===vertexIndex?'#b5653a':'#fff'}" stroke="#b5653a"
+            stroke-width="1.5" vector-effect="non-scaling-stroke" pointer-events="none" aria-hidden="true"/>`));
       }
     }
     if(dragPreview && dragPreview.vertex===undefined)pieces.push(`<circle cx="${dragPreview.point[0]}" cy="${dragPreview.point[1]}" r="${7*k}" class="ceiling-outline"/>`);
@@ -284,11 +301,15 @@
   function boundary(z){return holeIndex>=0&&z.holes?.[holeIndex]?{poly:z.holes[holeIndex]}:z;}
   function edgeFields(z){
     const poly=edgesList(boundary(z));edgeIndex=Math.min(edgeIndex,Math.max(0,poly.length-1));
+    vertexIndex=Math.min(vertexIndex,poly.length-1);
     const arc=holeIndex<0?z.arcs?.find(a=>a.edge===edgeIndex):null;
     return `<section><h3>${tr('轮廓与边部','Outline and edges')}</h3><div class="ceil-fields">${pick(tr('轮廓','Boundary'),'boundary',[[-1,tr('外轮廓','Outer outline')],...(z.holes||[]).map((_,i)=>[i,tr('内圈','Opening')+' '+(i+1)])],holeIndex)}${pick(tr('边段','Edge'),'edgeIndex',poly.map((_,i)=>[i,tr('边','Edge')+' '+(i+1)]),edgeIndex)}
     ${holeIndex<0?field(tr('圆弧角度（°）','Arc sweep (°)'),'sweep',arc?.sweep||0,'number','min="-180" max="180" step="any"'):''}</div>
     <div class="ceil-buttons">${button(tr('沿此边加灯槽','Add light cove'),'edge','cove')}${button(tr('沿此边加收边','Add trim'),'edge','trim')}${button(title('hole'),'tool','hole',tool==='hole')}</div>
-    <p class="ceiling-note">${tr('拖动外轮廓节点调整边界。圆弧角度为 0 时按直线绘制。','Drag outer vertices to reshape. Set the sweep to 0 for a straight edge.')}</p></section>`;
+    <p class="ceiling-note">${tr('拖动节点或输入坐标调整轮廓。圆弧角度为 0 时按直线绘制。','Drag a vertex or edit its coordinates. A sweep of 0 gives a straight edge.')}</p>
+    <div class="ceil-fields">${pick(tr('编辑节点','Edit vertex'),'vertex',poly.map((_,i)=>[i,tr('节点','Vertex')+' '+(i+1)]),vertexIndex,true)}
+    ${field(tr('节点 X（mm）','Vertex X (mm)'),'vertexX',poly[vertexIndex][0],'number','step="any"')}
+    ${field(tr('节点 Y（mm）','Vertex Y (mm)'),'vertexY',poly[vertexIndex][1],'number','step="any"')}</div></section>`;
   }
   function renderPanel(){
     const panel=$('#panel'), def=roomDef();
@@ -311,6 +332,9 @@
       ${pick(tr('安装面','Mounting surface'),'zoneId',[['',tr('随所在顶面','Auto by position')],...d.zones.map(zone=>[zone.id,zone.name])],z.zoneId||'',true)}
       ${lights.includes(z.type)?field(tr('色温（K）','Color temperature (K)'),'kelvin',z.kelvin??3000,'number','min="1800" max="10000"')+field(tr('亮度（%）','Intensity (%)'),'intensity',z.intensity??100,'number','min="0" max="100"')+(z.type==='spot'?field(tr('倾角（°）','Tilt (°)'),'tilt',z.tilt??0,'number','min="-85" max="85"'):''):''}</div>
       <p class="ceiling-note">${tr('安装面标高','Mount elevation')} ${Math.round(model.fixtureHeight(state(),def,z))} mm</p>`;
+      if(model.fixturePlacementProblem(state(),def,z)){
+        html+=`<p class="ceiling-note" role="status">${tr('此灯具的范围超出了房间或安装面，请调整位置、尺寸或旋转角度。','This fixture extends beyond its room or mounting surface. Adjust its position, size, or rotation.')}</p>`;
+      }
     }else{
       html+=`<div class="ceil-fields">${field(tr('宽度（mm）','Width (mm)'),'width',z.width,'number','min="1"')}${field(tr('深度（mm）','Depth (mm)'),'depth',z.depth,'number','min="1"')}${field(tr('颜色','Color'),'color',z.color||'#f7d59b','color')}</div>`;
     }
@@ -343,15 +367,53 @@
     const keyboard=trigger?.matches(':focus-visible');
     if(presetActive(type)){
       clearTool();select(null,null);
-    }else{
-      try{
-        const zone=model.preset(type,def,{id:uid(),width:presetWidth,drop:180,color:defaultCeilingColor()});
-        zone.name=title(type);
-        clearTool();holeIndex=-1;edgeIndex=0;lastPreset={room:roomId,type,id:zone.id};
-        if(change({zones:[...roomData().zones,zone]},{kind:'zone',id:zone.id}))App.panel.closeDrawers();
-      }catch(e){App.core.toast(e.message);}
-    }
+    }else if(roomData().zones.length){
+      pendingPreset={type,target:selected?.kind==='zone'?selected.id:roomData().zones[0].id,
+        drop:Math.min(180,model.baseHeight(state(),def.id)-1)};
+      render();
+      const choices=$('#ceilingPresetChoices');
+      choices?.scrollIntoView({block:'nearest'});
+      if(keyboard)$('#ceilingPresetTarget')?.focus({preventScroll:true});
+      return;
+    }else applyPreset(type);
     if(keyboard&&!App.core.narrow())$('#ceilingLibrary').querySelector(`[data-cmd="preset"][data-value="${CSS.escape(type)}"]`)?.focus({preventScroll:true});
+  }
+  function applyPreset(type,existing,drop=180){
+    const def=roomDef(), data=roomData();
+    if(!def||isPreview())return;
+    try{
+      const zone=model.preset(type,def,{id:existing?.id||uid(),width:presetWidth,drop:existing?.drop??drop,
+        color:existing?.color||defaultCeilingColor(),name:title(type)});
+      if(existing?.finish)zone.finish=existing.finish;
+      const patch={zones:existing?data.zones.map(z=>z.id===existing.id?zone:z):[...data.zones,zone]};
+      if(existing){
+        patch.edges=data.edges.map(edge=>{
+          if(edge.zoneId!==existing.id)return edge;
+          const from=edge.hole===undefined?existing:{poly:existing.holes[edge.hole]};
+          const to=edge.hole===undefined?zone:{poly:zone.holes?.[edge.hole]};
+          const previous=JSON.stringify(model.edgePoints(from,edge.edge));
+          const index=to.poly?.findIndex((_,i)=>JSON.stringify(model.edgePoints(to,i))===previous)??-1;
+          if(index===-1)throw new Error(tr('替换会改变灯槽或收边所在的边段，请先调整该附属对象。','Replacing this surface changes a cove or trim edge. Adjust that edge first.'));
+          return {...edge,edge:index};
+        });
+      }
+      if(change(patch,{kind:'zone',id:zone.id})){
+        clearTool();holeIndex=-1;edgeIndex=vertexIndex=0;lastPreset={room:roomId,type,id:zone.id};
+        render();App.panel.renderPanel();App.panel.closeDrawers();
+      }
+    }catch(e){App.core.toast(e.message);}
+  }
+  function confirmPreset(command){
+    if(!pendingPreset)return;
+    const {type,target}=pendingPreset;
+    if(command==='preset-cancel'){pendingPreset=null;render();return;}
+    if(command==='preset-replace'){
+      const selectedZone=roomData().zones.find(z=>z.id===target);
+      if(selectedZone)applyPreset(type,selectedZone);
+    }else if(command==='preset-add'){
+      const field=$('#ceilingPresetDrop');
+      if(field.reportValidity())applyPreset(type,null,field.valueAsNumber);
+    }
   }
   function addEdge(type){
     const z=selectedObject();if(!z||selected.kind!=='zone')return;
@@ -380,6 +442,23 @@
     const fixtures=locations.map(([x,y])=>({id:uid(),type,x,y,length,width,hang,rotation:0}));
     return change({fixtures:[...data.fixtures,...fixtures]},{kind:'fixture',id:fixtures[0].id});
   }
+  function fixturePoint(fixture,p){
+    const position={...fixture,x:Math.round(p.x/10)*10,y:Math.round(p.y/10)*10};
+    return App.store.ui.layers.wallSnap
+      ? model.snapFixture(state(),roomDef(),position,8/App.store.view.s)
+      : [position.x,position.y];
+  }
+  function fixtureToolPoint(type,[x,y]){
+    const [length,width]=dimDefaults[type];
+    return fixturePoint({type,length,width},{x,y});
+  }
+  function setVertex(zone,index,point){
+    const edited=boundary(zone).poly.map((v,i)=>i===index?point:v);
+    const next=zone.holes?.[holeIndex]?{...zone,holes:zone.holes.map((h,i)=>i===holeIndex?edited:h)}:{...zone,poly:edited};
+    delete next.preset;
+    vertexIndex=index;
+    replaceItem('zone',next);
+  }
   function tap(d){
     if(isPreview())return;
     if(!tool){
@@ -388,11 +467,12 @@
       if(dest)select(d.itemKind,d.id);else select(null,null);
       return;
     }
-    const p=d.point, def=roomDef();
+    const fixtureType=tool==='array'?arrayType:tool;
+    const p=dimDefaults[fixtureType]?fixtureToolPoint(fixtureType,d.origin):d.point, def=roomDef();
     if(!def)return;
-    if(!isInside(p,def.poly)&&!App.ceilingModel.outline(def).some(v=>Math.hypot(v[0]-p[0],v[1]-p[1])<1)){
-      // Boundary points are validated against the complete polygon by the model on commit.
-      if(!freeTool()&&tool!=='rectangle'&&tool!=='array'&&tool!=='side')return App.core.toast(tr('请在当前房间内放置','Place inside the selected room'));
+    if(dimDefaults[fixtureType]&&!isInside(d.origin,def.poly)){
+      App.core.toast(tr('请在当前房间内放置','Place inside the selected room'));
+      return;
     }
     if(tool==='side'){
       const poly=def.vertices||def.poly, outline=model.outline(def);
@@ -437,37 +517,44 @@
   }
   function startPointer(e,p){
     const target=e.target.closest('[data-ceil-id]'),vertex=e.target.closest('[data-ceil-vertex]');
+    const zone=vertex&&selectedObject();
+    const vertices=zone?boundary(zone).poly:null;
+    const nearest=vertices?.reduce((best,[x,y],index)=>{
+      const distance=Math.hypot(x-p.x,y-p.y);
+      return distance<best.distance ? {index,distance} : best;
+    },{distance:Infinity});
     return {kind:'ceiling',sx:e.clientX,sy:e.clientY,point:snap(p),x0:App.store.view.x0,y0:App.store.view.y0,
       room:target?.dataset.ceilRoom||e.target.closest('[data-room]')?.dataset.room,id:target?.dataset.ceilId,itemKind:target?.dataset.ceilKind,
-      vertex:vertex?Number(vertex.dataset.ceilVertex):undefined,moved:false,origin:[p.x,p.y],panning:false};
+      vertex:nearest?.index,moved:false,origin:[p.x,p.y],panning:false};
   }
   function movePointer(d,e,p,far){
     if(!d.moved&&!far)return;
     d.moved=true;
     if(!tool&&!isPreview()&&(d.vertex!==undefined||d.itemKind==='fixture')){
       if(d.vertex===undefined && (selected?.id!==d.id||roomId!==d.room)){setRoom(d.room);select('fixture',d.id);}
-      const f=d.vertex===undefined?selectedObject():null;
-      const dest=f?{x:f.x+p.x-d.origin[0],y:f.y+p.y-d.origin[1]}:p;
-      dragPreview={vertex:d.vertex,point:snap(dest)};renderSketch();return;
+      const obj=selectedObject();
+      if(!obj)return;
+      const [x,y]=d.vertex===undefined?[obj.x,obj.y]:boundary(obj).poly[d.vertex];
+      const dest={x:x+p.x-d.origin[0],y:y+p.y-d.origin[1]};
+      dragPreview={vertex:d.vertex,point:d.vertex===undefined?fixturePoint(obj,dest):snap(dest)};renderSketch();return;
     }
     d.panning=true;App.core.svg.classList.add('panning');
     App.store.view.x0=d.x0-(e.clientX-d.sx)/App.store.view.s;App.store.view.y0=d.y0-(e.clientY-d.sy)/App.store.view.s;App.interact.applyView();
   }
   function endPointer(d,cancel){
     const ghost=dragPreview;dragPreview=null;
-    if(!cancel&&!d.moved&&d.vertex===undefined)tap(d);
+    if(!cancel&&!d.moved){
+      if(d.vertex===undefined)tap(d);
+      else {vertexIndex=d.vertex;App.panel.renderPanel();}
+    }
     if(!cancel&&ghost&&!isPreview()){
       const obj=selectedObject();
       if(obj && selected.kind==='fixture' && d.id===obj.id)replaceItem('fixture',{...obj,x:ghost.point[0],y:ghost.point[1]});
-      else if(obj && selected.kind==='zone' && ghost.vertex!==undefined){
-        const edited=boundary(obj).poly.map((v,i)=>i===ghost.vertex?ghost.point:v);
-        const next=obj.holes?.[holeIndex]?{...obj,holes:obj.holes.map((h,i)=>i===holeIndex?edited:h)}:{...obj,poly:edited};
-        delete next.preset;replaceItem('zone',next);
-      }
+      else if(obj && selected.kind==='zone' && ghost.vertex!==undefined)setVertex(obj,ghost.vertex,ghost.point);
     }
     renderSketch();
   }
-  function hover(p){if(tool && points.length){hoverPoint=snap(p);renderSketch();}}
+  function hover(p){if(tool && points.length){hoverPoint=tool==='array'?fixtureToolPoint(arrayType,[p.x,p.y]):snap(p);renderSketch();}}
   function key(e){
     const k=e.key.toLowerCase(), mod=e.metaKey||e.ctrlKey;
     if(k==='enter' && e.target.closest?.('button'))return false;
@@ -501,6 +588,7 @@
     if(isPreview())return;
     if(cmd==='showcase'){if(roomDef())App.ceilingShowcase.open(roomId);return;}
     if(cmd==='preset')preset(value,target);
+    else if(cmd.startsWith('preset-'))confirmPreset(cmd);
     else if(cmd==='tool')startTool(value,target);
     else if(cmd==='edge')addEdge(value);
     else if(cmd==='back'){clearTool();select(null,null);}
@@ -522,9 +610,20 @@
     if(key==='arrayType'){arrayType=value;return;}
     if(key==='roomHeight'){change({baseHeight:value});return;}
     if(key==='count'){count=Math.max(2,Math.min(32,Math.round(value)));return;}
-    if(key==='boundary'){holeIndex=Number(value);edgeIndex=0;renderSketch();renderPanel();return;}
+    if(key==='boundary'){holeIndex=Number(value);edgeIndex=vertexIndex=0;renderSketch();renderPanel();return;}
     if(key==='edgeIndex'){edgeIndex=Number(value);renderSketch();renderPanel();return;}
+    if(key==='vertex'){
+      vertexIndex=Number(value);renderSketch();renderPanel();
+      $('#panel [data-ceil-field="vertex"]')?.focus({preventScroll:true});
+      return;
+    }
     const obj=selectedObject();if(!obj)return;
+    if(key==='vertexX'||key==='vertexY'){
+      const point=[...boundary(obj).poly[vertexIndex]];
+      point[key==='vertexX'?0:1]=value;
+      setVertex(obj,vertexIndex,point);
+      return;
+    }
     const updated={...obj};
     if(key==='presetWidth'){
       try{
@@ -547,7 +646,10 @@
   $('#panel').addEventListener('change',handleField);
   $('#ceilingLibrary').addEventListener('change',e=>{if(e.target.id==='ceilingPresetWidth'){
       const v=e.target.valueAsNumber;if(Number.isFinite(v)&&v>=10&&v<=10000)presetWidth=v;else e.target.value=presetWidth;
-    }else if(e.target.id==='ceilingRoom'){setRoom(e.target.value);render();App.panel.renderPanel();}});
+    }else if(e.target.id==='ceilingRoom'){setRoom(e.target.value);render();App.panel.renderPanel();}
+    else if(pendingPreset&&e.target.id==='ceilingPresetTarget')pendingPreset.target=e.target.value;
+    else if(pendingPreset&&e.target.id==='ceilingPresetDrop'&&e.target.checkValidity())pendingPreset.drop=e.target.valueAsNumber;
+  });
   $('#ceilingMode').onclick=()=>{
     if(active()){close();return;}
     open();App.assistant.chatPane?.('props');
@@ -557,6 +659,5 @@
   $('#ceilingOverlay').onclick=()=>setOverlay(!overlay);
   $('#ceilingFinish').onclick=finishPolygon;
   $('#ceilingCancel').onclick=()=>{clearTool();render();App.panel.renderPanel();};
-  document.querySelector('[data-view="2d"]').addEventListener('click',()=>{if(active())close();});
   App.ceilingEditor={active,context,open,focus:open,close,syncView,render,renderPanel,renderSketch,startPointer,movePointer,endPointer,hover,key,overlayVisible:()=>overlay,setOverlay,toolThumbnail};
 })();

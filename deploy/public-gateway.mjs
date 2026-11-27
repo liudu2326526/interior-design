@@ -155,8 +155,8 @@ function isSameOrigin(req, mount) {
 async function sendEditor(req, res, owner, prefix) {
   const source = await readFile(editorFile, 'utf8');
   const authControl = owner
-    ? `<form method="post" action="${prefix}/auth/logout"><button class="btn" type="submit" title="退出 AI 登录">退出 AI</button></form>`
-    : `<a class="btn" style="text-decoration:none" href="${prefix}/auth/login" title="登录以使用 AI 功能">登录 AI</a>`;
+    ? `<form method="post" action="${prefix}/auth/logout"><button class="btn" type="submit" data-en="Sign out of AI" title="退出 AI 登录" data-en-title="Sign out of AI">退出 AI</button></form>`
+    : `<a class="btn" style="text-decoration:none" href="${prefix}/auth/login" data-en="Sign in to AI" title="登录以使用 AI 功能" data-en-title="Sign in to use AI features">登录 AI</a>`;
   const html = source
     .replace('</head>', `<meta name="studio-public-access" content="${owner ? 'owner' : 'guest'}">\n<meta name="studio-path-prefix" content="${prefix}">\n</head>`)
     .replace('<details class="menu">', `${authControl}\n    <details class="menu">`);

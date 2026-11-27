@@ -7,6 +7,13 @@
 
   /* ======================= 导入导出 ======================= */
   function download(name, blob){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+  function projectFileName(label, extension){
+    const {tr} = App.core;
+    const cleaned = String(App.store.PLAN.name || '').replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, '_')
+      .replace(/^[.\s]+|[.\s]+$/g, '');
+    const name = [...cleaned].slice(0, 56).join('').trimEnd() || tr('未命名项目', 'Untitled project');
+    return `${name} - ${label}.${extension}`;
+  }
   function dataURLBlob(url){
     const [head, b64] = url.split(',');
     const mime = (head.match(/data:([^;]+)/) || [])[1] || 'image/png';
@@ -54,9 +61,14 @@
   }
 
   async function exportPNG(){
-    const url = await studioShot({scale:is3D() ? 2 : 1, clean:is3D()});
-    if (!url) return App.core.toast(App.core.tr('导出失败', 'Export failed'));
-    download(App.core.tr('户型装修方案', 'floor-plan-design') + '.png', dataURLBlob(url));
+    const {tr, toast} = App.core;
+    const scene = is3D();
+    const ceiling = App.ceilingEditor?.active() || App.ceilingEditor?.overlayVisible();
+    const label = scene ? tr('3D 场景', '3D view') : ceiling ? tr('顶面视图', 'Ceiling view') : tr('户型平面', 'Floor plan');
+    const name = projectFileName(label, 'png');
+    const url = await studioShot({scale:scene ? 2 : 1, clean:scene});
+    if (!url) return toast(tr('图片导出失败。', 'Could not export the image.'));
+    download(name, dataURLBlob(url));
   }
 
   const dwgButton = App.core.$('#exportDwg');
@@ -67,12 +79,12 @@
     if (dwgButton.hidden || dwgButton.disabled) return;
     const {tr, toast, studioPath} = App.core;
     dwgButton.disabled = true;
-    toast(tr('正在生成 DWG…', 'Generating DWG…'));
+    toast(tr('正在生成户型平面 DWG…', 'Generating the floor plan DWG…'));
     try {
       const plan = App.store.PLAN;
       const {furniture, rooms, demolished} = App.store.state;
-      const name = (plan.name || '').trim().replace(/\.dwg$/i, '').replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, '_')
-        .replace(/^[.\s]+|[.\s]+$/g, '').slice(0, 100) || tr('户型装修方案', 'floor-plan-design');
+      const isCeilingView = App.ceilingEditor?.active() || App.ceilingEditor?.overlayVisible();
+      const name = projectFileName(tr('户型平面', 'Floor plan'), 'dwg');
       const response = await fetch(studioPath('/api/export/dwg'), {
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -90,8 +102,10 @@
       if (!/^AC10\d{2}$/.test(await file.slice(0, 6).text())){
         return toast(tr('服务返回的文件无法识别为 DWG。', 'The server response is not a DWG file.'));
       }
-      download(name + '.dwg', file);
-      toast(tr('已生成 DWG，开始下载。', 'DWG generated. Download started.'));
+      download(name, file);
+      toast(isCeilingView
+        ? tr('户型平面 DWG 开始下载。天花请导出设计 JSON 或当前视图 PNG。', 'Floor plan DWG download started. For ceiling design, export design JSON or the current view as PNG.')
+        : tr('户型平面 DWG 开始下载。', 'Floor plan DWG download started.'));
     } catch (error) {
       toast(tr('DWG 导出中断，请检查服务连接后重试。', 'DWG export was interrupted. Check the server and try again.'));
     } finally {
@@ -191,13 +205,16 @@
   App.core.$('#exportProj').onclick = () => {
     const {renders, ...rest} = App.store.state;
     const doc = {version:2, plan:App.core.deepCopy(App.store.PLAN), state:App.core.deepCopy(rest), renders:App.core.deepCopy(renders || [])};
-    download(App.core.tr('户型装修项目', 'floor-plan-project') + '.json',
+    download(projectFileName(App.core.tr('完整项目', 'Full project'), 'json'),
       new Blob([JSON.stringify(doc, null, 2)], {type:'application/json'}));
   };
   App.core.$('#importProj').onclick = () => App.core.$('#fileIn').click();
-  App.core.$('#exportJson').onclick = () => download(App.core.tr('户型装修方案', 'floor-plan-design') + '.json',
-    new Blob([JSON.stringify({version:2, plan:App.store.PLAN, state: App.store.state}, null, 2)], {type:'application/json'}));
-  App.core.$('#importJson').onclick = () => App.core.$('#fileIn').click();
+  App.core.$('#exportJson').onclick = () => {
+    const {renders, walk, ...design} = App.store.state;
+    const doc = {version:2, plan:App.store.PLAN, state:design};
+    download(projectFileName(App.core.tr('设计', 'Design'), 'json'),
+      new Blob([JSON.stringify(doc, null, 2)], {type:'application/json'}));
+  };
   App.core.$('#fileIn').onchange = e => {
     const file = e.target.files[0]; if (!file) return;
     file.text().then(importProject).catch(() => App.core.toast(App.core.tr('读取文件失败', 'Could not read the file')));
@@ -206,7 +223,12 @@
   App.core.$('#reset').onclick = () => {
     if (confirm(App.core.tr('恢复为默认空方案？（清空户型与家具，可撤销）', 'Reset to the default empty plan? (clears plan and furniture, undoable)'))) resetProject();
   };
-  if (App.core.$('#load125c')) App.core.$('#load125c').onclick = () => loadSamplePlan();
+  App.core.$('#load125c').onclick = async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try { await loadSamplePlan(); }
+    finally { button.disabled = false; }
+  };
   // 横竖屏切换、表头换行等都会改变画布尺寸；尺寸从 0 恢复（如首次布局）时重新适应窗口
   // 其余尺寸变化（收起 / 展开面板等）保持画面中心不动
   let lastW = 0, lastH = 0;
@@ -296,8 +318,9 @@
   async function loadSamplePlan(){
     const plan = await loadPlanFile('data/125c-plan.json');
     if (!plan) return App.core.toast(App.core.tr('示例户型加载失败（file:// 打开时不可用）', 'Could not load the example (unavailable under file://)'));
-    applyPlan(plan, {resetCeiling:true});
-    App.core.toast(App.core.tr('已加载示例户型 125-C', 'Loaded the 125-C example plan'));
+    if (await App.projects.openNewProject({plan})){
+      App.core.toast(App.core.tr('已在新项目打开 125-C 示例。', 'Opened the 125-C sample in a new project.'));
+    }
   }
 
   // 导入：新版 {version:2, plan, state, renders}；旧版 {furniture,...} 按 125-C 示例户型导入（失败时退到空壳）
@@ -309,8 +332,10 @@
       if (!res.ok) return App.core.toast(App.core.tr('方案数据无效：' + res.errors[0], 'Invalid plan: ' + res.errors[0]));
       // 效果图记录：项目文件里的顶层 renders 优先，其次 state.renders。
       const inc = Array.isArray(o.renders) ? o.renders : (o.state && Array.isArray(o.state.renders) ? o.state.renders : null);
-      project = {plan:res.plan, state:{...(o.state || App.store.defaultState()), renders:inc || []}};
-      note = App.core.tr('方案已导入（含户型与家具）', 'Project imported (plan + furniture)');
+      project = {plan:res.plan, state:{...o.state, renders:inc || []}};
+      note = inc || o.state?.walk
+        ? App.core.tr('已从项目 JSON 创建新项目。', 'Created a new project from project JSON.')
+        : App.core.tr('已从设计 JSON 创建新项目。', 'Created a new project from design JSON.');
     } else if (o && Array.isArray(o.furniture)){
       // 旧文件只有家具（来自 125-C 站点）：优先套用 125-C 示例户型，取不到再退回空壳
       const sample = await loadPlanFile('data/125c-plan.json');

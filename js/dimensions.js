@@ -6,9 +6,11 @@
   const group = $('#gDims');
   const editor = $('#dimensionEditor');
   const input = $('#dimensionOriginal');
+  const target = $('#dimensionTarget');
   const status = $('#dimensionEditorStatus');
   const format = value => String(Math.round(value * 10) / 10);
   let first = null, hovered = null, activeId = null;
+  let appliedTarget = null;
   let geometry = null, geometryRevision = -1, demolitionKey = '';
   let drawnAxes = null, drawnScale = 0;
 
@@ -368,20 +370,26 @@
     const mark = {id:App.geom.uid(), axis:dx >= dy ? 'x' : 'y', a:first, b:next};
     clearDraft();
     activeId = mark.id;
-    input.value = '';
-    status.textContent = '';
+    input.value = target.value = '';
+    setStatus('');
     App.store.mutate(() => marks.push(mark));
     App.interact.setTool('select');
     // 新增标注可能需要为额外的尺寸行留出空间。
     App.interact.fitView();
+    App.core.toast(tr('已添加分段尺寸', 'Segment dimension added'));
   }
 
   const currentMark = () => App.store.state.dimensionMarks.find(mark => mark.id === activeId);
 
+  function setStatus(message, modelValue = null){
+    appliedTarget = modelValue;
+    status.textContent = message;
+  }
+
   function closeEditor(){
     activeId = null;
     editor.hidden = true;
-    status.textContent = '';
+    setStatus('');
     group.querySelectorAll('[data-dim-mark][aria-pressed="true"]').forEach(node => node.setAttribute('aria-pressed','false'));
   }
 
@@ -390,8 +398,12 @@
     const a = mark && resolve(mark.a), b = mark && resolve(mark.b);
     if (!mark || !a || !b) return closeEditor();
     const i = axisIndex(mark.axis), value = Math.abs(b[i]-a[i]);
-    const diff = mark.original ? ' · ' + tr('差 ', 'Difference ') + format(value-mark.original) + ' mm' : '';
-    $('#dimensionModel').textContent = tr('模型 ', 'Model ') + format(value) + ' mm' + diff;
+    $('#dimensionModel').textContent = tr('模型 ', 'Model ') + format(value) + ' mm';
+    $('#dimensionRecorded').textContent = mark.original
+      ? tr(`已记录原图 ${format(mark.original)} mm · 模型差 ${format(value-mark.original)} mm`,
+        `Recorded drawing ${format(mark.original)} mm · Model difference ${format(value-mark.original)} mm`)
+      : tr('尚未记录原图尺寸', 'No drawing measurement recorded');
+    if (appliedTarget !== null && Math.abs(value - appliedTarget) > .001) setStatus('');
     const supported = mark.b.kind === 'wall' && (mark.axis === 'x' ? [1,3] : [0,2]).includes(mark.b.edge) &&
       !App.plan.wallOf(mark.b.id)?.[6] && typeof App.dimensionCalibration.moveWall === 'function';
     $('#dimensionMove').hidden = !supported;
@@ -400,8 +412,8 @@
 
   function openMark(id){
     activeId = id;
-    status.textContent = '';
-    input.value = currentMark()?.original ?? '';
+    setStatus('');
+    input.value = target.value = currentMark()?.original ?? '';
     render();
   }
 
@@ -410,23 +422,31 @@
     const mark = currentMark();
     if (!mark || !input.reportValidity()) return;
     const value = input.valueAsNumber;
+    if (!target.value || target.valueAsNumber === mark.original) target.value = value;
     if (value !== mark.original) App.store.mutate(() => { mark.original = value; });
-    status.textContent = tr('已记录原图尺寸', 'Drawing dimension recorded');
+    setStatus(tr('已记录原图尺寸', 'Drawing dimension recorded'));
   }
 
   function calibrate(move){
     const mark = currentMark();
-    if (!mark || !input.reportValidity()) return;
+    if (!mark || !target.reportValidity()) return;
     const a = resolve(mark.a), b = resolve(mark.b);
     if (!a || !b) return closeEditor();
+    const value = target.valueAsNumber, i = axisIndex(mark.axis);
     if (move && mark.a.kind === 'wall' && mark.a.id === mark.b.id){
-      status.textContent = tr('两个端点在同一面墙上，请选不同的墙面', 'Pick faces on different walls');
+      setStatus(tr('两个端点在同一面墙上，请选不同的墙面', 'Pick faces on different walls'));
+      return;
+    }
+    if (Math.abs(Math.abs(b[i]-a[i]) - value) <= .001){
+      setStatus(tr('模型已是目标尺寸', 'The model already matches the target'), value);
       return;
     }
     const action = App.dimensionCalibration[move ? 'moveWall' : 'resize'];
-    const result = action(mark.axis, a, b, input.valueAsNumber, Number(mark.b.id.slice(1)));
-    if (result.ok) App.io.refit();
-    status.textContent = result.ok ? tr('模型已校准，可撤销', 'Model calibrated. Undo is available.') : result.error;
+    const result = action(mark.axis, a, b, value, Number(mark.b.id.slice(1)));
+    if (!result.ok) return setStatus(result.error);
+    App.io.refit();
+    setStatus(tr(`模型已校准至 ${format(value)} mm，可撤销`,
+      `Model calibrated to ${format(value)} mm. Undo is available.`), value);
   }
 
   group.addEventListener('click', e => {
@@ -444,6 +464,7 @@
   });
   $('#dimensionClose').onclick = closeEditor;
   $('#dimensionForm').onsubmit = updateOriginal;
+  target.oninput = () => setStatus('');
   $('#dimensionMove').onclick = () => calibrate(true);
   $('#dimensionScale').onclick = () => calibrate(false);
   $('#dimensionDelete').onclick = () => {
