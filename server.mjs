@@ -588,6 +588,15 @@ const CHAT_TEXT_MAX = 128 * 1024;
 const CHAT_TEXT_EXCERPT = 6000;
 const CHAT_TEXT_EXTENSIONS = new Set(['.txt', '.md', '.json', '.csv']);
 const CHAT_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const MAC_PDF_TEXT = `
+ObjC.import('Foundation');
+ObjC.import('PDFKit');
+function run(args) {
+  const document = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(args[0]));
+  if (!document || !document.pageCount) return '';
+  const text = ObjC.unwrap(document.pageAtIndex(0).string) || '';
+  return text.trim().slice(0, ${CHAT_TEXT_EXCERPT + 1});
+}`;
 const CHAT_CODEX_CONFIG = {
   'features.shell_tool': false,
   'features.unified_exec': false,
@@ -684,21 +693,47 @@ function validateChatFiles(attachments) {
   });
 }
 
+function pdfToolOptions(signal) {
+  return {
+    timeout: 8000, signal, killSignal: 'SIGKILL', maxBuffer: 64 * 1024,
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
+  };
+}
+
+function chatTextExcerpt(text) {
+  return text.slice(0, CHAT_TEXT_EXCERPT).replace(/[\uD800-\uDBFF]$/, '');
+}
+
+async function readChatPdfText(source, signal) {
+  const binary = process.platform === 'darwin' ? '/usr/bin/osascript' : 'pdftotext';
+  const args = process.platform === 'darwin'
+    ? ['-l', 'JavaScript', '-e', MAC_PDF_TEXT, source]
+    : ['-f', '1', '-l', '1', '-enc', 'UTF-8', '-nopgbrk', source, '-'];
+  try {
+    const { stdout } = await exec(binary, args, pdfToolOptions(signal));
+    const text = stdout.replace(/\0/g, '').trim();
+    const embeddedText = chatTextExcerpt(text);
+    return embeddedText ? { embeddedText, truncated: text.length > embeddedText.length } : {};
+  } catch {
+    signal.throwIfAborted();
+    return {};
+  }
+}
+
 async function renderChatPdf(source, output, signal) {
   const binary = process.platform === 'darwin' ? '/usr/bin/sips' : 'pdftoppm';
+  // sips PDF→PNG leaves blank areas transparent. JPEG composites them onto white.
   const args = process.platform === 'darwin'
-    ? ['-s', 'format', 'png', '-Z', '1800', source, '--out', output]
+    ? ['-s', 'format', 'jpeg', '-s', 'formatOptions', 'best', '-Z', '1800', source, '--out', output]
     : ['-f', '1', '-l', '1', '-singlefile', '-scale-to', '1800', '-png', source, output.slice(0, -4)];
   try {
-    await exec(binary, args, {
-      timeout: 8000, signal, killSignal: 'SIGKILL', maxBuffer: 64 * 1024,
-      env: { PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
-    });
+    await exec(binary, args, pdfToolOptions(signal));
     const size = (await fsp.stat(output)).size;
     if (size > CHAT_FILE_MAX) return false;
-    const png = await readHeader(output, 24);
-    if (!png || png.length < 24 || drawingImageExtension(png) !== '.png') return false;
-    return [png.readUInt32BE(16), png.readUInt32BE(20)].every(side => side > 0 && side <= 1800);
+    const header = await readHeader(output, 64 * 1024);
+    if (!header) return false;
+    const [width, height] = chatImageSize(header, drawingImageExtension(header));
+    return [width, height].every(side => side > 0 && side <= 1800);
   } catch {
     signal.throwIfAborted();
     return false;
@@ -710,7 +745,7 @@ async function prepareChatFiles(files, tmpDir, images, signal) {
   for (const [index, { name, kind, extension, text, buffer }] of files.entries()) {
     signal.throwIfAborted();
     if (kind === 'text') {
-      const excerpt = text.slice(0, CHAT_TEXT_EXCERPT).replace(/[\uD800-\uDBFF]$/, '');
+      const excerpt = chatTextExcerpt(text);
       prepared.push({ name, kind, text: excerpt, truncated: text.length > excerpt.length });
       continue;
     }
@@ -720,13 +755,16 @@ async function prepareChatFiles(files, tmpDir, images, signal) {
       images.push({ file: source, role: 'user-image' });
       prepared.push({ name, kind, image: images.length });
     } else if (kind === 'pdf') {
-      const page = path.join(tmpDir, `attachment-${index + 1}-page-1.png`);
-      if (await renderChatPdf(source, page, signal)) {
-        images.push({ file: page, role: 'user-document' });
-        prepared.push({ name, kind, image: images.length, page: 1 });
-      } else {
-        prepared.push({ name, kind, note: '无法读取 PDF 首页。可改传所需页的 PNG 或 JPEG。' });
-      }
+      const imageExtension = process.platform === 'darwin' ? '.jpg' : '.png';
+      const preview = path.join(tmpDir, `attachment-${index + 1}-page-1${imageExtension}`);
+      const [rendered, textEvidence] = await Promise.all([
+        renderChatPdf(source, preview, signal), readChatPdfText(source, signal),
+      ]);
+      if (rendered) images.push({ file: preview, role: 'user-document' });
+      prepared.push({
+        name, kind, page: 1, ...textEvidence,
+        ...(rendered ? { image: images.length } : { note: 'PDF 首页预览不可用。若需读取图形，可上传对应页的 PNG 或 JPEG。' }),
+      });
     } else {
       const geometry = await readCadCurveEvidence(source, name, { signal, includeLineSamples: true });
       prepared.push(geometry ? { name, kind, geometry } : {

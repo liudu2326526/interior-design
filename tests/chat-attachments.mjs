@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -13,12 +13,18 @@ const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwM
 const upload = (name, value) => ({ name, data: Buffer.from(value).toString('base64') });
 
 function samplePdf() {
-  const stream = '100 20 50 10 re f\n';
+  const contents = (text) => {
+    const stream = `BT /F1 14 Tf 20 120 Td (${text}) Tj ET\n`;
+    return `<< /Length ${stream.length} >>\nstream\n${stream}endstream`;
+  };
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>',
-    `<< /Length ${stream.length} >>\nstream\n${stream}endstream`,
+    '<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 250 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    contents('Aisle width: 1370 mm'),
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 250 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>',
+    contents('Aisle width: 9170 mm'),
   ];
   let pdf = '%PDF-1.4\n';
   const offsets = objects.map((body, index) => {
@@ -27,7 +33,8 @@ function samplePdf() {
     return `${String(offset).padStart(10, '0')} 00000 n \n`;
   });
   const start = pdf.length;
-  return `${pdf}xref\n0 5\n0000000000 65535 f \n${offsets.join('')}trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
+  const size = objects.length + 1;
+  return `${pdf}xref\n0 ${size}\n0000000000 65535 f \n${offsets.join('')}trailer\n<< /Size ${size} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
 }
 
 test('chat accepts mixed sources, protects scene state for uploads alone and preserves legacy turns', { timeout: 20000 }, async t => {
@@ -132,7 +139,12 @@ test('chat accepts mixed sources, protects scene state for uploads alone and pre
   assert.doesNotMatch(imageTurn.message, /\.\.\/单椅/);
   assert.match(mixedTurn.message, /straightSegments.*"count":1/);
   assert.match(mixedTurn.message, /"truncated":true/);
-  if (process.platform === 'darwin') assert.match(mixedTurn.message, /"page":1/);
+  const mac = process.platform === 'darwin';
+  if (mac || spawnSync('pdftotext', ['-v'], { stdio: 'ignore', timeout: 2000 }).status === 0) {
+    assert.match(mixedTurn.message, /"page":1,"embeddedText":"Aisle width: 1370 mm"/);
+    assert.doesNotMatch(mixedTurn.message, /9170 mm/);
+  }
+  if (mac) assert.ok(mixedTurn.images.some(file => file.endsWith('-page-1.jpg')));
   assert.ok([original, imageTurn, mixedTurn].every(turn => turn.exist && turn.images.length > 0));
   await wait(50);
   for (const file of [original, imageTurn, mixedTurn].flatMap(turn => turn.images)) {

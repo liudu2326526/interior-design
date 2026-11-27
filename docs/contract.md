@@ -173,7 +173,7 @@ codex 的最终回答必须是**一个 JSON 对象**（允许包在 ```json 围�
   "attachments": [ { "name": "方案参考.pdf", "mime": "application/pdf", "data": "<base64，不含 data: 前缀>" } ] }
 ```
 
-用户上传的文件通过 `attachments` 发送，支持 PNG、JPEG、WebP、PDF、ASCII DXF、DWG 和 UTF-8 的 TXT、Markdown、JSON、CSV。每条消息最多 6 个文件，单个文件最多 8 MiB，合计最多 20 MiB。文本附件最多 128 KiB，分析时每个文件提供前 6000 个字符。PDF 提供首页预览，CAD 提供有界的原生几何样本。Linux 上的 PDF 预览使用服务路径中的 `pdftoppm`，DWG 几何读取使用 LibreDWG 的 `dwgread`。
+用户上传的文件通过 `attachments` 发送，支持 PNG、JPEG、WebP、PDF、ASCII DXF、DWG 和 UTF-8 的 TXT、Markdown、JSON、CSV。每条消息最多 6 个文件，单个文件最多 8 MiB，合计最多 20 MiB。文本附件最多 128 KiB，分析时每个文件提供前 6000 个字符。PDF 提供首页预览和可读取的嵌入文字，文字最多 6000 个字符。CAD 提供有界的原生几何样本。Linux 的 PDF 预览和文字读取分别使用服务路径中的 `pdftoppm` 和 `pdftotext`，DWG 几何读取使用 LibreDWG 的 `dwgread`。
 
 有用户附件时可省略 `message`。助手根据消息和附件内容判断用途，只有附件的请求不会修改当前方案。`context.task: "create-furniture"` 和 `images[].role: "furniture-reference"` 仍支持旧版家具流程。省略 `images[].role` 时按场景截图处理。
 
