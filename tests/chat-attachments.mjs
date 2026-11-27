@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -41,6 +41,7 @@ test('chat accepts mixed sources, protects scene state for uploads alone and pre
   const directory = await mkdtemp(path.join(tmpdir(), 'studio-chat-test-'));
   const runner = path.join(directory, 'codex.cjs');
   const trace = path.join(directory, 'trace.ndjson');
+  const archive = path.join(directory, 'uploads');
   await writeFile(runner, `#!/usr/bin/env node
     const assert = require('node:assert/strict');
     const { appendFileSync, existsSync } = require('node:fs');
@@ -86,7 +87,7 @@ test('chat accepts mixed sources, protects scene state for uploads alone and pre
   await new Promise(resolve => socket.close(resolve));
   const child = spawn(process.execPath, [fileURLToPath(new URL('../server.mjs', import.meta.url))], {
     env: { ...process.env, CODEX_PATH: runner, PORT: String(port), STUDIO_PUBLIC_BRIDGE_TOKEN_FILE: '',
-      STUDIO_IMPORT_JOBS_DIR: path.join(directory, 'jobs'), STUDIO_TEST_CHAT_TRACE: trace },
+      STUDIO_IMPORT_JOBS_DIR: path.join(directory, 'jobs'), STUDIO_UPLOAD_ARCHIVE_DIR: archive, STUDIO_TEST_CHAT_TRACE: trace },
     stdio: ['ignore', 'pipe', 'ignore'],
   });
   t.after(async () => {
@@ -123,7 +124,9 @@ test('chat accepts mixed sources, protects scene state for uploads alone and pre
   assert.deepEqual(result(photo).ops, []);
 
   const dxf = '0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nwall\n10\n0\n20\n0\n11\n3000\n21\n0\n0\nENDSEC\n0\nEOF\n';
-  const files = [upload('参考.pdf', samplePdf()), upload('尺寸.csv', '长,200\n' + '测试'.repeat(3100)), upload('图纸.dxf', dxf)];
+  const csv = '\uFEFF长,200\r\n' + '测试'.repeat(3100);
+  const files = [upload('参考.pdf', samplePdf()), { ...upload('尺寸.csv', csv), originalName: '详图，尺寸.CSV' },
+    upload('图纸.dxf', dxf), { ...upload('尺寸.csv', '另外一份\r\n'), originalName: '详图，尺寸.CSV' }];
   const mixed = await events(await post({ sessionId, message: '参考尺寸，把 f1 右移 200 毫米', images: [{ data: png }], attachments: files }));
   assert.equal(result(mixed).ops[0].dx, 200);
   assert.doesNotMatch(result(mixed).reply, /\/.*interior-design-chat/);
@@ -150,4 +153,43 @@ test('chat accepts mixed sources, protects scene state for uploads alone and pre
   for (const file of [original, imageTurn, mixedTurn].flatMap(turn => turn.images)) {
     await assert.rejects(access(file), { code: 'ENOENT' });
   }
+  // The model rejected this ceiling response. Its accepted original must still be retrievable.
+  const plan = JSON.parse(await readFile(new URL('../data/125c-plan.json', import.meta.url), 'utf8'));
+  const ceiling = await fetch(`http://127.0.0.1:${port}/api/ceiling-import`, {
+    method: 'POST', body: JSON.stringify({ plan, ceiling: { rooms: {} }, mode: 'drawing',
+      files: [{ name: '天花平面.png', data: png }] }),
+  });
+  assert.equal(ceiling.status, 422, await ceiling.text());
+
+  async function archivedFiles(source) {
+    const category = path.join(archive, source);
+    const batches = await readdir(category);
+    const entries = [];
+    for (const id of batches) {
+      const batch = path.join(category, id);
+      const manifest = JSON.parse(await readFile(path.join(batch, 'manifest.json')));
+      assert.equal(manifest.source, source);
+      assert.equal(manifest.context.owner, 'local');
+      assert.equal((await stat(batch)).mode & 0o777, 0o700);
+      for (const { name, file, bytes } of manifest.files) {
+        const saved = path.join(batch, file);
+        const data = await readFile(saved);
+        assert.equal(bytes, data.length);
+        assert.equal((await stat(saved)).mode & 0o777, 0o600);
+        entries.push({ name, data });
+      }
+    }
+    return entries;
+  }
+  const chatOriginals = await archivedFiles('chat');
+  assert.equal(chatOriginals.length, files.length + 2);
+  assert.deepEqual(chatOriginals.find(file => file.name === '单椅.png').data, Buffer.from(png, 'base64'));
+  assert.deepEqual(chatOriginals.filter(file => file.name === '详图，尺寸.CSV').map(file => file.data),
+    [Buffer.from(csv), Buffer.from('另外一份\r\n')]);
+  assert.deepEqual(await archivedFiles('ceiling'), [{ name: '天花平面.png', data: Buffer.from(png, 'base64') }]);
+  await rename(path.join(archive, 'chat'), path.join(archive, 'completed-chat'));
+  await writeFile(path.join(archive, 'chat'), 'unavailable');
+  const unavailable = await post({ attachments: [upload('说明.txt', '需保存的原件')] });
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(await unavailable.json(), { error: '上传原件保存失败，请稍后重试。' });
 });

@@ -459,7 +459,14 @@
     if (projectSyncing){ projectSyncAgain = true; return; }
     projectSyncing = true;
     try {
-      const response = await fetch(projectEndpoint, {cache:'no-store', signal:AbortSignal.timeout(12000)});
+      // 旧任务仍可复核。把当前查看或等待中的项目加入查询，避免受最近任务列表的数量限制。
+      const ids = [...new Set([...projectRows.values()]
+        .filter(row => !row.hidden && row.jobId &&
+          (projectBusy(row) || row.id === activeProjectId || expandedProjects.get(row.id) === true))
+        .map(row => row.jobId))].slice(0, 64);
+      const query = new URLSearchParams(ids.map(id => ['id', id])).toString();
+      const endpoint = query ? `${projectEndpoint}?${query}` : projectEndpoint;
+      const response = await fetch(endpoint, {cache:'no-store', signal:AbortSignal.timeout(12000)});
       if (!response.ok) throw new Error(App.assistant.aiResponseMessage(response.status, await response.text()));
       const {jobs} = await response.json();
       const seen = new Set();
@@ -562,8 +569,9 @@
       return;
     }
     if (response.status === 404){
-      App.core.toast(App.core.tr('无法重新复核：原图已清理或复核未启用，可重新导入图纸。',
-        'Cannot re-run the review: the source drawing was cleaned up or reviews are disabled. Import the drawing again.'));
+      const data = await response.json().catch(() => null);
+      App.core.toast(data?.error || App.core.tr('复核暂不可用，可重新导入图纸。',
+        'The review is unavailable. You can import the drawing again.'));
       return;
     }
     if (response.status === 503){

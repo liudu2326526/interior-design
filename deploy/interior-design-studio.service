@@ -10,6 +10,7 @@ WorkingDirectory=/opt/interior-design/app
 ExecStart=/usr/bin/node /opt/interior-design/app/server.mjs
 Environment=CODEX_PATH=/opt/interior-design/codex-runtime/bin/codex
 Environment=STUDIO_IMPORT_JOBS_DIR=/var/lib/interior-design/import-jobs
+Environment=STUDIO_UPLOAD_ARCHIVE_DIR=/var/lib/interior-design/uploads
 Environment=STUDIO_PUBLIC_BRIDGE_TOKEN_FILE=/var/lib/interior-design/config/bridge.key
 Environment=STUDIO_RENDER_IMAGE_CONFIG_FILE=/var/lib/interior-design/config/render-image.json
 UMask=0077

@@ -18,6 +18,7 @@ import { loadRenderImageProvider } from './lib/codex/render-image.mjs';
 import { parsePatch, validatePlan, validateImportedFurniture, summarizePlan, extractJson } from './lib/codex/plan.mjs';
 import { createImportJobs, importJobError, isImportJobPath } from './lib/import-jobs.mjs';
 import { reviewCeiling } from './lib/ceiling-recognition.mjs';
+import { archiveUploads } from './lib/upload-archive.mjs';
 import { renderPlanPng } from './lib/plan-render.mjs';
 import { buildReviewMessage, checkPlan, parseReviewReply, reviewDelta } from './lib/plan-review.mjs';
 import { buildCadDxf } from './lib/cad-dxf.mjs';
@@ -48,11 +49,12 @@ let activeCadExports = 0;
 const CHAT_TIMEOUT_MS = 10 * 60_000;
 const RENDER_TIMEOUT_MS = 8 * 60_000;
 const IMPORT_TIMEOUT_MS = 30 * 60_000;
-const REVIEW_TIMEOUT_MS = 10 * 60_000;
+const REVIEW_TIMEOUT_MS = 60 * 60_000;
 const MAX_REVIEWS = 2;
 /** 复核默认开启；STUDIO_PLAN_REVIEW=off 时完全跳过（job.review 保持 null）。 */
 const PLAN_REVIEW_ENABLED = String(process.env.STUDIO_PLAN_REVIEW || '').trim().toLowerCase() !== 'off';
 const IMPORT_ARTIFACTS = ['plan.json', 'review-plan.png', 'review-note.json'];
+const DRAWING_ARCHIVE_MANIFEST = '.upload.json';
 const DRAWING_PROGRESS_INSTRUCTIONS = '如果能发送独立的中途进度消息，请简短说明已完成的图纸核对。不要回显原始资料、工具输出或推理过程。最终答复仍遵守本任务的输出格式。';
 const MAX_CONCURRENT_TURNS = 4;
 const MAX_CHAT_SESSIONS = 6;
@@ -381,11 +383,13 @@ const rerunReviews = new Set();
 const reviewing = new Set();
 const importJobs = createImportJobs({
   directory: IMPORT_JOBS_DIR,
+  archiveInput: archiveDrawingUpload,
+  archiveWork: archiveDrawingWork,
   execute: async (body, { id, owner, workDirectory, signal, onProgress }) => {
     // 识别阶段不清理工作目录：复核需要原图和 plan.json。
     const result = await analyzePlanImport(body, { id, importDir: workDirectory, signal, cleanup: false, onProgress });
     if (result.status >= 400) {
-      // 公网任务失败后不保留用户上传的文件。
+      // 原件已归档，失败后可释放工作副本。
       if (owner === 'remote') await fsp.rm(workDirectory, { recursive: true, force: true }).catch(() => {});
       return result;
     }
@@ -464,7 +468,7 @@ async function route(req, res) {
   }
   if (pathname === '/api/ceiling-import') {
     if (!api(['POST'])) return;
-    return handleCeilingImport(req, res);
+    return handleCeilingImport(req, res, publicRequest);
   }
   if (pathname === '/api/export/dwg') {
     if (!api(['POST'])) return;
@@ -652,6 +656,8 @@ function validateChatFiles(attachments) {
     const suffix = path.extname(basename);
     const name = safeFileName(suffix.length <= 6 ? basename.slice(0, basename.length - suffix.length)
       .slice(0, 120 - suffix.length) + suffix : basename, index + 1);
+    const originalName = typeof file?.originalName === 'string' && file.originalName
+      ? file.originalName : basename;
     const encoded = file?.data;
     if (typeof encoded !== 'string' || !encoded.length) throw importJobError(400, '附件没有可读取的内容。');
     if (encoded.length > Math.ceil(CHAT_FILE_MAX / 3) * 4) {
@@ -673,23 +679,23 @@ function validateChatFiles(attachments) {
       if (!width || !height || width > 12000 || height > 12000 || width * height > 40_000_000) {
         throw importJobError(415, '图片无法读取或像素尺寸过大。');
       }
-      return { name, kind: 'image', extension: imageExtension, buffer };
+      return { name, originalName, kind: 'image', extension: imageExtension, buffer };
     }
     if (extension === '.pdf' && /^%PDF-\d\.\d/.test(buffer.toString('ascii', 0, 8))) {
-      return { name, kind: 'pdf', extension, buffer };
+      return { name, originalName, kind: 'pdf', extension, buffer };
     }
     if (extension === '.dxf' && buffer.length > 16 && !buffer.subarray(0, 32).includes(0)) {
-      return { name, kind: 'cad', extension, buffer };
+      return { name, originalName, kind: 'cad', extension, buffer };
     }
     if (extension === '.dwg' && /^AC10\d{2}$/.test(buffer.toString('ascii', 0, 6))) {
-      return { name, kind: 'cad', extension, buffer };
+      return { name, originalName, kind: 'cad', extension, buffer };
     }
     if (CHAT_TEXT_EXTENSIONS.has(extension)) {
       if (buffer.length > CHAT_TEXT_MAX) throw importJobError(413, '文本附件不能超过 128 KB。');
       try {
         const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
         if (!text.trim() || /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(text)) throw new Error('invalid text');
-        return { name, kind: 'text', extension, text };
+        return { name, originalName, kind: 'text', extension, text, buffer };
       } catch {
         throw importJobError(415, '文本附件需要使用 UTF-8 编码。');
       }
@@ -834,7 +840,7 @@ async function handleChat(req, res, publicRequest) {
     ? body.images.filter(img => img && (typeof img.data === 'string' || img.role === 'furniture-reference')).slice(0, 6)
     : [];
   const legacyImages = [];
-  for (const image of images) {
+  for (const [index, image] of images.entries()) {
     const reference = image.role === 'furniture-reference';
     const buffer = typeof image.data === 'string' ? decodeBase64(image.data) : null;
     const imageExtension = buffer ? drawingImageExtension(buffer) : '';
@@ -843,6 +849,7 @@ async function handleChat(req, res, publicRequest) {
     }
     if (buffer) legacyImages.push({
       buffer,
+      name: typeof image.name === 'string' && image.name ? image.name : `reference-${index + 1}${imageExtension}`,
       extension: imageExtension || '.' + imageExt(image.mime),
       role: reference ? 'furniture-reference' : 'scene',
     });
@@ -850,6 +857,13 @@ async function handleChat(req, res, publicRequest) {
   const legacyReference = legacyImages.some(image => image.role === 'furniture-reference');
   if (!message && !files.length && !legacyReference) {
     return sendJson(res, 400, { error: '请输入消息或添加附件。' });
+  }
+  try {
+    await archiveUploads('chat', [...files, ...legacyImages.filter(image => image.role === 'furniture-reference')], {
+      sessionId, owner: publicRequest ? 'remote' : 'local',
+    });
+  } catch (error) {
+    return sendJson(res, 503, { error: errorMessage(error) });
   }
 
   const sse = openSSE(res);
@@ -1238,7 +1252,7 @@ async function handleRender(req, res, publicRequest) {
 }
 
 // A ceiling import proposes changes to the current design. It never creates a floor-plan job.
-async function handleCeilingImport(req, res) {
+async function handleCeilingImport(req, res, publicRequest) {
   const controller = new AbortController();
   const { signal } = controller;
   let session, directory;
@@ -1266,6 +1280,7 @@ async function handleCeilingImport(req, res) {
     let ceiling;
     try { ceiling = globalThis.CeilingModel.validate(body.ceiling, plan.rooms); }
     catch (error) { throw importJobError(400, '当前项目的天花数据无效：' + error.message); }
+    await archiveUploads('ceiling', files, { owner: publicRequest ? 'remote' : 'local', mode, roomId, planName: plan.name });
     const probe = await getProbe();
     if (!probe.found) throw importJobError(503, unusableMessage(probe));
     signal.throwIfAborted();
@@ -1317,10 +1332,76 @@ function drawingImportRequest(body) {
   return { files, note };
 }
 
+function* drawingFiles(files) {
+  const used = new Set(IMPORT_ARTIFACTS);
+  for (const [index, file] of files.entries()) {
+    const buffer = decodeBase64(file.data);
+    if (!buffer) continue;
+    const originalName = typeof file.name === 'string' ? file.name.split(/[/\\]/).at(-1).slice(0, 512) : '';
+    const uploadName = safeFileName(originalName, index + 1);
+    const uploadExtension = path.extname(uploadName);
+    const imageExtension = drawingImageExtension(buffer);
+    const ext = imageExtension || (Buffer.byteLength(uploadExtension) <= 80 ? uploadExtension : '');
+    const stem = path.basename(uploadName, uploadExtension);
+    const base = Buffer.byteLength(stem + ext) > 240 ? `file-${index + 1}` : stem;
+    let name = base + ext;
+    let suffix = index + 1;
+    while (used.has(name.toLowerCase())) name = `${base}-${suffix++}${ext}`;
+    used.add(name.toLowerCase());
+    yield { name, originalName, buffer, imageExtension };
+  }
+}
+
+async function writeDrawingManifest(directory, note, files) {
+  await fsp.writeFile(path.join(directory, DRAWING_ARCHIVE_MANIFEST),
+    JSON.stringify({ note, files }), { mode: 0o600, flag: 'wx' });
+}
+
+async function archiveDrawingUpload(body, directory) {
+  await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+  const files = [];
+  for (const {name, originalName, buffer} of drawingFiles(body.files)) {
+    await fsp.writeFile(path.join(directory, name), buffer, { mode: 0o600, flag: 'wx' });
+    files.push({ name, originalName });
+  }
+  if (files.length !== body.files.length) throw importJobError(400, '部分上传文件无法解码，请重新选择图纸。');
+  await writeDrawingManifest(directory, body.note, files);
+  return true;
+}
+
+async function copyDrawingFiles(from, to) {
+  const files = [];
+  for (const entry of await fsp.readdir(from, { withFileTypes: true })) {
+    const name = entry.name;
+    if (!entry.isFile() || name === DRAWING_ARCHIVE_MANIFEST ||
+        IMPORT_ARTIFACTS.includes(name.toLowerCase())) continue;
+    await fsp.copyFile(path.join(from, name), path.join(to, name), fs.constants.COPYFILE_EXCL);
+    await fsp.chmod(path.join(to, name), 0o600);
+    files.push({ name });
+  }
+  return files;
+}
+
+async function readDrawingNote(directory, fileName) {
+  return fsp.readFile(path.join(directory, fileName), 'utf8')
+    .then(JSON.parse)
+    .then(value => typeof value?.note === 'string' ? value.note : '')
+    .catch(() => '');
+}
+
+async function archiveDrawingWork(workDirectory, archiveDirectory) {
+  await fsp.mkdir(archiveDirectory, { recursive: true, mode: 0o700 });
+  const files = await copyDrawingFiles(workDirectory, archiveDirectory);
+  if (!files.length) return false;
+  const note = await readDrawingNote(workDirectory, 'review-note.json');
+  await writeDrawingManifest(archiveDirectory, note, files);
+  return true;
+}
+
 async function handleImportJob(req, res, key, url, owner) {
   try {
     if (key === 'plan-import' && req.method === 'GET') {
-      return sendJson(res, 200, { jobs: await importJobs.list(owner) });
+      return sendJson(res, 200, { jobs: await importJobs.list(owner, url.searchParams.getAll('id')) });
     }
     if (req.method === 'POST') {
       const job = await importJobs.submit(owner, async () => {
@@ -1396,22 +1477,8 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
     const written = [];
     const images = [];
     const curveEvidence = [];
-    const used = new Set(IMPORT_ARTIFACTS);
-    for (let i = 0; i < files.length; i++) {
+    for (const { name, buffer, imageExtension } of drawingFiles(files)) {
       signal.throwIfAborted();
-      const buffer = decodeBase64(files[i].data);
-      if (!buffer) continue;
-      const originalName = safeFileName(files[i].name, i + 1);
-      const originalExtension = path.extname(originalName);
-      const imageExtension = drawingImageExtension(buffer);
-      const ext = imageExtension || originalExtension;
-      const stem = path.basename(originalName, originalExtension);
-      let name = stem + ext;
-      let suffix = i + 1;
-      while (used.has(name.toLowerCase())) {
-        name = `${stem}-${suffix++}${ext}`;
-      }
-      used.add(name.toLowerCase());
       const file = path.join(importDir, name);
       await fsp.writeFile(file, buffer, { mode: 0o600 });
       written.push(name);
@@ -1683,8 +1750,8 @@ async function handlePlanReview(req, res, id, owner) {
     if (req.method === 'GET') {
       const review = await importJobs.getReview(owner, id);
       if (!review) return sendJson(res, 404, { error: '复核结果不存在或暂不可用。' });
-      // 重新复核需要工作目录里的原图；公网任务复核结束后上传文件已清理，前端据此隐藏按钮。
-      const rerun = Boolean(await importJobs.workDirectory(owner, id));
+      const rerun = PLAN_REVIEW_ENABLED && Boolean(
+        await importJobs.sourceDirectory(owner, id) || await importJobs.workDirectory(owner, id));
       return sendJson(res, 200, { ...review, rerun });
     }
 
@@ -1692,6 +1759,7 @@ async function handlePlanReview(req, res, id, owner) {
     if (reviewing.has(id)) return sendJson(res, 409, { error: '复核正在进行，请稍候。' });
     reviewing.add(id);
     let started = false;
+    let temporaryDirectory;
     try {
       const job = await importJobs.get(owner, id, 0);
       if (!job) return sendJson(res, 409, { error: '图纸任务不存在或已过期。' });
@@ -1699,9 +1767,11 @@ async function handlePlanReview(req, res, id, owner) {
       if (job.review?.state === 'pending' || job.review?.state === 'running') {
         return sendJson(res, 409, { error: '复核正在进行，请稍候。' });
       }
-      const workDirectory = await importJobs.workDirectory(owner, id);
-      // 工作目录清理后无法再复核：这是永久状态，用 404 而不是 409（后者会让客户端以为稍后能重试）。
-      if (!workDirectory) return sendJson(res, 404, { error: '复核工作目录已清理，无法重新复核。' });
+      const sourceDirectory = await importJobs.sourceDirectory(owner, id);
+      let workDirectory = sourceDirectory ? null : await importJobs.workDirectory(owner, id);
+      if (!sourceDirectory && !workDirectory) {
+        return sendJson(res, 404, { error: '未找到原图归档，无法重新复核。' });
+      }
       const probe = await getProbe();
       if (!probe.found) return sendJson(res, 503, { error: unusableMessage(probe) });
 
@@ -1713,10 +1783,14 @@ async function handlePlanReview(req, res, id, owner) {
       }
       if (!result?.plan) return sendJson(res, 409, { error: '识别结果不可用，无法重新复核。' });
 
-      const note = await fsp.readFile(path.join(workDirectory, 'review-note.json'), 'utf8')
-        .then(text => JSON.parse(text))
-        .then(value => (typeof value?.note === 'string' ? value.note : ''))
-        .catch(() => '');
+      const note = await readDrawingNote(sourceDirectory ?? workDirectory,
+        sourceDirectory ? DRAWING_ARCHIVE_MANIFEST : 'review-note.json');
+      if (sourceDirectory) {
+        temporaryDirectory = await fsp.mkdtemp(path.join(os.tmpdir(), 'interior-design-review-'));
+        workDirectory = temporaryDirectory;
+        const files = await copyDrawingFiles(sourceDirectory, workDirectory);
+        if (!files.length) return sendJson(res, 404, { error: '原图归档为空，无法重新复核。' });
+      }
 
       await importJobs.setReview(owner, id, {
         state: 'pending', count: 0, updatedAt: Date.now(),
@@ -1735,13 +1809,17 @@ async function handlePlanReview(req, res, id, owner) {
         onProgress: (stage, text) => {
           if (!controller.signal.aborted) return importJobs.setReviewProgress(owner, id, stage, text);
         },
-      }).finally(() => {
+      }).finally(async () => {
+        if (temporaryDirectory) await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => {});
         rerunReviews.delete(controller);
         reviewing.delete(id);
       });
       return sendJson(res, 202, { ok: true });
     } finally {
-      if (!started) reviewing.delete(id);
+      if (!started) {
+        if (temporaryDirectory) await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => {});
+        reviewing.delete(id);
+      }
     }
   } catch (error) {
     if (error.status) return sendJson(res, error.status, { error: errorMessage(error) });

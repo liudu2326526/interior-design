@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
@@ -9,8 +9,8 @@ import { createImportJobs, isImportJobPath } from '../lib/import-jobs.mjs';
 async function fixture(t, execute, options = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'studio-review-'));
   const stores = [];
-  const open = worker => {
-    const store = createImportJobs({ directory, execute: worker, ...options });
+  const open = (worker, overrides = {}) => {
+    const store = createImportJobs({ directory, execute: worker, ...options, ...overrides });
     stores.push(store);
     return store;
   };
@@ -22,6 +22,12 @@ async function fixture(t, execute, options = {}) {
 }
 
 const submit = (store, owner, name) => store.submit(owner, () => ({ body: { name }, name }));
+
+async function archiveDrawing(body, folder) {
+  await mkdir(folder, { mode: 0o700 });
+  await writeFile(path.join(folder, '原图.png'), Buffer.from(body.name), { mode: 0o600 });
+  await writeFile(path.join(folder, '.upload.json'), JSON.stringify({ files: ['原图.png'] }), { mode: 0o600 });
+}
 
 async function until(check) {
   for (let attempt = 0; attempt < 200; attempt++) {
@@ -300,4 +306,113 @@ test('keeps review progress separate from result version and resets it on a reru
   assert.equal(Object.hasOwn(saved.review, 'progress'), false);
   await store.setReview('local', id, { state: 'unavailable' });
   assert.equal((await store.get('local', id, 1)).review.progress.message, undefined);
+});
+
+test('keeps originals and results by owner and ID beyond both recent-list limits and a restart', async t => {
+  const { store, open, directory } = await fixture(t, success, { history: 1, archiveInput: archiveDrawing });
+  const first = await submit(store, 'remote', '底图一');
+  assert.equal(first.sourceArchived, true);
+  const folder = path.join(directory, first.id);
+  assert.equal(await readFile(path.join(folder, 'source', '原图.png'), 'utf8'), '底图一');
+  await until(async () => (await store.get('remote', first.id, 0)).done);
+  const second = await submit(store, 'remote', '底图二');
+  await until(async () => (await store.get('remote', second.id, 0)).done);
+  assert.deepEqual((await store.list('remote')).map(job => job.id), [second.id]);
+  assert.equal(await store.get('local', first.id, 0), null);
+  assert.equal(await store.sourceDirectory('local', first.id), null);
+  assert.deepEqual(await store.list('local', [first.id]), []);
+  assert.deepEqual((await store.list('remote', [first.id, first.id])).map(job => job.id), [second.id, first.id]);
+  assert.equal(JSON.parse((await store.get('remote', first.id, 0)).chunks[0]).plan.name, '底图一');
+  store.close();
+
+  const file = path.join(folder, 'job.json');
+  const meta = JSON.parse(await readFile(file, 'utf8'));
+  meta.updatedAt = meta.createdAt = meta.finishedAt = Date.now() - 9 * 24 * 60 * 60_000;
+  await writeFile(file, JSON.stringify(meta));
+  const restored = open(() => assert.fail('archived imports must not be re-executed'));
+  assert.deepEqual((await restored.list('remote')).map(job => job.id), [second.id]);
+  assert.equal(await restored.workDirectory('remote', first.id), null);
+  assert.equal(await restored.sourceDirectory('remote', first.id), path.join(folder, 'source'));
+
+  await restored.setReview('remote', first.id, { state: 'pending', count: 0 });
+  assert.equal((await restored.list('remote')).length, 2, 'a recent job and an active archived review remain visible');
+  const review = { state: 'match', issues: [], summary: '一致', updatedAt: Date.now() };
+  assert.equal(await restored.saveReview('remote', first.id, review), true);
+  await restored.setReview('remote', first.id, { state: 'match', count: 0 });
+  assert.deepEqual((await restored.list('remote')).map(job => job.id), [first.id], 'recently reviewed older project is discoverable');
+  assert.deepEqual(await restored.getReview('remote', first.id), review);
+});
+
+test('retains uploads even when canceled or recognition fails and rejects a partial archive before accepting a job', async t => {
+  const { store, directory } = await fixture(t, async (body, { signal }) => {
+    if (body.name === '失败图') return { status: 422, body: { error: '识别失败' } };
+    return new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+  }, { history: 0, archiveInput: async (body, staging) => {
+    await archiveDrawing(body, staging);
+    if (body.name === '写入错误') throw new Error('archive write failed');
+  } });
+  await assert.rejects(submit(store, 'remote', '写入错误'), /archive write failed/);
+  assert.deepEqual(await readdir(directory), []);
+  const failed = await submit(store, 'remote', '失败图');
+  const canceled = await submit(store, 'remote', '取消图');
+  await until(async () => (await store.get('remote', failed.id, 0)).phase === 'failed');
+  await store.cancel('remote', canceled.id);
+  await until(async () => (await store.list('remote')).length === 0);
+  for (const item of [failed, canceled]) {
+    const source = await store.sourceDirectory('remote', item.id);
+    assert.equal(await readFile(path.join(source, '原图.png'), 'utf8'), item.name);
+  }
+});
+
+test('migrates remaining legacy inputs, work, and recovered source directories before removing scratch files', async t => {
+  const { store, open, directory } = await fixture(t, success);
+  const jobs = [];
+  for (const name of ['旧请求', '旧工作区', '已恢复原件']) {
+    const job = await submit(store, 'local', name);
+    await until(async () => (await store.get('local', job.id, 0)).done);
+    jobs.push(job);
+  }
+  store.close();
+  const [request, work, recovered] = jobs.map(job => path.join(directory, job.id));
+  await writeFile(path.join(request, 'input.json'), JSON.stringify({ name: jobs[0].name }));
+  await writeFile(path.join(work, 'work', '原图.png'), jobs[1].name);
+  await archiveDrawing({ name: jobs[2].name }, path.join(recovered, 'source'));
+  const restored = open(success, {
+    archiveInput: archiveDrawing,
+    archiveWork: async (legacy, staging) => {
+      const source = await readFile(path.join(legacy, '原图.png'), 'utf8').catch(() => null);
+      if (!source) return false;
+      await archiveDrawing({ name: source }, staging);
+      return true;
+    },
+  });
+  for (const job of jobs) {
+    assert.equal((await restored.get('local', job.id, 0)).sourceArchived, true);
+    const source = await restored.sourceDirectory('local', job.id);
+    assert.equal(await readFile(path.join(source, '原图.png'), 'utf8'), job.name);
+    assert.equal(await restored.workDirectory('local', job.id), null);
+  }
+  await assert.rejects(stat(path.join(request, 'input.json')), { code: 'ENOENT' });
+});
+
+test('a failed legacy migration keeps the only surviving files for a later recovery', async t => {
+  const { store, open, directory } = await fixture(t, success);
+  const job = await submit(store, 'remote', '归档待恢复');
+  await until(async () => (await store.get('remote', job.id, 0)).done);
+  store.close();
+  const folder = path.join(directory, job.id);
+  const input = JSON.stringify({ name: job.name });
+  await writeFile(path.join(folder, 'input.json'), input);
+  await writeFile(path.join(folder, 'work', '原图.png'), job.name);
+  t.mock.method(console, 'error', () => {});
+  const interrupted = open(success, {
+    history: 0,
+    archiveInput: async () => { throw new Error('injected storage fault'); },
+  });
+  assert.deepEqual(await interrupted.list('remote'), []);
+  assert.equal(await readFile(path.join(folder, 'input.json'), 'utf8'), input);
+  assert.equal(await readFile(path.join(folder, 'work', '原图.png'), 'utf8'), job.name);
+  interrupted.close();
+  const restored = open(success, { archiveInput: archiveDrawing });
+  assert.equal(await readFile(path.join(await restored.sourceDirectory('remote', job.id), '原图.png'), 'utf8'), job.name);
 });

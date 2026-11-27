@@ -201,7 +201,7 @@ SSE 事件（`data: <json>\n\n`）：
 {"type":"done"}
 ```
 
-服务端将上下文和 `prompts/patch.md` 交给内存中的 Codex 会话，并从最终回复解析 JSON。同一个 `sessionId` 在会话存活期间可以继续追问。附件临时文件在请求处理结束后清理。含通用附件的请求只返回进度和结构化结果。旧版请求在解析失败时降级为 `{reply: 原文, ops: []}`。
+服务端将上下文和 `prompts/patch.md` 交给内存中的 Codex 会话，并从最终回复解析 JSON。同一个 `sessionId` 在会话存活期间可以继续追问。附件原件在处理前归档到 `STUDIO_UPLOAD_ARCHIVE_DIR/chat/`，工作副本在请求结束后清理。含通用附件的请求只返回进度和结构化结果。旧版请求在解析失败时降级为 `{reply: 原文, ops: []}`。
 
 `result.furniture` 可省略，每次最多返回 8 个素材。素材包含 `type`、`name`、毫米单位的 `w` 和 `d`，还可包含 `rot`、`color`、`parts`、`handedness`、`topShape` 和 `height`。素材由客户端存入当前浏览器的「我的素材」。场景变更通过 `ops` 应用，用户也可选择把素材放入方案。
 
@@ -229,7 +229,7 @@ SSE 事件（`data: <json>\n\n`）：
 
 请求携带当前项目的 `plan` 和 `ceiling`，以及 `mode`（`drawing` 或 `photo`）、`roomId`、`files`（`{name,data}`，`data` 为 Base64）和可选 `note`。图纸模式可对照整张底图，照片模式需要指定房间。公网入口通过 `/api/jobs/ceiling-import` 提交。
 
-返回 `{aligned,alignment,warnings,estimated,items}`。`items` 是当前项目坐标中的候选对象，有对齐及估算说明。页面验证用户选中的候选后，通过一次 `editScene` 更新天花层。
+图纸和照片原件归档到 `STUDIO_UPLOAD_ARCHIVE_DIR/ceiling/`。返回 `{aligned,alignment,warnings,estimated,items}`。`items` 是当前项目坐标中的候选对象，有对齐及估算说明。页面验证用户选中的候选后，通过一次 `editScene` 更新天花层。
 
 ### `POST /api/plan/import` → JSON
 
@@ -243,7 +243,7 @@ SSE 事件（`data: <json>\n\n`）：
 ### `/api/jobs/plan-import` → 后台图纸识别
 
 - `POST /api/jobs/plan-import` 接收同样的文件 JSON，可附 `projectName`，入队后返回 `202` 和任务 `id`。模型回合最长 30 分钟。
-- `GET /api/jobs/plan-import` 返回当前访问范围的 `jobs`，含 `id`、`name`、`phase`、`review`、`progress` 和毫秒时间戳。
+- `GET /api/jobs/plan-import` 返回当前访问范围的近期任务和进行中任务，含 `id`、`name`、`phase`、`review`、`progress` 和毫秒时间戳。可重复传 `id` 查询仍有归档的旧任务。新任务先归档原图再入队，`sourceArchived` 表示已归档。
 - `GET /api/jobs/<id>?cursor=0` 同样提供进度元数据，并返回 `done`、`status`、`chunks` 和下一游标。完成时 `chunks` 中是识别结果 JSON，失败时 `error` 提供失败信息。
 - `DELETE /api/jobs/<id>` 取消任务。公网通过已认证网关访问，项目成果按本机与公网访问范围隔离。
 
@@ -285,7 +285,7 @@ type JobReviewDetail = {
   fixed: { plan: Plan, furniture: ImportedFurniture[] } | null,   // match 时为 null
   delta: ReviewDelta,                             // fixed 相对原识别结果的变化
   updatedAt: number,
-  rerun: boolean                                  // 工作目录是否还在、能否重新复核
+  rerun: boolean                                  // 启用了复核且仍有原图可用
 }
 ```
 
@@ -299,9 +299,9 @@ pending / running 期间服务重启 → unavailable（同时删除 review.json�
 ```
 
 - `GET /api/jobs/<id>/review`：无请求体。`match` 或 `differ` 时返回 `200` 和 `JobReviewDetail`；`pending`、`running`、`unavailable`、任务不存在或不属于当前访问范围时返回 `404`（`{error}`），前端据此轮询。
-- `POST /api/jobs/<id>/review`：无请求体（沿用识别时保存的用户备注），重新复核并立即返回 `202 {ok:true}`，结果通过上面的 `GET` 轮询。任务不存在或已过期、识别未完成、复核进行中返回 `409`；工作目录已清理（公网任务复核结束后会删除上传文件，服务重启也会清空）返回 `404`；codex 不可用返回 `503`。
+- `POST /api/jobs/<id>/review`：无请求体。服务端从归档读取原件，并沿用识别时保存的用户备注。返回 `202 {ok:true}` 后异步复核，模型回合最长 60 分钟，结果通过上面的 `GET` 轮询。任务不存在或已过期、识别未完成、复核进行中返回 `409`。原件缺失或未启用复核返回 `404`。codex 不可用返回 `503`。
 - 复核失败后，任务 `review.state` 变为 `unavailable`，项目卡片显示复核未完成，复核结果 `GET` 返回 `404`。`STUDIO_PLAN_REVIEW=off` 时不再启动自动复核（任务的 `review` 保持 `null`），`POST` 返回 `404`，已存在的复核结果仍可读取。
-- 任务和结果保存在 `~/.interior-design-studio/import-jobs`，可设置 `STUDIO_IMPORT_JOBS_DIR`。队列随服务重启恢复；结果最多保留 7 天或各范围最近 32 条，复核进行中（`pending` / `running`）的任务不参与清理。本机任务的工作目录（原图、`plan.json`、`review-plan.png`、`review-note.json`）保留到过期清理或服务重启，以支持重新复核；公网任务在复核结束后立即删除上传文件。打开和编辑后的项目由浏览器保存。
+- 任务和结果保存在 `~/.interior-design-studio/import-jobs`，可设置 `STUDIO_IMPORT_JOBS_DIR`。已归档的任务将源文件放在各自的 `source/`，原件和结果可长期按任务 ID 读取。默认历史列表返回 7 天内每个访问范围最近 32 条完成任务，以及进行中的任务。原图归档独立于工作副本和服务重启。打开和编辑后的项目由浏览器保存。
 
 ```ts
 type ImportedFurniture = {

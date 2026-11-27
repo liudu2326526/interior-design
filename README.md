@@ -28,6 +28,7 @@ npm start                    # 同上
 - 公网网关额外设置 `STUDIO_PUBLIC_ACCESS_KEY_FILE`，指向独立随机生成的登录密钥文件，也可以用 `STUDIO_PUBLIC_ACCESS_KEY_HASH_FILE` 读取高熵登录密钥的 SHA-256 十六进制摘要。密钥文件权限设为 `0600`。
 - 浏览器分别保存本机域名和公网域名的方案。需要在另一端打开时，通过项目 JSON 导出和导入。
 - 固定域名可设置 `STUDIO_PUBLIC_URL` 为完整 HTTPS 地址，例如 `https://aitobee.muskapis.com/interior-design/`。将 [Nginx 片段](deploy/nginx-interior-design.conf) 加入对应 HTTPS 站点，保留原始域名和路径，把请求转给同机的 4174 网关。Linux 的 systemd 服务定义在 `deploy/`。
+- 后台户型识别将原图存入 `STUDIO_IMPORT_JOBS_DIR/import-<任务ID>/source/`，复核时从归档复制原图到临时目录。助手和天花上传的原件分别保存在 `STUDIO_UPLOAD_ARCHIVE_DIR/chat/` 和 `STUDIO_UPLOAD_ARCHIVE_DIR/ceiling/`。这些目录应位于私有持久化磁盘，应用不会按任务历史的数量或天数清理原件。
 - 如 Codex 环境使用 API 密钥，效果图可以通过服务端配置注入 `image_gen`。设置 `STUDIO_RENDER_IMAGE_CONFIG_FILE` 指向私有 JSON，内容为固定 HTTPS API 基址 `baseUrl`、图像模型名 `model` 和本机 Codex API 密钥文件路径 `authFile`。图像工具只供效果图回合调用，使用该次请求的参考截图。有些兼容网关返回临时图片链接，可设置 `allowPublicResultUrls: true`，应用会验证公开地址和 PNG 内容。
 
 ## 目录

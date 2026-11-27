@@ -276,7 +276,7 @@
       reader.onerror = () => reject(new Error(App.core.tr(`无法读取附件 ${name}`, `Could not read the attachment ${name}`)));
       reader.readAsDataURL(file);
     });
-    return {name, mime, data:url.slice(url.indexOf(',')+1)};
+    return {name, originalName:file.name, mime, data:url.slice(url.indexOf(',')+1)};
   }
 
   function resetChatDraft(){

@@ -1119,23 +1119,30 @@
     const counted = App.store.ROOMS.filter(r => r.counted !== false);
     App.core.$('#roomList').innerHTML = counted.map(r => `<div class="rrow">
       <button data-room="${App.core.esc(r.id)}"><span>${App.core.esc(App.core.nm(App.store.roomState(r.id).name))}</span><small>${App.geom.roomArea(r).toFixed(2)} m²</small></button>
-      <button class="rent" data-enter="${App.core.esc(r.id)}" title="${App.core.esc(App.core.tr('进入房间，从室内查看','Enter the room and look around from inside'))}">${App.core.tr('进入房间','Enter room')}</button></div>`).join('')
+      <button class="rent" data-enter="${App.core.esc(r.id)}"></button></div>`).join('')
       + `<div class="rrow"><button data-room="__all"><span>${App.core.tr('全屋', 'Whole home')}</span><small>${counted.reduce((a, r) => a + App.geom.roomArea(r), 0).toFixed(2)} m²</small></button></div>`;
-    document.querySelectorAll('#roomList button').forEach(b => b.classList.remove('on'));
-    // 室内视角下保持当前房间高亮（换语言 / 换方案重建列表后也不丢）
-    syncRoomListSel(roomView.id);
+    syncRoomListSel();
     document.querySelectorAll('#roomList button[data-room]').forEach(b => b.onclick = () => {
-      document.querySelectorAll('#roomList button').forEach(x => x.classList.toggle('on', x === b));
+      const id = b.dataset.room;
+      if (id === roomView.id){ exitRoom(); return; }
+      if (id === '__all'){
+        if (roomView.id) exitRoom();
+        else if (opt.mode !== 'walk') flyTo(isoWhole());
+        syncRoomListSel(id);
+        return;
+      }
       if (opt.mode === 'walk') setMode('orbit');
-      if (b.dataset.room === '__all'){ if (roomView.id) exitRoom(); else flyTo(isoWhole()); }
-      else if (roomView.id) enterRoom(b.dataset.room);        // 室内换房：平滑飞过去
-      else flyToRoom(b.dataset.room);
+      if (roomView.id){
+        enterRoom(id);
+      } else {
+        flyToRoom(id);
+        syncRoomListSel(id);
+      }
     });
     document.querySelectorAll('#roomList button[data-enter]').forEach(b => b.onclick = () => {
       const id = b.dataset.enter;
-      if (!App.plan.roomDef(id)) return;
-      document.querySelectorAll('#roomList button[data-room]').forEach(x => x.classList.toggle('on', x.dataset.room === id));
-      enterRoom(id);
+      if (id === roomView.id) exitRoom();
+      else enterRoom(id);
     });
   }
 
@@ -1350,9 +1357,15 @@
     }
   }
   function clipCount(){ return renderer && Array.isArray(renderer.clippingPlanes) ? renderer.clippingPlanes.length : 0; }
-  // 左侧房间列表高亮跟随当前室内房间
-  function syncRoomListSel(id){
+  // 左侧列表保留相机目标的高亮，只有当前室内房间提供退出按钮。
+  function syncRoomListSel(id = roomView.id ?? (opt.mode === 'walk' ? '__all' : null)){
     document.querySelectorAll('#roomList button[data-room]').forEach(b => b.classList.toggle('on', !!id && b.dataset.room === id));
+    document.querySelectorAll('#roomList button[data-enter]').forEach(b => {
+      const inside = b.dataset.enter === roomView.id;
+      b.textContent = inside ? App.core.tr('退出房间', 'Exit room') : App.core.tr('进入房间', 'Enter room');
+      b.title = inside ? App.core.tr('退出当前房间', 'Exit the current room')
+        : App.core.tr('进入房间，从室内查看', 'Enter the room and look around from inside');
+    });
   }
 
   // 标题条：房间名 / 面积 / 地面材质，随 state 变化实时刷新
@@ -1406,13 +1419,17 @@
     roomLens(false);
     roomView.id = null; roomView.arrived = false; roomView.fallback = false;
     stage.classList.remove('roomview');
+    syncRoomListSel();
     applyRoomClip(null);                                      // 清除裁切（恢复默认 null）
     const msg = App.core.$('#rbMsg'); if (msg) msg.textContent = '';
     renderRoomBar();
     if (!active) return;
     orbit.enabled = opt.mode === 'orbit';
     showLabels(opt.labels && opt.mode === 'orbit');
-    if (!opts.silent && opt.mode === 'orbit') flyTo(isoWhole(), 900);
+    if (!opts.silent){
+      if (opt.mode === 'walk') rememberWalkExit();       // 原地解除房间限制，保存全屋漫游的站立点
+      else flyTo(isoWhole(), 900);
+    }
   }
 
   /* ======================= 进入 / 退出 3D ======================= */
@@ -1589,7 +1606,7 @@
   }
   function lastWalkExit(roomId){
     for (const saved of App.store.state.walk.recent){
-      if (roomId && saved.roomId && saved.roomId !== roomId) continue;
+      if (saved.roomId && saved.roomId !== roomId) continue; // 全屋漫游只恢复全屋站立点
       const point = roomId && !saved.roomId ? {...saved, roomId} : saved;
       if (validWalkPoint(point)) return point;
     }
@@ -1710,11 +1727,11 @@
       App.interact.select(null);
       if (opt.cut !== FULL_WALL_MODE){ opt.cut = FULL_WALL_MODE; syncCutBtns(); sync(); }
       orbit.enabled = false; fly = null;
-      const start = requestedPoint || lastWalkExit(currentRoom);
-      const roomId = start ? start.roomId : currentRoom;
+      const roomId = requestedPoint ? requestedPoint.roomId : currentRoom;
+      const start = requestedPoint || lastWalkExit(roomId);
       roomView.id = roomId; roomView.arrived = !!roomId; roomView.fallback = false;
       stage.classList.toggle('roomview', !!roomId);
-      syncRoomListSel(roomId);
+      syncRoomListSel();
       if (start){
         camera.position.set(wx(start.x), start.height, wz(start.y));
         camera.quaternion.setFromEuler(new THREE.Euler(start.pitch, start.yaw, 0, 'YXZ'));
@@ -1739,6 +1756,7 @@
         const P = interiorPose(roomView.id);
         if (P) flyTo(P, 800, () => { roomView.arrived = true; applyRoomClip(roomView.id); renderRoomBar(); });
       } else {
+        syncRoomListSel();
         orbit.target.set(0, 0, 0); flyTo(isoWhole());
       }
     }

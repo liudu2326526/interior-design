@@ -13,7 +13,7 @@
   const impState = {files:[], result:null, onApply:null, retryId:null, submission:null, applying:false,
     review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null,
     reviewVariant:'fixed', reviewBase:null, reviewApplied:false, reviewTimer:0,
-    reviewRerun:true, reviewGen:0, reviewSince:0};
+    reviewRerun:true, reviewGen:0, reviewLastActiveAt:0};
   const impEls = {};
 
   const impSize = n => n >= 1048576 ? (n/1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n/1024) + ' KB' : n + ' B';
@@ -244,10 +244,9 @@
   }
 
   /* ---------- 自动复核（服务端契约：GET/POST /api/jobs/<id>/review） ---------- */
-  // 复核失败一律静默：任何请求错误、404、解析失败都当作 unavailable，界面不提示。
   const IMP_REVIEW_POLL = 5000;
-  // 服务端单次复核最长 10 分钟；连续 404 超过这个时间说明它不会再回来了（例如服务重启）。
-  const IMP_REVIEW_GIVEUP = 11 * 60_000;
+  // 单次模型回合最长 60 分钟。仅在一直读不到有效状态或报告时停止轮询。
+  const IMP_REVIEW_GIVEUP = 61 * 60_000;
   const IMP_REVIEW_STATES = ['pending', 'running', 'match', 'differ', 'unavailable'];
   const impReviewURL = jobId => App.core.studioPath('/api/jobs/' + encodeURIComponent(jobId) + '/review');
 
@@ -263,7 +262,7 @@
     impState.review = null; impState.reviewJobId = null; impState.reviewState = null;
     impState.reviewMode = 'preview'; impState.reviewRowId = null;
     impState.reviewVariant = 'fixed'; impState.reviewBase = null; impState.reviewApplied = false;
-    impState.reviewRerun = true; impState.reviewSince = 0;
+    impState.reviewRerun = true; impState.reviewLastActiveAt = 0;
     impReviewRender();
   }
 
@@ -273,6 +272,18 @@
       if (!response.ok) return null;
       const data = await response.json();
       return data && typeof data === 'object' ? data : null;
+    } catch(e){ return null; }
+  }
+
+  async function impReviewJobState(jobId){
+    // 识别结果已加载，cursor=1 只读取任务元数据。
+    const url = App.core.studioPath('/api/jobs/' + encodeURIComponent(jobId) + '?cursor=1');
+    try {
+      const response = await fetch(url, {cache:'no-store', signal:AbortSignal.timeout(15000)});
+      if (response.status === 404) return 'unavailable';
+      if (!response.ok) return null;
+      const {review} = await response.json();
+      return review?.state ?? null;
     } catch(e){ return null; }
   }
 
@@ -306,7 +317,7 @@
       impReviewRender();
       return;
     }
-    impState.reviewSince = Date.now();
+    impState.reviewLastActiveAt = Date.now();
     if (now === 'differ'){ void impReviewInitial(jobId, gen); return; }
     impReviewRender();
     impReviewPoll(jobId, gen);
@@ -325,19 +336,26 @@
     impState.reviewTimer = 0;
     const tick = async () => {
       impState.reviewTimer = 0;
+      const state = await impReviewJobState(jobId);
+      if (!impReviewAlive(jobId, gen)) return;
+      if (state === 'pending' || state === 'running'){
+        impState.reviewLastActiveAt = Date.now();
+        impState.reviewState = state;
+        impReviewRender();
+        impState.reviewTimer = setTimeout(tick, IMP_REVIEW_POLL);
+        return;
+      }
+      if (state === 'unavailable'){
+        impReviewAccept({state});
+        return;
+      }
       const data = await impReviewFetch(jobId);
       if (!impReviewAlive(jobId, gen)) return;
-      // GET 只有 match / differ 才返回 200；复核未完成时的 404 继续按「复核中」轮询
       if (!data){
-        // 服务重启会把进行中的复核改成 unavailable，此时会一直 404：超时后静默放弃，不再转圈。
-        if (Date.now() - impState.reviewSince > IMP_REVIEW_GIVEUP){
-          impState.review = null;
-          impState.reviewState = 'unavailable';
-          impReviewRender();
+        if (Date.now() - impState.reviewLastActiveAt > IMP_REVIEW_GIVEUP){
+          impReviewAccept({state:'unavailable'});
           return;
         }
-        impState.reviewState = 'pending';
-        impReviewRender();
         impState.reviewTimer = setTimeout(tick, IMP_REVIEW_POLL);
         return;
       }
@@ -361,7 +379,7 @@
     impState.review = null;
     impState.reviewState = 'pending';
     impState.reviewApplied = false;
-    impState.reviewSince = Date.now();
+    impState.reviewLastActiveAt = Date.now();
     impReviewRender();
     impReviewPoll(jobId, gen);
   }
