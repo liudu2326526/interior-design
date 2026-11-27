@@ -12,7 +12,7 @@
   const IMP_UPLOAD_TIMEOUT = 5 * 60_000;
   const impState = {files:[], result:null, onApply:null, retryId:null, submission:null, applying:false,
     review:null, reviewJobId:null, reviewState:null, reviewMode:'preview', reviewRowId:null, reviewSceneKey:null,
-    reviewVariant:'fixed', reviewBase:null, reviewApplied:false, reviewTimer:0,
+    roomLayer:'floor', reviewLayer:'floor', reviewVariant:'fixed', reviewBase:null, reviewApplied:false, reviewTimer:0,
     reviewRerun:true, reviewGen:0, reviewLastActiveAt:0};
   const impEls = {};
 
@@ -62,37 +62,42 @@
   }
 
   function impUpdateStart(){
-    impEls.start.disabled = Boolean(impState.submission) || !impState.files.length;
+    impEls.start.disabled = Boolean(impState.submission) || !impState.files.some(item => item.kind === 'floor');
     impEls.start.textContent = App.core.tr('上传并识别', 'Upload and analyze');
   }
 
   function impRenderFiles(){
     impEls.files.innerHTML = '';
-    impState.files.forEach((f, i) => {
+    impEls.ceilingFiles.innerHTML = '';
+    impState.files.forEach(({file, kind}, i) => {
       const row = document.createElement('div'); row.className = 'imp-file';
-      const name = document.createElement('span'); name.textContent = f.name; name.title = f.name;
-      const size = document.createElement('small'); size.textContent = impSize(f.size);
+      const name = document.createElement('span'); name.textContent = file.name; name.title = file.name;
+      const size = document.createElement('small'); size.textContent = impSize(file.size);
       const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'imp-rm';
-      rm.textContent = '×'; rm.title = App.core.tr('移除', 'Remove'); rm.setAttribute('aria-label', App.core.tr('移除', 'Remove'));
+      rm.textContent = '×'; rm.title = App.core.tr('移除', 'Remove');
+      rm.setAttribute('aria-label', App.core.tr(`移除 ${file.name}`, `Remove ${file.name}`));
       rm.onclick = () => { impState.files.splice(i, 1); impRenderFiles(); };
       row.append(name, size, rm);
-      impEls.files.appendChild(row);
+      (kind === 'ceiling' ? impEls.ceilingFiles : impEls.files).appendChild(row);
     });
     impUpdateStart();
   }
 
-  function impAddFiles(list){
+  function impAddFiles(list, kind){
     if (impState.submission) return;
     impErrShow('');
-    let total = impState.files.reduce((a, f) => a + f.size, 0), tooBig = false, empty = false;
-    for (const f of list || []){
-      if (impState.files.length >= IMP_MAX_FILES) break;
-      if (!f.size){ empty = true; continue; }
-      if (total + f.size > IMP_MAX_BYTES){ tooBig = true; continue; }
-      impState.files.push(f); total += f.size;
+    let total = impState.files.reduce((sum, {file}) => sum + file.size, 0);
+    let tooBig = false, empty = false, tooMany = false;
+    for (const file of list || []){
+      if (impState.files.length >= IMP_MAX_FILES){ tooMany = true; break; }
+      if (!file.size){ empty = true; continue; }
+      if (total + file.size > IMP_MAX_BYTES){ tooBig = true; continue; }
+      impState.files.push({file, kind});
+      total += file.size;
     }
     impRenderFiles();
-    if (tooBig) impErrShow(App.core.tr('文件过大：一次最多约 25 MB。', 'Files too large: about 25 MB max per import.'));
+    if (tooMany || tooBig) impErrShow(App.core.tr('户型图和天花图合计最多 20 个文件，约 25 MB。',
+      'Upload up to 20 files and about 25 MB across floor plans and ceiling drawings.'));
     else if (empty) impErrShow(App.core.tr('选中的文件是空的。', 'The selected file is empty.'));
   }
 
@@ -104,7 +109,7 @@
     impState.retryId = typeof retryId === 'string' ? retryId : null;
     impReviewReset();
     impEls.note.value = typeof note === 'string' ? note : '';
-    impEls.file.value = '';
+    impEls.file.value = impEls.ceilingFile.value = '';
     impErrShow('');
     impRenderFiles();
     impShowDialog('pick');
@@ -139,7 +144,7 @@
   }
 
   async function impStart(){
-    if (impState.submission || !impState.files.length) return;
+    if (impState.submission || !impState.files.some(item => item.kind === 'floor')) return;
     const submission = {xhr:null, jobId:null};
     impState.submission = submission;
     impErrShow('');
@@ -149,10 +154,10 @@
 
     const files = [];
     try {
-      for (const f of impState.files){
-        const data = await impFileB64(f);
+      for (const {file, kind} of impState.files){
+        const data = await impFileB64(file);
         if (impState.submission !== submission) return;
-        files.push({name:f.name, mime:f.type || 'application/octet-stream', data});
+        files.push({name:file.name, mime:file.type || 'application/octet-stream', data, kind});
       }
     } catch(e){
       if (impState.submission === submission) impFail(App.core.tr('读取文件失败。', 'Could not read the file.'));
@@ -162,7 +167,7 @@
     const xhr = new XMLHttpRequest();
     const note = impEls.note.value.trim();
     const retryId = impState.retryId;
-    const name = files[0].name;
+    const name = files.find(file => file.kind === 'floor').name;
     submission.xhr = xhr;
     xhr.upload.onprogress = e => {
       if (impState.submission !== submission || !e.lengthComputable || !e.total) return;
@@ -216,6 +221,20 @@
     }
   }
 
+  function impCeilingData(data, plan){
+    let {ceiling} = data;
+    let ceilingMeta = App.io.drawingCeilingMeta(data.ceilingMeta);
+    if (ceiling != null){
+      try { ceiling = App.ceilingModel.validate(ceiling, plan.rooms); }
+      catch {
+        ceiling = null;
+        ceilingMeta = {source:'unavailable', warnings:[...(ceilingMeta?.warnings || []),
+          App.core.tr('天花结果与当前户型不匹配。', 'The ceiling result does not fit this floor plan.')]};
+      }
+    }
+    return {ceiling, ceilingMeta};
+  }
+
   function impOpenResult(data, onApply, meta = {}){
     if (impState.submission || impState.applying) return false;
     const result = App.plan.sanitizePlan(data?.plan);
@@ -227,6 +246,7 @@
       plan:result.plan,
       furniture:App.io.drawingFurniture(data.furniture),
       explanation:typeof data.explanation === 'string' ? data.explanation.trim() : '',
+      ...impCeilingData(data, result.plan),
     };
     impState.onApply = onApply;
     impState.review = null;
@@ -235,6 +255,7 @@
     impState.reviewMode = meta.mode === 'project' ? 'project' : 'preview';
     impState.reviewRowId = typeof meta.rowId === 'string' ? meta.rowId : null;
     impState.reviewSceneKey = impState.reviewMode === 'project' ? meta.sceneKey ?? App.projects.activeSceneKey : null;
+    impState.roomLayer = impState.reviewLayer = 'floor';
     impState.reviewVariant = 'fixed';
     impState.reviewBase = null;
     impState.reviewApplied = false;
@@ -297,6 +318,7 @@
       issues: Array.isArray(s.issues) ? s.issues.filter(i => i && typeof i === 'object') : [],
       fixed: s.fixed && typeof s.fixed === 'object' ? s.fixed : null,
       delta: s.delta && typeof s.delta === 'object' ? s.delta : null,
+      ceilingMeta: App.io.drawingCeilingMeta(s.ceilingMeta),
       updatedAt: Number.isFinite(+s.updatedAt) ? +s.updatedAt : Date.now(),
     };
     // 旧服务端不带 rerun 字段：按可重跑处理，保持原行为。
@@ -315,12 +337,12 @@
   function impReviewStart(){
     impReviewStop();
     const jobId = impState.reviewJobId, now = impState.reviewState, gen = impState.reviewGen;
-    if (!jobId || !['differ', 'pending', 'running'].includes(now)){
+    if (!jobId || !IMP_REVIEW_STATES.includes(now)){
       impReviewRender();
       return;
     }
     impState.reviewLastActiveAt = Date.now();
-    if (now === 'differ'){ void impReviewInitial(jobId, gen); return; }
+    if (['match', 'differ', 'unavailable'].includes(now)){ void impReviewInitial(jobId, gen); return; }
     impReviewRender();
     impReviewPoll(jobId, gen);
   }
@@ -328,7 +350,11 @@
   async function impReviewInitial(jobId, gen){
     const data = await impReviewFetch(jobId);
     if (!impReviewAlive(jobId, gen)) return;
-    if (!data){ impState.reviewState = 'unavailable'; impReviewRender(); return; }
+    if (!data){
+      if (impState.reviewState === 'differ') impState.reviewState = 'unavailable';
+      impReviewRender();
+      return;
+    }
     impReviewAccept(data);
     if (impState.review.state === 'pending' || impState.review.state === 'running') impReviewPoll(jobId, gen);
   }
@@ -349,7 +375,8 @@
         return;
       }
       if (state === 'unavailable'){
-        impReviewAccept({state});
+        const data = await impReviewFetch(jobId);
+        if (impReviewAlive(jobId, gen)) impReviewAccept(data || {state});
         return;
       }
       const data = await impReviewFetch(jobId);
@@ -394,7 +421,15 @@
     const result = App.plan.sanitizePlan(fixed.plan);
     if (!result.ok) return null;
     const plan = {...result.plan, name:impState.result?.plan?.name ?? result.plan.name};
-    return {plan, furniture:App.io.drawingFurniture(fixed.furniture)};
+    return {plan, furniture:App.io.drawingFurniture(fixed.furniture), ...impCeilingData(fixed, plan)};
+  }
+
+  function impReviewFixedPreview(fixed, baseline){
+    return {
+      ...fixed,
+      ceiling: fixed.ceiling === undefined && baseline.ceiling ? App.ceilingModel.normalize(baseline.ceiling, fixed.plan.rooms) : fixed.ceiling,
+      ceilingMeta: fixed.ceilingMeta || baseline.ceilingMeta,
+    };
   }
 
   function impReviewApply(){
@@ -403,7 +438,7 @@
     if (!impState.reviewApplied) impState.reviewBase = impState.result;
     impState.reviewApplied = true;
     impState.reviewVariant = 'fixed';
-    impState.result = {...impState.result, plan:fixed.plan, furniture:fixed.furniture};
+    impState.result = {...impState.result, ...impReviewFixedPreview(fixed, impState.reviewBase)};
     impRenderPreview();
   }
 
@@ -429,7 +464,9 @@
     const names = new Set(project.schemes.map(scheme => scheme.name));
     let name = label;
     for (let n = 2; names.has(name); n++) name = `${label} ${n}`;
-    const snapshot = App.io.snapshotFromRecognition(fixed.plan, fixed.furniture);
+    const snapshot = App.io.snapshotFromRecognition(fixed.plan, fixed.furniture, {
+      ceiling:fixed.ceiling, ceilingMeta:fixed.ceilingMeta, fallbackSnapshot:App.io.studio.projectJSON(),
+    });
     if (!snapshot) return;
     const created = await App.projects.createScheme({
       from:'baseline', name, snapshot, origin:'review', expectedSceneKey,
@@ -480,7 +517,37 @@
     const pad = Math.max(200, Math.max(x1-x0, y1-y0) * .02);
     return `${x0-pad} ${y0-pad} ${x1-x0+pad*2} ${y1-y0+pad*2}`;
   }
-  function impReviewMap(plan, furniture, changedIds, viewBox){
+  function impCeilingShape(rooms, ceiling, viewBox){
+    if (!ceiling) return '';
+    const {tr, esc} = App.core, model = App.ceilingModel;
+    const scale = 200 / Math.max(...viewBox.split(/\s+/).slice(2).map(Number));
+    const path = points => 'M' + points.map(point => point.join(' ')).join('L');
+    return rooms.map(room => {
+      const design = model.room(ceiling, room.id);
+      const zones = [...design.zones].sort((a,b) => a.drop - b.drop).map(zone => {
+        const d = [model.outline(zone), ...(zone.holes || [])].map(points => path(points) + 'Z').join(' ');
+        const height = model.baseHeight(ceiling, room.id) - zone.drop;
+        return `<path d="${d}" fill-rule="evenodd" fill="${zone.color}" stroke="#a97145" stroke-width="1.4" vector-effect="non-scaling-stroke"><title>${esc(zone.name)} · ${height} mm</title></path>`;
+      });
+      const edges = design.edges.map(edge => {
+        const zone = edge.zoneId ? design.zones.find(item => item.id === edge.zoneId) : room;
+        const region = edge.hole === undefined ? zone : {poly:zone.holes[edge.hole]};
+        const cove = edge.type === 'cove';
+        return `<path d="${path(model.edgePoints(region, edge.edge))}" fill="none" stroke="${cove ? '#d39728' : '#846a56'}" stroke-width="3" vector-effect="non-scaling-stroke"><title>${cove ? tr('灯槽', 'Light cove') : tr('收边', 'Trim')}</title></path>`;
+      });
+      const fixtures = design.fixtures.map(fixture => {
+        const defaults = App.ceilingFurniture.defaults(fixture.type);
+        const length = fixture.length ?? defaults.w, width = fixture.width ?? defaults.d;
+        const symbol = App.ceilingEditor.fixtureSymbol(fixture.type, fixture.color);
+        const size = App.ceilingEditor.symbolScale(fixture.type, length, width, scale);
+        return `<g transform="translate(${fixture.x} ${fixture.y}) rotate(${fixture.rotation || 0})"><title>${esc(defaults.name)} · ${length}×${width} mm</title><g transform="${size}">${symbol}</g></g>`;
+      });
+      return [...zones, ...edges, ...fixtures].join('');
+    }).join('');
+  }
+
+  function impReviewMap(plan, furniture, changedIds, viewBox, ceiling){
+    viewBox ||= impReviewViewBox([plan]);
     const changed = new Set((Array.isArray(changedIds) ? changedIds : []).map(String));
     let s = '';
     const rooms = plan.rooms;
@@ -503,12 +570,97 @@
       s += curve ? `<path d="${App.draw2d.curveBandPath(curve)}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`
         : `<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="#f7fbfd" stroke="#4f7394" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
     });
+    if (ceiling !== undefined){
+      s += impCeilingShape(rooms, ceiling, viewBox);
+      return `<svg viewBox="${viewBox}" role="img" aria-label="${App.core.tr('天花对比图', 'Ceiling comparison')}">${s}</svg>`;
+    }
     const list = (Array.isArray(furniture) ? furniture : []).map(App.geom.normalizeFurn).filter(Boolean);
     const paint = f => `<g transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${App.draw2d.furnitureShape(f)}</g>`;
     s += list.filter(f => f.type === 'rug').map(paint).join('') +
       list.filter(f => f.type === 'component').map(paint).join('') +
       list.filter(f => f.type !== 'rug' && f.type !== 'component').map(paint).join('');
-    return `<svg viewBox="${viewBox || impReviewViewBox([plan])}" role="img" aria-label="${App.core.esc(App.core.tr('户型对比图', 'Plan comparison'))}">${s}</svg>`;
+    return `<svg viewBox="${viewBox}" role="img" aria-label="${App.core.tr('户型对比图', 'Plan comparison')}">${s}</svg>`;
+  }
+
+  const impHasCeiling = data => Boolean(data?.ceiling || data?.ceilingMeta);
+  const impFloorFurniture = data => data.ceiling ? data.furniture.filter(item => !App.ceilingFurniture.is(item)) : data.furniture;
+
+  function impCeilingDetails(container, data, room, report = false){
+    const {tr} = App.core, meta = data?.ceilingMeta;
+    container.replaceChildren();
+    container.hidden = !impHasCeiling(data);
+    if (container.hidden) return;
+    const sourceLabels = {
+      drawing:tr('依据上传的天花图', 'Based on the uploaded ceiling drawing'),
+      generated:tr('AI 生成的天花草案', 'AI-generated ceiling draft'),
+      project:tr('来自项目的天花设计', 'Ceiling design from the project'),
+      unavailable:tr('暂无可用的天花识别结果', 'No usable ceiling recognition result'),
+    };
+    const reviewLabels = {
+      match:meta?.source === 'generated' ? tr('天花草案已完成复核', 'Ceiling draft review completed') :
+        tr('天花复核未发现明显差异', 'Ceiling review found no obvious differences'),
+      differ:tr('天花有待核对项', 'Ceiling items need checking'),
+      unavailable:tr('天花复核未完成', 'Ceiling review is incomplete'),
+    };
+    const append = (tag,text) => {
+      if (!text) return;
+      const node = document.createElement(tag);
+      node.textContent = text;
+      container.append(node);
+    };
+    const sourceLabel = meta?.reason === 'no-indoor' ? tr('无室内空间需要天花设计', 'No indoor space needs a ceiling design') :
+      sourceLabels[meta?.source] || tr('天花设计', 'Ceiling design');
+    append('b', report ? reviewLabels[meta?.reviewState] || tr('天花复核', 'Ceiling review') : sourceLabel);
+    if (!report && meta?.estimated) append('p', tr('草案含估算，标高和尺寸待核对。', 'The draft contains estimates. Verify elevations and dimensions.'));
+    if (room && data?.ceiling && !room.outdoor && !room.bay){
+      const model = App.ceilingModel, design = model.room(data.ceiling, room.id);
+      if (meta?.source === 'drawing' && !Object.hasOwn(data.ceiling.rooms, room.id)){
+        append('p', tr('图纸未识别到这个房间的天花设计。', 'No ceiling design was recognized for this room.'));
+      } else {
+        const height = model.baseHeight(data.ceiling, room.id);
+        const lowest = Math.min(height, ...design.zones.map(zone => height - zone.drop));
+        const base = design.baseHeight === undefined ? tr('沿用全屋原顶', 'Whole-home ceiling setting') : tr('房间原顶净高', 'Room base ceiling');
+        append('p', tr(`${base} ${height} mm · 最低完成面 ${lowest} mm · ${design.fixtures.length} 件顶装设备及灯具`,
+          `${base} ${height} mm · Lowest ceiling ${lowest} mm · ${design.fixtures.length} ceiling fixtures`));
+      }
+    }
+    if (room) append('p', meta?.coveredOutdoorRooms?.find(item => item.roomId === room.id)?.evidence);
+    append('p', report ? meta?.reviewSummary : meta?.alignment);
+    if (meta?.warnings.length){
+      const list = document.createElement('ul');
+      for (const warning of meta.warnings){
+        const item = document.createElement('li');
+        item.textContent = warning;
+        list.append(item);
+      }
+      container.append(list);
+    }
+  }
+
+  function impSegment(container, label, options, current, change){
+    container.setAttribute('aria-label', label);
+    container.replaceChildren(...options.map(([value, text, disabled]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.disabled = Boolean(disabled);
+      button.setAttribute('aria-pressed', String(value === current));
+      button.onclick = () => {
+        const parent = container.closest('#impReview, #impView, .imp-room-review');
+        change(value);
+        const group = container.isConnected ? container : Array.from(parent?.querySelectorAll('[role="group"]') || [])
+          .find(node => node.getAttribute('aria-label') === label);
+        group?.querySelector('[aria-pressed="true"]')?.focus({preventScroll:true});
+      };
+      return button;
+    }));
+  }
+
+  function impLayerSegment(container, current, change){
+    const {tr} = App.core;
+    impSegment(container, tr('图层', 'Drawing layer'), [
+      ['floor',tr('户型平面','Floor plan')], ['ceiling',tr('天花顶面','Ceiling plan')],
+    ], current, change);
   }
 
   function impReviewButton(label, primary, onClick){
@@ -527,11 +679,20 @@
   function impReviewShown(){
     const fixed = impReviewFixedData();
     const variant = fixed && impState.reviewVariant === 'fixed' ? 'fixed' : 'recognized';
+    const baseline = impState.reviewBase || impState.result;
+    const shown = variant === 'fixed' ? impReviewFixedPreview(fixed, baseline) : baseline;
+    const hasCeiling = Boolean(baseline.ceiling || fixed?.ceiling);
     return {
-      variant,
-      fixed,
-      shown: variant === 'fixed' ? fixed : {plan:impState.result.plan, furniture:impState.result.furniture},
+      variant, fixed, shown, hasCeiling,
+      showCeiling: hasCeiling && impState.reviewLayer === 'ceiling',
+      viewBox: impReviewViewBox([baseline.plan, fixed?.plan]),
     };
+  }
+
+  function impReviewSetLayer(value){
+    impState.reviewLayer = value;
+    impReviewRender();
+    if (impView.open) impViewRender();
   }
 
   function impReviewSetVariant(value){
@@ -540,9 +701,18 @@
     if (impView.open) impViewRender();
   }
 
+  function impReviewVariantSegment(container, variant, fixed){
+    const {tr} = App.core;
+    const recognized = impState.reviewMode === 'project' ? tr('项目底稿', 'Project baseline') : tr('识别结果', 'Recognized');
+    impSegment(container, tr('对比视图', 'Comparison view'), [
+      ['recognized',recognized], ['fixed',tr('修正后','Corrected'),!fixed],
+    ], variant, impReviewSetVariant);
+  }
+
   function impViewEls(){
     return {
-      wrap: App.core.$('#impView'), stage: App.core.$('#impViewStage'), canvas: App.core.$('#impViewCanvas'), seg: App.core.$('#impViewSeg'),
+      wrap: App.core.$('#impView'), stage: App.core.$('#impViewStage'), canvas: App.core.$('#impViewCanvas'),
+      seg: App.core.$('#impViewSeg'), layer: App.core.$('#impViewLayer'),
       title: App.core.$('#impViewTitle'), note: App.core.$('#impViewNote'), pct: App.core.$('#impViewPct'),
       delta: App.core.$('#impViewDelta'), hint: App.core.$('#impViewHint'),
     };
@@ -613,27 +783,17 @@
   function impViewRender(){
     const els = impViewEls();
     if (!impView.open || !impState.result) return;
-    const {variant, fixed, shown} = impReviewShown();
+    const {variant, fixed, shown, hasCeiling, showCeiling, viewBox} = impReviewShown();
     const data = impState.review;
-    const viewBox = impReviewViewBox([impState.result.plan, fixed?.plan]);
     impView.vb = viewBox.split(/\s+/).map(Number);
     const changed = variant === 'fixed' ? data?.delta?.changedRooms : [];
-    els.canvas.innerHTML = impReviewMap(shown.plan, shown.furniture, changed, viewBox);
-    // 悬浮切换：与卡片共用状态，镜像到当前的识别 / 修正两版
-    const projectMode = impState.reviewMode === 'project';
-    const segLabel = projectMode ? App.core.tr('项目底稿', 'Project baseline') : App.core.tr('识别结果', 'Recognized');
-    const segButton = (label, value) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.setAttribute('aria-pressed', String(variant === value));
-      if (value === 'fixed' && !fixed) b.disabled = true;
-      b.onclick = () => impReviewSetVariant(value);
-      return b;
-    };
-    els.seg.replaceChildren(segButton(segLabel, 'recognized'), segButton(App.core.tr('修正后', 'Corrected'), 'fixed'));
-    els.title.textContent = App.core.tr('户型对比', 'Plan comparison');
-    els.note.textContent = data?.issues?.length ? App.core.tr(`${data.issues.length} 处差异`, `${data.issues.length} differences`) : '';
+    els.canvas.innerHTML = impReviewMap(shown.plan, impFloorFurniture(shown), changed, viewBox, showCeiling ? shown.ceiling ?? null : undefined);
+    impReviewVariantSegment(els.seg, variant, fixed);
+    els.layer.hidden = !hasCeiling;
+    els.wrap.classList.toggle('has-ceiling', hasCeiling);
+    if (hasCeiling) impLayerSegment(els.layer, impState.reviewLayer, impReviewSetLayer);
+    els.title.textContent = showCeiling ? App.core.tr('天花对比', 'Ceiling comparison') : App.core.tr('户型对比', 'Plan comparison');
+    els.note.textContent = data?.issues?.length ? App.core.tr(`${data.issues.length} 项需要核对`, `${data.issues.length} items to verify`) : '';
     const deltaText = impReviewDelta(data?.delta);
     els.delta.textContent = deltaText;
     els.delta.hidden = !deltaText;
@@ -672,8 +832,9 @@
     if (note){
       const match = !projectMode && now === 'match' && impState.result;
       note.hidden = !match;
-      note.textContent = match ? App.core.tr('已对照原图复核，未发现明显差异。', 'Auto review found no obvious differences from the source drawing.') : '';
+      note.textContent = match ? App.core.tr('户型已对照原图复核，未发现明显差异。', 'Floor plan review found no obvious differences from the source drawing.') : '';
     }
+    impCeilingDetails(impEls.reviewCeilingMeta, {ceilingMeta:data?.ceilingMeta}, null, true);
     box.replaceChildren();
     if (!impState.reviewJobId || !now || now === 'match' || now === 'unavailable'){
       box.hidden = true;
@@ -686,7 +847,8 @@
     if (waiting){
       const row = document.createElement('div');
       row.className = 'imp-review-pending';
-      row.textContent = App.core.tr('正在对照原图复核…', 'Comparing with the source drawing…');
+      row.textContent = impHasCeiling(impState.result) ? App.core.tr('正在复核户型与天花…', 'Reviewing the floor plan and ceiling…') :
+        App.core.tr('正在对照原图复核…', 'Comparing with the source drawing…');
       box.append(row);
       return;
     }
@@ -699,40 +861,37 @@
       box.append(row);
       return;
     }
-    const fixed = impReviewFixedData();
+    const {variant, fixed, shown, hasCeiling, showCeiling, viewBox} = impReviewShown();
     const issues = Array.isArray(data?.issues) ? data.issues : [];
     const head = document.createElement('div');
     head.className = 'imp-review-head';
     // differ 但模型没列出条目（只给了修正图纸）时，不能显示「发现 0 处差异」。
     head.textContent = issues.length
-      ? App.core.tr(`自动复核发现 ${issues.length} 处与原图不一致`,
-        issues.length === 1 ? 'Auto review found 1 difference from the source drawing'
-          : `Auto review found ${issues.length} differences from the source drawing`)
-      : App.core.tr('自动复核发现差异，详见修正后的图纸', 'Auto review found differences. See the corrected drawing.');
-    const segLabel = projectMode ? App.core.tr('项目底稿', 'Project baseline') : App.core.tr('识别结果', 'Recognized');
-    const variant = fixed && impState.reviewVariant === 'fixed' ? 'fixed' : 'recognized';
+      ? App.core.tr(`自动复核有 ${issues.length} 项需要核对`,
+        issues.length === 1 ? 'Review found 1 item to verify' : `Review found ${issues.length} items to verify`)
+      : App.core.tr('查看自动复核提出的修正', 'See proposed corrections');
     const seg = document.createElement('div');
     seg.className = 'imp-review-seg';
     seg.setAttribute('role', 'group');
-    seg.setAttribute('aria-label', App.core.tr('对比视图', 'Comparison view'));
-    const segButton = (label, value) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.setAttribute('aria-pressed', String(variant === value));
-      if (value === 'fixed' && !fixed) b.disabled = true;
-      b.onclick = () => impReviewSetVariant(value);
-      return b;
-    };
-    seg.append(segButton(segLabel, 'recognized'), segButton(App.core.tr('修正后', 'Corrected'), 'fixed'));
-    const shown = variant === 'fixed' ? fixed : {plan:impState.result.plan, furniture:impState.result.furniture};
-    const viewBox = impReviewViewBox([impState.result?.plan, fixed?.plan]);
+    impReviewVariantSegment(seg, variant, fixed);
+    const controls = document.createElement('div');
+    controls.className = 'imp-review-controls';
+    controls.append(seg);
+    if (hasCeiling){
+      const layer = document.createElement('div');
+      layer.className = 'imp-review-seg';
+      layer.setAttribute('role', 'group');
+      impLayerSegment(layer, impState.reviewLayer, impReviewSetLayer);
+      controls.append(layer);
+    }
     const map = document.createElement('div');
     map.className = 'imp-review-map';
     map.tabIndex = 0;
     map.setAttribute('role', 'button');
-    map.setAttribute('aria-label', App.core.tr('打开大图查看户型对比', 'Open the large plan comparison'));
-    map.innerHTML = impReviewMap(shown.plan, shown.furniture, variant === 'fixed' ? data?.delta?.changedRooms : [], viewBox);
+    map.setAttribute('aria-label', showCeiling ? App.core.tr('打开大图查看天花对比', 'Open the large ceiling comparison') :
+      App.core.tr('打开大图查看户型对比', 'Open the large plan comparison'));
+    map.innerHTML = impReviewMap(shown.plan, impFloorFurniture(shown), variant === 'fixed' ? data?.delta?.changedRooms : [], viewBox,
+      showCeiling ? shown.ceiling ?? null : undefined);
     map.onclick = () => impViewOpen();
     map.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); impViewOpen(); } };
     const expand = document.createElement('button');
@@ -776,7 +935,14 @@
       });
       apply.disabled = !fixed;
       foot.append(apply);
-      hint.textContent = App.core.tr('从修正后的户型与家具开始设计。', 'Start designing from the corrected floor plan and furniture.');
+      if (fixed?.ceiling){
+        hint.textContent = App.core.tr('新方案使用修正版的户型、家具和天花。', 'The new design uses the corrected floor plan, furniture and ceiling.');
+      } else if (hasCeiling){
+        hint.textContent = App.core.tr('新方案使用修正后的户型与家具，并保留当前方案中与新户型相容的天花。',
+          'The new design uses the corrected floor plan and furniture and carries over compatible ceiling elements from the current design.');
+      } else {
+        hint.textContent = App.core.tr('从修正后的户型与家具开始设计。', 'Start designing from the corrected floor plan and furniture.');
+      }
     } else {
       const keep = impReviewButton(App.core.tr('保留原识别', 'Keep recognized'), false, () => {
         impReviewStop();
@@ -791,7 +957,13 @@
       apply.disabled = !fixed;
       foot.append(keep, apply);
     }
-    box.append(head, seg, map);
+    box.append(head, controls, map);
+    if (showCeiling){
+      const details = document.createElement('div');
+      details.className = 'imp-ceiling-details';
+      impCeilingDetails(details, shown);
+      box.append(details);
+    }
     if (deltaText) box.append(deltaEl);
     if (summary) box.append(summaryEl);
     if (issues.length) box.append(issueList);
@@ -808,32 +980,52 @@
     }
   }
 
-  function impRenderRoomReview(plan, furniture){
+  function impRenderRoomReview(data){
+    const {plan, ceiling} = data, furniture = impFloorFurniture(data);
+    const {tr, esc, nm} = App.core;
     const select = App.core.$('#impRoomReview'), drawing = App.core.$('#impRoomDrawing');
+    const controls = App.core.$('#impRoomLayer'), details = App.core.$('#impRoomCeiling');
     const previous = select.value;
-    select.replaceChildren(...plan.rooms.map(room => new Option(App.core.nm(room.name), room.id)));
+    select.replaceChildren(...plan.rooms.map(room => new Option(nm(room.name), room.id)));
     if (plan.rooms.some(room => room.id === previous)) select.value = previous;
-    App.core.$('#impRoomReviewLabel').textContent = App.core.tr('对照原图复核房间布置', 'Compare room layout with the source drawing');
-    select.onchange = () => {
+    App.core.$('#impRoomReviewLabel').textContent = tr('查看房间布置', 'Inspect the room layout');
+    controls.hidden = !ceiling;
+    const render = () => {
       const room = plan.rooms.find(r => r.id === select.value);
       const outline = App.geom.roomOutline(room), [x0,y0,x1,y1] = App.geom.bbox(outline);
       const margin = Math.max(120, Math.max(x1-x0, y1-y0)*.06);
-      drawing.setAttribute('viewBox', `${x0-margin} ${y0-margin} ${x1-x0+2*margin} ${y1-y0+2*margin}`);
+      const viewBox = `${x0-margin} ${y0-margin} ${x1-x0+2*margin} ${y1-y0+2*margin}`;
+      drawing.setAttribute('viewBox', viewBox);
       const floor = App.draw2d.roomShape(room, 'fill="#fffdf9" stroke="#b5a491" stroke-width="1" vector-effect="non-scaling-stroke"');
+      const showCeiling = ceiling && impState.roomLayer === 'ceiling';
+      drawing.setAttribute('aria-label', showCeiling ? tr('房间天花图', 'Room ceiling plan') : tr('房间平面图', 'Room floor plan'));
+      impCeilingDetails(details, data, showCeiling ? room : null);
+      if (showCeiling){
+        drawing.innerHTML = floor + impCeilingShape([room], ceiling, viewBox);
+        return;
+      }
       const layout = furniture.filter(f => App.assistant.pointInPoly(f.cx, f.cy, outline)).map(App.geom.normalizeFurn).filter(Boolean);
-      const paint = f => `<g transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})"><title>${App.core.esc(App.core.nm(f.name))}</title>${App.draw2d.furnitureShape(f)}</g>`;
+      const paint = f => `<g transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})"><title>${esc(nm(f.name))}</title>${App.draw2d.furnitureShape(f)}</g>`;
       drawing.innerHTML = floor + layout.filter(f => f.type === 'rug').map(paint).join('') +
         layout.filter(f => f.type !== 'rug').map(paint).join('');
     };
-    select.onchange();
+    const renderControls = () => impLayerSegment(controls, impState.roomLayer, value => {
+      impState.roomLayer = value;
+      renderControls();
+      render();
+    });
+    if (ceiling) renderControls();
+    select.onchange = render;
+    render();
   }
 
   function impRenderPreview(){
-    const {plan:p, furniture, explanation} = impState.result;
+    const {plan:p, explanation} = impState.result;
     impEls.planName.textContent = p.name;
     impEls.planSrc.textContent = App.core.tr('来自图纸', 'From drawing');
     const total = p.rooms.filter(r => r.counted !== false).reduce((a, r) => a + App.geom.roomArea(r), 0);
-    const components = App.geom.componentCount(furniture);
+    const floorFurniture = impFloorFurniture(impState.result);
+    const components = App.geom.componentCount(floorFurniture);
     impEls.stats.innerHTML = '';
     const cell = (label, value) => {
       const d = document.createElement('div');
@@ -847,10 +1039,10 @@
       cell(App.core.tr('房间', 'Rooms'), String(p.rooms.length)),
       cell(App.core.tr('总面积', 'Total area'), App.geom.fmt(total) + ' m²'),
       openings,
-      cell(App.core.tr('识别到的家具', 'Recognized furniture'), String(furniture.length - components)),
+      cell(App.core.tr('识别到的家具', 'Recognized furniture'), String(floorFurniture.length - components)),
     );
     if (components) impEls.stats.append(cell(App.core.tr('识别到的构件', 'Recognized components'), String(components)));
-    impRenderRoomReview(p, furniture);
+    impRenderRoomReview(impState.result);
     impEls.rooms.innerHTML = '';
     p.rooms.forEach(r => {
       const li = document.createElement('li');
@@ -866,13 +1058,13 @@
 
   async function impApplyPlan(){
     if (!impState.result || impState.applying || typeof impState.onApply !== 'function') return;
-    const {plan, furniture} = impState.result;
+    const {plan, furniture, ceiling, ceilingMeta} = impState.result;
     impState.applying = true;
     impEls.apply.disabled = impEls.cancelApply.disabled = impEls.close.disabled = true;
     impErrShow('');
     let result;
     try {
-      result = await impState.onApply({plan, furniture, keep:false});
+      result = await impState.onApply({plan, furniture, ceiling, ceilingMeta, keep:false});
     } catch(e) {
       result = {ok:false};
     } finally {
@@ -893,8 +1085,10 @@
     impEls.title.textContent = compareMode ? App.core.tr('图纸复核', 'Drawing review') : impState.result
       ? App.core.tr('识别结果', 'Recognition result') : App.core.tr('导入图纸', 'Import drawing');
     impEls.close.title = App.core.tr('关闭', 'Close');
-    impEls.dropTitle.textContent = App.core.tr('选择图纸文件', 'Choose drawing files');
-    impEls.dropHint.textContent = App.core.tr('支持图片、PDF、CAD 导出、JSON，不限格式', 'Images, PDF, CAD exports or JSON — any format');
+    impEls.dropTitle.textContent = App.core.tr('选择户型图（必选）', 'Choose floor plans (required)');
+    impEls.dropHint.textContent = App.core.tr('图片、PDF、CAD 导出或 JSON', 'Images, PDF, CAD exports or JSON');
+    impEls.ceilingDropTitle.textContent = App.core.tr('添加天花图（可选）', 'Add ceiling drawings (optional)');
+    impEls.ceilingDropHint.textContent = App.core.tr('同一户型的吊顶、灯位或顶装设备图', 'Ceiling, lighting or fixture drawings for the same floor plan');
     impEls.note.placeholder = App.core.tr('备注（可选，如：只识别一层）', 'Note (optional, e.g. "ground floor only")');
     impEls.pickHint.textContent = impState.retryId
       ? App.core.tr('请重新选择图纸文件以重试识别。', 'Choose the drawing files again to retry recognition.')
@@ -916,16 +1110,24 @@
       wrap: App.core.$('#impWrap'), title: App.core.$('#impTitle'), close: App.core.$('#impClose'),
       pick: App.core.$('#impPick'), drop: App.core.$('#impDrop'), dropTitle: App.core.$('#impDropTitle'), dropHint: App.core.$('#impDropHint'),
       files: App.core.$('#impFiles'), file: App.core.$('#impFile'), note: App.core.$('#impNote'),
+      ceilingDrop: App.core.$('#impCeilingDrop'), ceilingDropTitle: App.core.$('#impCeilingDropTitle'), ceilingDropHint: App.core.$('#impCeilingDropHint'),
+      ceilingFiles: App.core.$('#impCeilingFiles'), ceilingFile: App.core.$('#impCeilingFile'),
       pickCancel: App.core.$('#impPickCancel'), start: App.core.$('#impStart'), pickHint: App.core.$('#impPickHint'),
       prog: App.core.$('#impProg'), bar: App.core.$('#impBar'), st: App.core.$('#impSt'), cancel: App.core.$('#impCancel'),
       body: App.core.$('#impBody'), planName: App.core.$('#impPlanName'), planSrc: App.core.$('#impPlanSrc'), stats: App.core.$('#impStats'),
-      review: App.core.$('#impReview'), reviewNote: App.core.$('#impReviewNote'),
+      review: App.core.$('#impReview'), reviewNote: App.core.$('#impReviewNote'), reviewCeilingMeta: App.core.$('#impReviewCeilingMeta'),
       rooms: App.core.$('#impRooms'), exp: App.core.$('#impExp'), resultHint: App.core.$('#impResultHint'),
       cancelApply: App.core.$('#impCancelApply'), apply: App.core.$('#impApply'), err: App.core.$('#impErr'),
     });
-    impEls.drop.onclick = () => impEls.file.click();
-    impEls.drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); impEls.file.click(); } };
-    impEls.file.onchange = e => { impAddFiles(e.target.files); e.target.value = ''; };
+    const bindPicker = (drop, input, kind) => {
+      drop.onclick = () => input.click();
+      drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); input.click(); } };
+      drop.ondragover = e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); };
+      drop.ondrop = e => { e.preventDefault(); impAddFiles(e.dataTransfer.files, kind); };
+      input.onchange = e => { impAddFiles(e.target.files, kind); e.target.value = ''; };
+    };
+    bindPicker(impEls.drop, impEls.file, 'floor');
+    bindPicker(impEls.ceilingDrop, impEls.ceilingFile, 'ceiling');
     impEls.start.onclick = impStart;
     impEls.pickCancel.onclick = impClose;
     impEls.cancel.onclick = impAbort;

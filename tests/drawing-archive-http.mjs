@@ -11,9 +11,16 @@ import { fileURLToPath } from 'node:url';
 
 const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+Xj1sAAAAASUVORK5CYII=';
 const drawing = '原始图纸.png';
+const ceilingDrawing = '天花平面.png';
 const note = '核实北面窗洞';
 const serverPath = fileURLToPath(new URL('../server.mjs', import.meta.url));
 const samplePlan = JSON.parse(await readFile(new URL('../data/empty-plan.json', import.meta.url)));
+const zone = {
+  id: 'north', name: '北侧边吊', poly: [[0, 0], [8000, 0], [8000, 500], [0, 500]],
+  drop: 150, color: '#ededed',
+};
+const fixture = {id: 'light-1', type: 'downlight', zoneId: 'north', x: 2000, y: 250};
+const ceilingRooms = drop => ({room1: {zones: [{...zone, drop}], edges: [], fixtures: [fixture]}});
 
 async function availablePort() {
   const socket = createServer().listen(0, '127.0.0.1');
@@ -39,7 +46,7 @@ async function until(check) {
   assert.fail('Timed out waiting for drawing review');
 }
 
-test('remote review reuses the archived drawing after restart and history expiry', { timeout: 20_000 }, async t => {
+test('drawing jobs archive both sheets, review a ceiling after restart, and design for floor-only submissions', { timeout: 30_000 }, async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'studio-drawing-archive-test-'));
   const runner = path.join(directory, 'codex.cjs');
   const trace = path.join(directory, 'trace.ndjson');
@@ -69,11 +76,36 @@ test('remote review reuses the archived drawing after restart and history expiry
       const message = params.input[0].text;
       const images = params.input.slice(1).map(input => input.path);
       const source = images.find(file => path.basename(file) === ${JSON.stringify(drawing)});
-      const kind = images.some(file => path.basename(file) === 'review-plan.png') ? 'review' : 'import';
+      const ceilingSource = images.find(file => path.basename(file) === ${JSON.stringify(ceilingDrawing)});
+      let ceilingTask;
+      try { ceilingTask = JSON.parse(message); } catch {}
+      const kind = ceilingTask?.stage
+        ? 'ceiling-' + ceilingTask.stage
+        : images.some(file => path.basename(file) === 'review-plan.png') ? 'review' : 'import';
       const observed = { kind, source, original: source && readFileSync(source).toString('base64'),
-        note: message.includes(${JSON.stringify(note)}) };
+        note: message.includes(${JSON.stringify(note)}), ceilingSource,
+        ceilingOriginal: ceilingSource && readFileSync(ceilingSource).toString('base64'),
+        ceilingTag: ceilingTask?.inputs?.sources?.find(item => item.kind === 'ceiling')?.name,
+        ceilingCandidate: images[ceilingTask?.inputs?.ceilingImage - 1] };
       appendFileSync(process.env.STUDIO_DRAWING_TRACE, JSON.stringify(observed) + '\\n');
-      const output = kind === 'import' ? ${JSON.stringify(samplePlan)} : { verdict: 'match', summary: '核对完成' };
+      let output;
+      switch (kind) {
+        case 'import': output = ${JSON.stringify(samplePlan)}; break;
+        case 'review': output = {verdict: 'match', summary: '户型核对完成'}; break;
+        case 'ceiling-recognize':
+          output = ceilingSource
+            ? {status: 'found', alignment: '已按两处墙角和门洞核对', rooms: ${JSON.stringify(ceilingRooms(150))}}
+            : {status: 'absent', rooms: {}};
+          break;
+        case 'ceiling-generate':
+          output = {rooms: ${JSON.stringify(ceilingRooms(120))}, warnings: ['需现场核对净高']};
+          break;
+        case 'ceiling-review':
+          output = ceilingSource
+            ? {verdict: 'differ', summary: '图纸下吊量为 160 mm', rooms: ${JSON.stringify(ceilingRooms(160))}}
+            : {verdict: 'match', summary: '已按房间和家具布局检查草案'};
+          break;
+      }
       answer(id, { turn: { id: 'turn', status: 'inProgress' } });
       send({ method: 'item/completed', params: { threadId: 'thread', turnId: 'turn',
         item: { type: 'agentMessage', id: 'answer', phase: 'final_answer', text: JSON.stringify(output) } } });
@@ -102,30 +134,48 @@ test('remote review reuses the archived drawing after restart and history expiry
   }
 
   const first = await start();
+  const noFloor = await first.request('/api/jobs/plan-import', {
+    method: 'POST', data: { files: [{ name: ceilingDrawing, data: image, kind: 'ceiling' }], note },
+  });
+  assert.equal(noFloor.status, 400);
   const response = await first.request('/api/jobs/plan-import', {
-    method: 'POST', data: { files: [{ name: drawing, data: image }], note },
+    method: 'POST', data: { files: [
+      {name: ceilingDrawing, data: image, kind: 'ceiling'}, {name: drawing, data: image},
+    ], note },
   });
   assert.equal(response.status, 202);
   const { id } = await response.json();
   assert.match(id, /^import-[a-f0-9-]{36}$/);
   const jobPath = path.join(jobs, id);
   const source = path.join(jobPath, 'source', drawing);
+  const ceilingSource = path.join(jobPath, 'source', ceilingDrawing);
   const route = '/api/jobs/' + id;
   const reviewRoute = route + '/review';
   assert.deepEqual(await readFile(source), Buffer.from(image, 'base64'));
+  assert.deepEqual(await readFile(ceilingSource), Buffer.from(image, 'base64'));
   assert.equal((await stat(source)).mode & 0o777, 0o600);
+  const archive = JSON.parse(await readFile(path.join(jobPath, 'source', '.upload.json'), 'utf8'));
+  assert.equal(archive.files.find(file => file.name === ceilingDrawing).kind, 'ceiling');
 
-  async function waitForReview(instance) {
+  async function waitForReview(instance, url = reviewRoute) {
     return until(async () => {
-      const latest = await instance.request(reviewRoute);
+      const latest = await instance.request(url);
       if (latest.status === 404) return null;
       assert.equal(latest.status, 200);
       return latest.json();
     });
   }
+  const result = async (instance, url = route) => {
+    const response = await instance.request(url);
+    assert.equal(response.status, 200);
+    return JSON.parse((await response.json()).chunks[0]);
+  };
   const automatic = await waitForReview(first);
-  assert.equal(automatic.state, 'match');
+  assert.equal(automatic.state, 'differ');
   assert.equal(automatic.rerun, true);
+  assert.equal(automatic.ceilingMeta.source, 'drawing');
+  assert.equal(automatic.fixed.ceiling.rooms.room1.zones[0].drop, 160);
+  assert.equal((await result(first)).ceiling.rooms.room1.zones[0].drop, 150);
   await until(async () => access(path.join(jobPath, 'work')).then(() => false, () => true));
   await stop(first.child);
 
@@ -146,15 +196,36 @@ test('remote review reuses the archived drawing after restart and history expiry
   assert.ok((await listed.json()).jobs.some(job => job.id === id));
   assert.equal((await restarted.request(reviewRoute, { method: 'POST' })).status, 202);
   const rerun = await waitForReview(restarted);
-  assert.equal(rerun.state, 'match');
-  assert.equal(rerun.summary, '核对完成');
+  assert.equal(rerun.state, 'differ');
+  assert.equal(rerun.ceilingMeta.reviewSummary, '图纸下吊量为 160 mm');
   assert.equal(rerun.rerun, true);
   assert.ok(rerun.updatedAt > automatic.updatedAt);
 
+  const floorOnly = await restarted.request('/api/jobs/plan-import', {
+    method: 'POST', data: {files: [{name: drawing, data: image}], note},
+  });
+  assert.equal(floorOnly.status, 202);
+  const floorRoute = '/api/jobs/' + (await floorOnly.json()).id;
+  const generatedReview = await waitForReview(restarted, floorRoute + '/review');
+  const generated = await result(restarted, floorRoute);
+  assert.equal(generatedReview.state, 'match');
+  assert.equal(generatedReview.ceilingMeta.reviewState, 'match');
+  assert.equal(generated.ceilingMeta.source, 'generated');
+  assert.equal(generated.ceilingMeta.estimated, true);
+  assert.equal(generated.ceiling.rooms.room1.fixtures[0].zoneId, 'north');
+
   const turns = (await readFile(trace, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-  assert.deepEqual(turns.map(turn => turn.kind), ['import', 'review', 'review']);
+  assert.deepEqual(turns.map(turn => turn.kind), [
+    'import', 'ceiling-recognize', 'review', 'ceiling-review', 'review', 'ceiling-review',
+    'import', 'ceiling-recognize', 'ceiling-generate', 'review', 'ceiling-review',
+  ]);
   assert.ok(turns.every(turn => turn.original === image && turn.note));
-  assert.notEqual(turns[1].source, turns[2].source);
-  await until(async () => access(turns[2].source).then(() => false, () => true));
+  assert.notEqual(turns[3].ceilingSource, turns[5].ceilingSource);
+  assert.ok([turns[1], turns[3], turns[5]].every(turn =>
+    turn.ceilingOriginal === image && turn.ceilingTag === ceilingDrawing));
+  assert.ok(turns.filter(turn => ['import', 'review'].includes(turn.kind)).every(turn => !turn.ceilingSource));
+  assert.ok(turns.filter(turn => turn.kind === 'ceiling-review').every(turn =>
+    path.basename(turn.ceilingCandidate || '') === 'ceiling-candidate.png'));
+  await until(async () => access(turns[5].ceilingSource).then(() => false, () => true));
   assert.deepEqual(await readFile(source), Buffer.from(image, 'base64'));
 });

@@ -674,8 +674,12 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-drop{border:1px dashed var(--line);border-radius:10px;padding:14px 10px;background:#faf6ef;text-align:center;
   color:var(--muted);font-size:12px;cursor:pointer;line-height:1.5}
 .imp-drop:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.imp-drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .imp-drop b{color:var(--ink);font-weight:500}
+.imp-ceiling-drop{padding:9px 10px}
+#impPick:not([hidden]),#impBody:not([hidden]){display:grid;gap:8px}
 .imp-files{display:flex;flex-direction:column;gap:4px}
+.imp-files:empty{display:none}
 .imp-file{display:flex;align-items:center;gap:8px;font-size:12px;background:#fff;border:1px solid var(--line);
   border-radius:7px;padding:5px 8px}
 .imp-file span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -705,6 +709,11 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-rooms small{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .imp-room-review{display:grid;gap:6px}
 .imp-room-review svg{display:block;width:100%;height:190px;border:1px solid var(--line);border-radius:8px;background:#f5f1eb}
+.imp-ceiling-details{display:grid;gap:4px;font-size:11.5px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.imp-ceiling-details[hidden],.imp-review-seg[hidden]{display:none}
+.imp-ceiling-details b{color:var(--ink)}
+.imp-ceiling-details p,.imp-ceiling-details ul{margin:0}
+.imp-ceiling-details ul{padding-inline-start:16px}
 .imp-exp{font-size:12px;color:var(--muted);line-height:1.5;max-height:96px;overflow:auto;white-space:pre-wrap;
   border-left:2px solid var(--line);padding-left:8px;word-break:break-word}
 .imp-err{display:none;font-size:12px;color:#8e2f22;background:#fbeae7;border:1px solid #f0c9c2;border-radius:8px;
@@ -721,6 +730,7 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .imp-review{display:grid;gap:8px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 10px}
 .imp-review[hidden],.imp-review-note[hidden]{display:none}
 .imp-review-head{font-size:12.5px;font-weight:600;color:var(--accent);line-height:1.4}
+.imp-review-controls{display:flex;flex-wrap:wrap;gap:6px}
 .imp-review-seg{display:flex;gap:2px;width:fit-content;max-width:100%;padding:2px;background:#faf6ef;border:1px solid var(--line);border-radius:8px}
 .imp-review-seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;line-height:1.4;
   padding:3px 11px;border-radius:6px;cursor:pointer;white-space:nowrap}
@@ -747,14 +757,17 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
   width:30px;height:30px;border-radius:50%;font-size:18px;line-height:1;cursor:pointer}
 .imp-view-x:hover{background:rgba(255,255,255,.24)}
 /* 悬浮的分段切换：固定在视口内，不随图片缩放平移 */
-.imp-view-seg{position:absolute;left:50%;top:56px;transform:translateX(-50%);display:flex;gap:2px;padding:2px;
-  background:rgba(250,246,239,.96);border:1px solid var(--line);border-radius:9px;z-index:2;
+.imp-view-controls{position:absolute;left:8px;right:8px;top:52px;display:flex;justify-content:center;gap:6px;flex-wrap:wrap;z-index:2;pointer-events:none}
+.imp-view-seg{display:flex;gap:2px;padding:2px;pointer-events:auto;
+  background:rgba(250,246,239,.96);border:1px solid var(--line);border-radius:9px;
   box-shadow:0 4px 16px rgba(20,16,10,.28)}
+.imp-view-seg[hidden]{display:none}
 .imp-view-seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;line-height:1.5;
   padding:4px 14px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .imp-view-seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
 .imp-view-seg button:disabled{opacity:.45;cursor:not-allowed}
 .imp-view-stage{position:absolute;inset:96px 0 70px;overflow:hidden;touch-action:none;cursor:grab}
+@media(max-width:390px){.imp-view-seg button{padding-inline:8px}.imp-view.has-ceiling .imp-view-stage{top:124px}}
 .imp-view-stage.grabbing{cursor:grabbing}
 .imp-view-canvas{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .imp-view-canvas svg{display:block;width:100%;height:100%;background:#fffdf9;border-radius:10px;
@@ -1070,6 +1083,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
     </div>
     <input type="file" id="fileIn" accept=".json,application/json" hidden>
     <input type="file" id="impFile" multiple hidden>
+    <input type="file" id="impCeilingFile" accept=".png,.jpg,.jpeg,.webp,.pdf,.dxf,.dwg" multiple hidden>
   </header>
 
   <aside class="lib" id="libraryPane">
@@ -1307,8 +1321,10 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
     <div class="imp-head"><b id="impTitle">导入图纸</b><button class="imp-x" id="impClose" type="button" title="关闭" data-en-title="Close">×</button></div>
 
     <div id="impPick">
-      <div class="imp-drop" id="impDrop" role="button" tabindex="0"><b id="impDropTitle">选择图纸文件</b><br><span id="impDropHint">支持图片、PDF、CAD 导出、JSON，不限格式</span></div>
+      <div class="imp-drop" id="impDrop" role="button" tabindex="0"><b id="impDropTitle">选择户型图（必选）</b><br><span id="impDropHint">图片、PDF、CAD 导出或 JSON</span></div>
       <div class="imp-files" id="impFiles"></div>
+      <div class="imp-drop imp-ceiling-drop" id="impCeilingDrop" role="button" tabindex="0"><b id="impCeilingDropTitle">添加天花图（可选）</b><br><span id="impCeilingDropHint">同一户型的吊顶、灯位或顶装设备图</span></div>
+      <div class="imp-files" id="impCeilingFiles"></div>
       <textarea class="imp-note" id="impNote" rows="2" spellcheck="false" placeholder="备注（可选，如：只识别一层）"></textarea>
       <p class="imp-sub" id="impPickHint">上传后会在后台识别，完成后可从「项目」打开新方案。</p>
       <div class="imp-foot"><span class="spacer"></span>
@@ -1330,9 +1346,12 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <div class="imp-review" id="impReview" hidden></div>
       <div class="imp-stats" id="impStats"></div>
       <p class="imp-review-note" id="impReviewNote" hidden></p>
+      <div class="imp-ceiling-details" id="impReviewCeilingMeta" role="status" hidden></div>
       <div class="imp-room-review">
         <div class="form"><label class="full"><span id="impRoomReviewLabel"></span><select id="impRoomReview"></select></label></div>
-        <svg id="impRoomDrawing" role="img" aria-labelledby="impRoomReviewLabel"></svg>
+        <div class="imp-review-seg" id="impRoomLayer" role="group" hidden></div>
+        <svg id="impRoomDrawing" role="img"></svg>
+        <div class="imp-ceiling-details" id="impRoomCeiling" hidden></div>
       </div>
       <ul class="imp-rooms" id="impRooms"></ul>
       <div class="imp-exp" id="impExp"></div>
@@ -1351,7 +1370,10 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <div class="imp-view" id="impView" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="impViewTitle">
   <div class="imp-view-head"><b id="impViewTitle">户型对比</b><small id="impViewNote"></small><span class="spacer"></span>
     <button class="imp-view-x" id="impViewClose" type="button" title="关闭" data-en-title="Close">×</button></div>
-  <div class="imp-view-seg" id="impViewSeg" role="group" aria-label="对比视图"></div>
+  <div class="imp-view-controls">
+    <div class="imp-view-seg" id="impViewSeg" role="group"></div>
+    <div class="imp-view-seg" id="impViewLayer" role="group" hidden></div>
+  </div>
   <div class="imp-view-stage" id="impViewStage"><div class="imp-view-canvas" id="impViewCanvas"></div></div>
   <div class="imp-view-hint"><span class="imp-view-delta" id="impViewDelta"></span>
     <span id="impViewHint">滚轮缩放 · 拖动平移 · 双击适应</span></div>
@@ -1432,14 +1454,14 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <script src="./js/panel.js?v=6"></script>
 <script src="./js/interact.js?v=8"></script>
 <script src="./js/ceiling-editor.js?v=6"></script>
-<script src="./js/io.js?v=9"></script>
+<script src="./js/io.js?v=10"></script>
 <script src="./js/ceiling-showcase.js?v=2"></script>
-<script src="./js/import.js?v=8"></script>
+<script src="./js/import.js?v=9"></script>
 <script src="./js/ceiling-import.js?v=4"></script>
 <script src="./js/assistant.js?v=9"></script>
 <script src="./js/schemes-compare.js"></script>
 <script src="./js/schemes-ui.js"></script>
-<script src="./js/projects.js?v=11"></script>
+<script src="./js/projects.js?v=12"></script>
 <script src="./js/tour.js?v=2"></script>
 <script src="./js/view3d-models.js?v=4"></script>
 <script src="./js/view3d.js?v=12"></script>

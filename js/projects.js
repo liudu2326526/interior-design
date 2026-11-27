@@ -158,8 +158,8 @@
     if (!projectAi || row.baselineSource !== 'saved' || !row.jobId || baselineRecovery.has(row.id)) return;
     baselineRecovery.add(row.id);
     try {
-      const result = await projectResult(row);
-      const baseline = App.io.snapshotFromRecognition(result.plan, result.furniture);
+      const {plan,furniture,ceiling,ceilingMeta} = await projectResult(row);
+      const baseline = App.io.snapshotFromRecognition(plan, furniture, {ceiling, ceilingMeta});
       if (!baseline) return;
       const recovered = await updateStoredProject(row.id, current =>
         current?.baselineSource === 'saved' && current.jobId === row.jobId
@@ -514,14 +514,15 @@
     renderProjects();
   }
 
-  // 应用修正时记录的现场指纹：户型的可比较投影（渲染记录等无关字段不参与）。
-  function sceneSignature(snapshot){
+  // 应用修正时记录户型、家具与顶面几何，效果图等字段不参与。
+  function sceneSignature(snapshot, includeCeiling = true){
     const plan = snapshot?.plan ? {...snapshot.plan} : null;
     if (plan) delete plan.name;
     return JSON.stringify({
       plan,
       furniture:snapshot?.state?.furniture ?? [],
       demolished:snapshot?.state?.demolished ?? [],
+      ...(includeCeiling ? {ceiling:snapshot?.state?.ceiling ?? null} : {}),
     });
   }
   // 「已应用」只在场景与复核版本都还是应用时那一份时有效；撤销、编辑或复核重跑后自动失效。
@@ -537,7 +538,8 @@
     if (scheme.reviewAppliedSig === current) return true;
     try {
       const legacy = JSON.parse(scheme.reviewAppliedSig);
-      return Object.hasOwn(legacy.plan ?? {}, 'name') && sceneSignature({plan:legacy.plan,state:legacy}) === current;
+      return !Object.hasOwn(legacy, 'ceiling') &&
+        sceneSignature({plan:legacy.plan,state:legacy}, false) === sceneSignature(snapshot, false);
     } catch(e){ return false; }
   }
   const sameReview = (a, b) => (a?.state || '') === (b?.state || '') &&
@@ -546,9 +548,8 @@
     const review = projectReview(row);
     if (!review) return '';
     const count = Number.isFinite(+review.count) ? +review.count : 0;
-    const differ = App.core.tr(`自动复核发现 ${count} 处与原图不一致，建议先查看修正。`,
-      count === 1 ? 'Auto review found 1 difference from the source drawing. Review the corrections first.'
-        : `Auto review found ${count} differences from the source drawing. Review the corrections first.`);
+    const differ = App.core.tr(`自动复核发现 ${count} 项需要核对的内容。`,
+      count === 1 ? 'Auto review found 1 item to check.' : `Auto review found ${count} items to check.`);
     if (review.state === 'differ'){
       if (row.phase === 'done') return differ;
       if (row.phase === 'saved' && row.jobId && !projectReviewApplied(row)) return differ;
@@ -640,7 +641,9 @@
     // 只要不是正在复核，就给一个主动触发的入口（包括已有差异、复核失败、还没复核）。
     const rerunButton = row.jobId && (row.phase === 'done' || row.phase === 'saved') && !reviewBusy
       ? button('rerun', App.core.tr('重新复核', 'Run review again')) : '';
-    const reviewButton = row.phase === 'saved' && row.jobId && review?.state === 'differ' && !projectReviewApplied(row)
+    const reviewReady = (review?.state === 'differ' && !projectReviewApplied(row)) ||
+      (review?.state === 'match' && row.baseline?.state?.ceilingMeta);
+    const reviewButton = row.phase === 'saved' && row.jobId && reviewReady
       ? button('review', App.core.tr('查看图纸复核', 'View drawing review')) : '';
     const rename = button('rename', App.core.tr('重命名','Rename'));
     if (row.id === activeProjectId) return reviewButton + rename + rerunButton;
@@ -969,9 +972,9 @@
         if (!current || savedProject(current) || current.jobId !== row.jobId) break;
         closeProjects();
         const preview = current.customName ? {...result, plan:{...result.plan,name:current.customName}} : result;
-        App.importer.impOpenResult(preview, ({plan,furniture}) => {
+        App.importer.impOpenResult(preview, ({plan,furniture,ceiling,ceilingMeta}) => {
           const {reviewApplied,review} = App.importer.impState;
-          const snapshot = App.io.snapshotFromRecognition(plan, furniture);
+          const snapshot = App.io.snapshotFromRecognition(plan, furniture, {ceiling, ceilingMeta});
           if (!snapshot) return {ok:false, errors:[App.core.tr('识别结果缺少有效户型。','The result contains no valid floor plan.')]};
           return switchProject(current, {snapshot, reviewVersion:reviewApplied ? review?.updatedAt : undefined});
         }, {jobId:current.jobId, reviewState:projectReview(current)?.state, mode:'preview'});
@@ -985,8 +988,13 @@
         }
         closeProjects();
         const current = getActiveProject();
-        const baseline = current.baseline;
-        App.importer.impOpenResult({plan:baseline.plan, furniture:baseline.state?.furniture || []}, null,
+        const {plan, state} = current.baseline;
+        const storedCeiling = App.ceilingModel.normalize(state?.ceiling, plan.rooms);
+        const items = Array.isArray(state?.furniture) ? state.furniture : [];
+        const {ceiling, furniture} = App.ceilingFurniture.split(storedCeiling, items);
+        const projected = App.ceilingFurniture.project(ceiling, furniture, plan.rooms);
+        const hasCeiling = Object.keys(projected.rooms).length || projected.baseHeight !== App.ceilingModel.baseHeight();
+        App.importer.impOpenResult({plan, furniture, ceiling:hasCeiling ? projected : undefined, ceilingMeta:state?.ceilingMeta}, null,
           {jobId:current.jobId, reviewState:projectReview(current)?.state, mode:'project', rowId:current.id,
             schemeId:activeSchemeId, sceneKey:activeSceneKey()});
         break;

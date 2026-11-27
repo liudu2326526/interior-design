@@ -286,10 +286,62 @@
     ];
   }
 
-  function snapshotFromRecognition(plan, furniture){
+  function drawingCeilingMeta(meta){
+    if (!meta || typeof meta !== 'object') return undefined;
+    const result = {warnings:[]};
+    if (['drawing','generated','project','unavailable'].includes(meta.source)) result.source = meta.source;
+    if (['match','differ','unavailable'].includes(meta.reviewState)) result.reviewState = meta.reviewState;
+    const text = value => typeof value === 'string' ? value.trim().slice(0, 800) : '';
+    for (const key of ['alignment','reviewSummary','reason']){
+      const value = text(meta[key]);
+      if (value) result[key] = value;
+    }
+    if (typeof meta.estimated === 'boolean') result.estimated = meta.estimated;
+    if (Array.isArray(meta.warnings)) result.warnings = meta.warnings.map(text).filter(Boolean).slice(0, 24);
+    if (Array.isArray(meta.coveredOutdoorRooms)){
+      result.coveredOutdoorRooms = meta.coveredOutdoorRooms.map(room => ({roomId:text(room?.roomId), evidence:text(room?.evidence)}))
+        .filter(room => room.roomId && room.evidence);
+    }
+    return Object.keys(result).length > 1 || result.warnings.length ? result : undefined;
+  }
+
+  function fitExistingCeiling(snapshot, plan){
+    const source = snapshot?.state;
+    if (!source) return null;
+    const model = App.ceilingModel, mounted = App.ceilingFurniture;
+    const original = model.normalize(source.ceiling, snapshot.plan?.rooms);
+    const existing = mounted.split(original, Array.isArray(source.furniture) ? source.furniture : []);
+    const ceiling = model.normalize(existing.ceiling, plan.rooms);
+    const furniture = existing.furniture.filter(mounted.is).flatMap(item => {
+      const fit = mounted.placeEdited(item, {ceiling, roomDefs:plan.rooms});
+      if (!fit || (item.ceiling?.roomId && fit.ceiling.roomId !== item.ceiling.roomId) ||
+          (item.ceiling?.zoneId && fit.ceiling.zoneId !== item.ceiling.zoneId)) return [];
+      return [fit];
+    });
+    return {ceiling, furniture, ceilingMeta:drawingCeilingMeta(source.ceilingMeta)};
+  }
+
+  function snapshotFromRecognition(plan, furniture, {ceiling, ceilingMeta, fallbackSnapshot} = {}){
     const result = App.plan.sanitizePlan(plan);
     if (!result.ok) return null;
-    return {version:2, plan:result.plan, state:{furniture:mergeDrawingFurniture(drawingFurniture(furniture)), renders:[]}};
+    const recognized = drawingFurniture(furniture);
+    const mounted = App.ceilingFurniture;
+    let projected;
+    if (ceiling != null){
+      try { projected = App.ceilingModel.validate(ceiling, result.plan.rooms); }
+      catch {
+        ceilingMeta = {source:'unavailable', warnings:[App.core.tr('天花识别结果无法应用到此户型。', 'The ceiling result could not be applied to this floor plan.')]};
+      }
+    }
+    const previous = projected ? null : fitExistingCeiling(fallbackSnapshot, result.plan);
+    // 顶装件由天花结果提供。同一盏灯也可能出现在普通户型识别的家具列表中。
+    const items = projected || previous ? recognized.filter(item => !mounted.is(item)) : recognized;
+    const merged = mergeDrawingFurniture(items, previous?.furniture);
+    const state = {renders:[], ...(projected ? mounted.split(projected, merged) : {furniture:merged})};
+    if (previous) state.ceiling = previous.ceiling;
+    const meta = previous ? previous.ceilingMeta : drawingCeilingMeta(ceilingMeta);
+    if (meta) state.ceilingMeta = meta;
+    return {version:2, plan:result.plan, state};
   }
 
   // 换方案：校验 → 安装 PLAN → 按新房间重建 state → 清越界拆除索引 / 无效选中 → 入撤销栈
@@ -313,7 +365,10 @@
       App.store.state.furniture = mergeDrawingFurniture(recognized, current);
     }
     App.store.installPlan(res.plan);
-    if (opts.freshState || opts.resetCeiling) delete App.store.state.ceiling;
+    if (opts.freshState || opts.resetCeiling){
+      delete App.store.state.ceiling;
+      delete App.store.state.ceilingMeta;
+    }
     if (opts.freshState){ App.store.state.demolished = []; App.store.state.measures = []; App.store.state.rooms = {}; }
     App.store.state = App.store.fixState(App.store.state);
     App.store.ui.sel = null; App.store.ui.mA = App.store.ui.mCur = null;
@@ -747,6 +802,6 @@
 
   Object.assign(App.io, {
     download, dataURLBlob, is3D, TIPS, setView, studioEnterRoom, toggleFullscreen, syncFullscreen,
-    drawingFurniture, snapshotFromRecognition, applyPlan, loadPlanFile, hasStoredPlan, hydrateDefaultPlan, refit, studio,
+    drawingFurniture, drawingCeilingMeta, snapshotFromRecognition, applyPlan, loadPlanFile, hasStoredPlan, hydrateDefaultPlan, refit, studio,
   });
 })();

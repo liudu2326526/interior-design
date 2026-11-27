@@ -121,6 +121,20 @@ test('keeps rooms, windows, doors and rotated furniture inside reasonable bounds
   assert.ok(countPixels(image, isDark) > 100);
 });
 
+test('draws ceiling zone and fixture footprints over the same floor plan', () => {
+  const ceiling = {rooms:{living:{
+    zones:[{id:'z1', poly:[[400,400],[2600,400],[2600,2500],[400,2500]],
+      holes:[[[500,1000],[800,1000],[800,1300],[500,1300]]], drop:120}],
+    edges:[{id:'e1',type:'cove',zoneId:'z1',edge:0}],
+    fixtures:[{id:'f1',type:'downlight',x:1400,y:1200,zoneId:'z1'}],
+  }}};
+  const image = decodePng(renderPlanPng(sample, {ceiling}));
+  assert.ok(countPixels(image, ([r,g,b]) => r === 0x26 && g === 0x70 && b === 0xae) > 50);
+  assert.ok(countPixels(image, ([r,g,b]) => r === 0x1b && g === 0x91 && b === 0x75) > 50);
+  assert.ok(countPixels(image, ([r,g,b]) => r === 0xb1 && g === 0x46 && b === 0x26) > 10);
+  assert.ok(countPixels(image, isWall) > 50);
+});
+
 test('renders arc walls, arc windows and small rooms without crashing', () => {
   const image = decodePng(renderPlanPng({
     version: 1,

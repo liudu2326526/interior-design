@@ -11,13 +11,14 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import { locateCodex, readLogin, MIN_CODEX_VERSION } from './lib/codex/binary.mjs';
 import { CodexSession, SessionPool, probeModels } from './lib/codex/session.mjs';
 import { loadRenderImageProvider } from './lib/codex/render-image.mjs';
 import { parsePatch, validatePlan, validateImportedFurniture, summarizePlan, extractJson } from './lib/codex/plan.mjs';
 import { createImportJobs, importJobError, isImportJobPath } from './lib/import-jobs.mjs';
 import { reviewCeiling } from './lib/ceiling-recognition.mjs';
+import { buildDrawingCeiling, reviewDrawingCeiling, validateDrawingCeiling } from './lib/drawing-ceiling.mjs';
 import { archiveUploads } from './lib/upload-archive.mjs';
 import { renderPlanPng } from './lib/plan-render.mjs';
 import { buildReviewMessage, checkPlan, parseReviewReply, reviewDelta } from './lib/plan-review.mjs';
@@ -55,6 +56,7 @@ const MAX_REVIEWS = 2;
 const PLAN_REVIEW_ENABLED = String(process.env.STUDIO_PLAN_REVIEW || '').trim().toLowerCase() !== 'off';
 const IMPORT_ARTIFACTS = ['plan.json', 'review-plan.png', 'review-note.json'];
 const DRAWING_ARCHIVE_MANIFEST = '.upload.json';
+const CEILING_SOURCE_DIRECTORY = 'ceiling-drawings';
 const DRAWING_PROGRESS_INSTRUCTIONS = '如果能发送独立的中途进度消息，请简短说明已完成的图纸核对。不要回显原始资料、工具输出或推理过程。最终答复仍遵守本任务的输出格式。';
 const MAX_CONCURRENT_TURNS = 4;
 const MAX_CHAT_SESSIONS = 6;
@@ -1325,15 +1327,20 @@ async function handleCeilingImport(req, res, publicRequest) {
 
 function drawingImportRequest(body) {
   const files = Array.isArray(body?.files)
-    ? body.files.filter((file) => file && typeof file.data === 'string' && file.data.length > 0).slice(0, 20)
+    ? body.files.filter((file) => file && typeof file.data === 'string' && file.data.length > 0)
     : [];
   if (!files.length) throw importJobError(400, '缺少 files（至少上传一个文件）');
+  if (files.length > 20) throw importJobError(413, '户型图和天花图合计最多上传 20 个文件。');
+  if (files.some(file => file.kind !== undefined && !['floor', 'ceiling'].includes(file.kind))) {
+    throw importJobError(400, '图纸用途必须是户型图或天花图。');
+  }
+  if (!files.some(file => file.kind !== 'ceiling')) throw importJobError(400, '请至少上传一份户型图。');
   const note = typeof body.note === 'string' ? body.note.trim() : '';
   return { files, note };
 }
 
 function* drawingFiles(files) {
-  const used = new Set(IMPORT_ARTIFACTS);
+  const used = new Set([...IMPORT_ARTIFACTS, CEILING_SOURCE_DIRECTORY]);
   for (const [index, file] of files.entries()) {
     const buffer = decodeBase64(file.data);
     if (!buffer) continue;
@@ -1348,7 +1355,8 @@ function* drawingFiles(files) {
     let suffix = index + 1;
     while (used.has(name.toLowerCase())) name = `${base}-${suffix++}${ext}`;
     used.add(name.toLowerCase());
-    yield { name, originalName, buffer, imageExtension };
+    const kind = file.kind === 'ceiling' ? 'ceiling' : 'floor';
+    yield { name, originalName, buffer, imageExtension, kind };
   }
 }
 
@@ -1360,26 +1368,49 @@ async function writeDrawingManifest(directory, note, files) {
 async function archiveDrawingUpload(body, directory) {
   await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
   const files = [];
-  for (const {name, originalName, buffer} of drawingFiles(body.files)) {
+  for (const {name, originalName, buffer, kind} of drawingFiles(body.files)) {
     await fsp.writeFile(path.join(directory, name), buffer, { mode: 0o600, flag: 'wx' });
-    files.push({ name, originalName });
+    files.push({ name, originalName, ...(kind === 'ceiling' ? { kind } : {}) });
   }
   if (files.length !== body.files.length) throw importJobError(400, '部分上传文件无法解码，请重新选择图纸。');
   await writeDrawingManifest(directory, body.note, files);
   return true;
 }
 
-async function copyDrawingFiles(from, to) {
-  const files = [];
-  for (const entry of await fsp.readdir(from, { withFileTypes: true })) {
+async function listDrawingSources(directory) {
+  const metadata = await fsp.readFile(path.join(directory, DRAWING_ARCHIVE_MANIFEST), 'utf8')
+    .then(JSON.parse).catch(() => null);
+  const explicitCeiling = new Set((Array.isArray(metadata?.files) ? metadata.files : [])
+    .filter(row => row?.kind === 'ceiling').map(row => row.name));
+  const items = [];
+  for (const entry of await fsp.readdir(directory, { withFileTypes: true })) {
     const name = entry.name;
-    if (!entry.isFile() || name === DRAWING_ARCHIVE_MANIFEST ||
-        IMPORT_ARTIFACTS.includes(name.toLowerCase())) continue;
-    await fsp.copyFile(path.join(from, name), path.join(to, name), fs.constants.COPYFILE_EXCL);
-    await fsp.chmod(path.join(to, name), 0o600);
-    files.push({ name });
+    if (entry.isFile() && name !== DRAWING_ARCHIVE_MANIFEST && !IMPORT_ARTIFACTS.includes(name.toLowerCase())) {
+      items.push({ name, file: path.join(directory, name), kind: explicitCeiling.has(name) ? 'ceiling' : 'floor' });
+    }
+    if (!entry.isDirectory() || name !== CEILING_SOURCE_DIRECTORY) continue;
+    const ceilingDirectory = path.join(directory, name);
+    for (const drawing of await fsp.readdir(ceilingDirectory, { withFileTypes: true })) {
+      if (drawing.isFile()) items.push({ name: drawing.name, file: path.join(ceilingDirectory, drawing.name), kind: 'ceiling' });
+    }
   }
-  return files;
+  return items.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function copyDrawingFiles(from, to, asWork = false) {
+  const sources = await listDrawingSources(from);
+  if (asWork && sources.some(item => item.kind === 'ceiling')) {
+    await fsp.mkdir(path.join(to, CEILING_SOURCE_DIRECTORY), { mode: 0o700 });
+  }
+  const copied = [];
+  for (const {name, file, kind} of sources) {
+    const directory = asWork && kind === 'ceiling' ? path.join(to, CEILING_SOURCE_DIRECTORY) : to;
+    const destination = path.join(directory, name);
+    await fsp.copyFile(file, destination, fs.constants.COPYFILE_EXCL);
+    await fsp.chmod(destination, 0o600);
+    copied.push({ name, ...(kind === 'ceiling' ? { kind } : {}) });
+  }
+  return copied;
 }
 
 async function readDrawingNote(directory, fileName) {
@@ -1407,7 +1438,7 @@ async function handleImportJob(req, res, key, url, owner) {
       const job = await importJobs.submit(owner, async () => {
         const input = await readJson(req);
         const body = drawingImportRequest(input);
-        const file = safeFileName(body.files[0].name, 1);
+        const file = safeFileName(body.files.find(file => file.kind !== 'ceiling').name, 1);
         const name = (typeof input.projectName === 'string' ? input.projectName : '')
           .replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 100)
           || path.basename(file, path.extname(file));
@@ -1459,6 +1490,131 @@ function drawingCommentary(onProgress, stage) {
   };
 }
 
+async function prepareDrawingCeilingInputs(workDirectory, directory, sources, images, signal) {
+  let remainingPdfPages = 16;
+  let remainingCadEvidenceBytes = 96 * 1024;
+  const prepared = [];
+  // Give the explicitly identified ceiling sheets first use of the PDF preview budget.
+  const ordered = [...sources.filter(source => source.kind === 'ceiling'),
+    ...sources.filter(source => source.kind === 'floor')];
+  for (const [index, {name, file, kind, imageExtension}] of ordered.entries()) {
+    signal.throwIfAborted();
+    const source = {name, kind, path: path.relative(workDirectory, file)};
+    prepared.push(source);
+    if (imageExtension) {
+      source.image = images.push(file);
+      continue;
+    }
+    const extension = path.extname(name).toLowerCase();
+    if (extension === '.dwg' || extension === '.dxf') {
+      source.incomplete = true;
+      if (remainingCadEvidenceBytes > 0) {
+        const geometry = await readCadCurveEvidence(file, name, {signal, includeLineSamples: true});
+        const size = geometry ? Buffer.byteLength(JSON.stringify(geometry)) : 0;
+        if (geometry && size <= remainingCadEvidenceBytes) {
+          source.geometry = geometry;
+          remainingCadEvidenceBytes -= size;
+        }
+      }
+      continue;
+    }
+    if (extension !== '.pdf') continue;
+    let pageCount = null;
+    try {
+      const {stdout} = await exec('pdfinfo', [file], pdfToolOptions(signal));
+      const found = Number(/^Pages:\s+(\d+)\s*$/im.exec(stdout)?.[1]);
+      if (Number.isSafeInteger(found) && found > 0) pageCount = found;
+    } catch {
+      signal.throwIfAborted();
+    }
+    source.pages = [];
+    const count = Math.min(pageCount ?? 1, remainingPdfPages);
+    for (let page = 1; page <= count; page++) {
+      const prefix = path.join(directory, `source-${index + 1}-page-${page}`);
+      try {
+        const pageArg = String(page);
+        await exec('pdftoppm', ['-f', pageArg, '-l', pageArg, '-singlefile',
+          '-scale-to', '1800', '-png', file, prefix], pdfToolOptions(signal));
+        source.pages.push({page, image: images.push(prefix + '.png')});
+      } catch {
+        signal.throwIfAborted();
+        if (page !== 1 || process.platform !== 'darwin') continue;
+        if (await renderChatPdf(file, prefix + '.jpg', signal)) {
+          source.pages.push({page, image: images.push(prefix + '.jpg')});
+        }
+      }
+    }
+    remainingPdfPages -= count;
+    source.pageCount = pageCount;
+    source.incomplete = pageCount === null || source.pages.length < pageCount;
+  }
+  return prepared;
+}
+
+async function runDrawingCeilingStage({
+  probe, workDirectory, sources, plan, furniture, note, signal, runner, onProgress, reviewingCeiling,
+}) {
+  onProgress?.(reviewingCeiling ? '正在准备天花原图与复核底图。' : '正在准备天花图纸与户型底图。');
+  const directory = await fsp.mkdtemp(path.join(workDirectory, '.ceiling-preview-'));
+  try {
+    const floor = path.join(directory, 'ceiling-floor-reference.png');
+    await fsp.writeFile(floor, renderPlanPng({...plan, furniture}), {mode: 0o600, signal});
+    const images = [floor];
+    const prepared = await prepareDrawingCeilingInputs(workDirectory, directory, sources, images, signal);
+    const context = {
+      plan, furniture, note: truncate(note, 2000),
+      hasExplicitCeiling: sources.some(item => item.kind === 'ceiling'),
+      inputs: {floorImage: 1, sources: prepared},
+      run: ({stage, prompt, input}) => runner(async () => {
+        signal.throwIfAborted();
+        const progress = {
+          recognize: '正在与户型对齐并识别天花图纸。',
+          generate: '未发现天花设计，正在根据户型生成天花草案。',
+          review: '正在独立核对天花标高、造型和顶装设备。',
+        }[stage];
+        onProgress?.(progress);
+        const stageImages = images.slice();
+        let stageInput = input;
+        if (stage === 'review' && input.ceiling) {
+          const candidate = path.join(directory, 'ceiling-candidate.png');
+          await fsp.writeFile(candidate, renderPlanPng(plan, {ceiling: input.ceiling}), {mode: 0o600, signal});
+          stageInput = {...input, inputs: {...input.inputs, ceilingImage: stageImages.push(candidate)}};
+        }
+        const session = await CodexSession.start({
+          install: probe.install, cwd: workDirectory, sandbox: 'read-only',
+          approvalPolicy: 'never', developerInstructions: `${prompt}\n\n${DRAWING_PROGRESS_INSTRUCTIONS}`,
+          ephemeral: true, config: CHAT_CODEX_CONFIG,
+        });
+        let stopping = null;
+        const interrupt = () => { stopping = session.interrupt().finally(() => session.dispose()).catch(() => {}); };
+        signal.addEventListener('abort', interrupt, {once: true});
+        try {
+          signal.throwIfAborted();
+          const turn = await session.runTurn({
+            input: [
+              {type: 'text', text: JSON.stringify(stageInput), text_elements: []},
+              ...stageImages.map(file => ({type: 'localImage', path: file})),
+            ],
+            timeoutMs: CHAT_TIMEOUT_MS,
+            onEvent: event => { if (event.type === 'commentary') onProgress?.(event.text); },
+          });
+          signal.throwIfAborted();
+          if (turn.outcome !== 'completed') throw new Error(turn.error || '天花处理未完成。');
+          return extractJson(finalAgentReply(turn));
+        } finally {
+          signal.removeEventListener('abort', interrupt);
+          await (stopping || session.dispose().catch(() => {}));
+        }
+      }),
+    };
+    return await (reviewingCeiling
+      ? reviewDrawingCeiling({...context, ...reviewingCeiling})
+      : buildDrawingCeiling(context));
+  } finally {
+    await fsp.rm(directory, {recursive: true, force: true}).catch(() => {});
+  }
+}
+
 async function analyzePlanImport({ files, note }, { id, importDir, signal, cleanup, onProgress }) {
   const reply = (status, fields) => ({ status, body: { ...fields, id } });
   let activeSession = null;
@@ -1474,14 +1630,19 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
     signal.throwIfAborted();
     if (!probe.found) return reply(503, { error: unusableMessage(probe) });
     await fsp.mkdir(importDir, { recursive: true, mode: 0o700 });
-    const written = [];
+    const sources = [];
     const images = [];
     const curveEvidence = [];
-    for (const { name, buffer, imageExtension } of drawingFiles(files)) {
+    const ceilingDirectory = path.join(importDir, CEILING_SOURCE_DIRECTORY);
+    if (files.some(file => file.kind === 'ceiling')) {
+      await fsp.mkdir(ceilingDirectory, { mode: 0o700 });
+    }
+    for (const { name, buffer, imageExtension, kind } of drawingFiles(files)) {
       signal.throwIfAborted();
-      const file = path.join(importDir, name);
+      const file = path.join(kind === 'ceiling' ? ceilingDirectory : importDir, name);
       await fsp.writeFile(file, buffer, { mode: 0o600 });
-      written.push(name);
+      sources.push({ name, file, kind, imageExtension });
+      if (kind === 'ceiling') continue;
       if (imageExtension) images.push({ name, file });
       if (curveEvidence.length < 4) {
         const raster = imageExtension ? await readImageCurveEvidence(buffer, file, imageExtension, { signal }) : null;
@@ -1489,12 +1650,15 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
         if (raster?.candidates.length || cad?.curves.length) curveEvidence.push({ name, raster, cad });
       }
     }
-    if (!written.length) return reply(400, { error: '上传的文件无法解码（cannot decode files）' });
+    const floorNames = sources.filter(source => source.kind === 'floor').map(source => source.name);
+    if (!floorNames.length || sources.length !== files.length) {
+      return reply(400, { error: '部分上传文件无法解码，请重新选择图纸。' });
+    }
 
-    const imageOnly = images.length === written.length;
+    const imageOnly = images.length === floorNames.length;
     const message = [
-      '请解析本工作目录中的户型文件，输出 Plan JSON。',
-      `文件：${written.join('、')}`,
+      '请解析以下列出的户型文件，输出 Plan JSON。天花图资料由单独的顶面步骤处理，本轮只读取列出的户型文件，识别结构、地面家具和构件。',
+      `文件：${floorNames.join('、')}`,
       images.length ? `随本消息附上的图片顺序：${images.map(({ name }) => name).join('、')}` : '',
       describeCurveEvidence(curveEvidence),
       note ? `用户备注：${note}` : '',
@@ -1539,7 +1703,7 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
     if (result.outcome !== 'completed') {
       return reply(502, { error: result.error || 'codex 回合未正常完成（turn incomplete）' });
     }
-    onProgress?.('validating');
+    onProgress?.('recognizing', '正在校验户型识别结果。');
 
     let rawPlan = null;
     let summary = '';
@@ -1567,10 +1731,22 @@ async function analyzePlanImport({ files, note }, { id, importDir, signal, clean
     const modelSummary = summarizePlan(validated.plan);
     const explanation = reportedSummary ? truncate(reportedSummary, 4000) : modelSummary;
     const furniture = validateImportedFurniture(rawPlan.furniture, validated.plan.bounds);
+    const plan = validated.plan;
+    const ceiling = await runDrawingCeilingStage({
+      probe, workDirectory: importDir, sources, plan, furniture, note, signal,
+      runner: limitTurns, onProgress: text => onProgress?.('recognizing', text),
+    }).catch(error => {
+      signal.throwIfAborted();
+      console.warn('天花识别未完成：', errorMessage(error));
+      return { ceiling: null, ceilingMeta: {
+        source: 'unavailable', warnings: ['天花识别或设计未完成，可在原图复核时重试。'],
+      } };
+    });
+    signal.throwIfAborted();
     onProgress?.('validating', displaySummary || modelSummary);
     return {
-      ...reply(200, { plan: validated.plan, furniture, explanation }),
-      inputs: { names: written, images: images.map(({ file }) => file), curveEvidence },
+      ...reply(200, { plan, furniture, explanation, ...ceiling }),
+      inputs: { names: floorNames, images: images.map(({ file }) => file), curveEvidence, sources },
     };
   } catch (error) {
     if (error?.code === 'timeout' && error.message.startsWith('codex 响应超时')) {
@@ -1600,28 +1776,23 @@ async function readHeader(file, length = 16) {
 
 /** 工作目录里除识别产物外的文件；图片重新作为 localImage 附给复核回合。 */
 async function collectReviewInputs(workDirectory, signal) {
-  const entries = await fsp.readdir(workDirectory, { withFileTypes: true }).catch(() => []);
-  const files = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const name = entry.name;
-    if (IMPORT_ARTIFACTS.includes(name.toLowerCase())) continue;
-    files.push({ name, file: path.join(workDirectory, name) });
-  }
-  files.sort((a, b) => a.name.localeCompare(b.name));
+  const sources = await listDrawingSources(workDirectory);
+  const files = sources.filter(item => item.kind === 'floor');
   const images = [];
   const curveEvidence = [];
-  for (const item of files) {
+  for (const item of sources) {
     signal.throwIfAborted();
     const header = await readHeader(item.file);
     const imageExtension = header && drawingImageExtension(header);
+    item.imageExtension = imageExtension;
+    if (item.kind !== 'floor') continue;
     if (imageExtension) images.push(item.file);
     if (curveEvidence.length >= 4) continue;
     const raster = imageExtension ? await readImageCurveEvidence(null, item.file, imageExtension, { signal }) : null;
     const cad = imageExtension ? null : await readCadCurveEvidence(item.file, item.name, { signal });
     if (raster?.candidates.length || cad?.curves.length) curveEvidence.push({ name: item.name, raster, cad });
   }
-  return { names: files.map(item => item.name), images, curveEvidence };
+  return { names: files.map(item => item.name), images, curveEvidence, sources };
 }
 
 function describeCurveEvidence(evidence) {
@@ -1643,7 +1814,9 @@ function describeCurveEvidence(evidence) {
  * 复核一次识别结果。复核失败一律静默：状态标记为 unavailable，不写 review.json。
  * 由 importJobs 的 after 钩子或 POST 重跑调用，不占用识别并发槽位。
  */
-async function runPlanReview({ workDirectory, body, result, preparedInputs, signal, updateReview, saveReview, onProgress }) {
+async function runPlanReview({
+  workDirectory, body, result, preparedInputs, signal, updateReview, saveReview, onProgress, retryUnavailable = false,
+}) {
   const plan = result?.plan ?? null;
   const furniture = Array.isArray(result?.furniture) ? result.furniture : [];
   // 失败时清掉上一次的复核正文，只保留契约要求的 state / count / updatedAt。
@@ -1672,7 +1845,8 @@ async function runPlanReview({ workDirectory, body, result, preparedInputs, sign
       note: typeof body?.note === 'string' ? body.note : '',
       check,
       fileNames: ['review-plan.png', ...inputs.names],
-    }) + (inputs.curveEvidence.length ? '\n\n' + describeCurveEvidence(inputs.curveEvidence) : '');
+    }) + '\n\n本轮只使用清单列出的户型图原件，天花图独立复核。'
+      + (inputs.curveEvidence.length ? '\n\n' + describeCurveEvidence(inputs.curveEvidence) : '');
     const prompt = await readPrompt('plan-verify.md');
     const developerInstructions = `${prompt}\n\n${DRAWING_PROGRESS_INSTRUCTIONS}`;
 
@@ -1717,16 +1891,21 @@ async function runPlanReview({ workDirectory, body, result, preparedInputs, sign
     if (signal.aborted) return await unavailable();
     if (!turn || turn.outcome !== 'completed') return await unavailable();
 
-    await onProgress('validating');
     const reviewed = parseReviewReply(finalAgentReply(turn), { plan, furniture });
-    const afterPlan = reviewed.fixed?.plan ?? plan;
-    const afterFurniture = reviewed.fixed?.furniture ?? furniture;
+    const ceilingMeta = result.ceilingMeta
+      ? await appendCeilingReview({
+        reviewed, result, inputs, workDirectory, note: body?.note, probe, signal, onProgress, retryUnavailable,
+      })
+      : null;
+    signal.throwIfAborted();
+    await onProgress('validating');
     const review = {
       state: reviewed.verdict,
       summary: reviewed.summary,
       issues: reviewed.issues,
       fixed: reviewed.fixed,
-      delta: reviewDelta(plan, furniture, afterPlan, afterFurniture),
+      delta: reviewDelta(plan, furniture, reviewed.fixed?.plan ?? plan, reviewed.fixed?.furniture ?? furniture),
+      ...(ceilingMeta ? {ceilingMeta} : {}),
       updatedAt: Date.now(),
     };
     // 先落 review.json 再落 meta：写盘失败时不能留下「列表说 differ、详情 404」的矛盾状态。
@@ -1743,6 +1922,58 @@ async function runPlanReview({ workDirectory, body, result, preparedInputs, sign
     }
     await unavailable();
   }
+}
+
+async function appendCeilingReview({
+  reviewed, result, inputs, workDirectory, note, probe, signal, onProgress, retryUnavailable,
+}) {
+  const plan = reviewed.fixed?.plan ?? result.plan;
+  const furniture = reviewed.fixed?.furniture ?? result.furniture;
+  const current = result.ceiling ?? null;
+  let candidate = current;
+  let ceilingMeta;
+  try {
+    ({ceiling: candidate, ceilingMeta} = await runDrawingCeilingStage({
+      probe, workDirectory, sources: inputs.sources, signal, note, plan, furniture,
+      runner: reviewQueue, onProgress: text => onProgress('comparing', text),
+      reviewingCeiling: {
+        previousPlan: result.plan, ceiling: current, ceilingMeta: result.ceilingMeta, retryUnavailable,
+      },
+    }));
+    if (current && !candidate) throw new Error('复核缺少原有天花数据。');
+  } catch (error) {
+    signal.throwIfAborted();
+    console.warn('天花复核未完成：', errorMessage(error));
+    candidate = current;
+    ceilingMeta = {
+      ...result.ceilingMeta, reviewState: 'unavailable',
+      reviewSummary: '天花复核未完成，可重新复核并核对原图。',
+    };
+  }
+
+  try {
+    if (candidate) validateDrawingCeiling(plan, candidate, {
+      coveredOutdoorRooms: ceilingMeta.coveredOutdoorRooms,
+      requireRoomDesign: ceilingMeta.source === 'generated',
+    });
+  } catch {
+    // A structural correction and its ceiling coordinate frame must remain compatible.
+    reviewed.fixed = null;
+    reviewed.verdict = 'differ';
+    const detail = '户型修正与天花位置冲突，已保留原方案，需核对房间边界和顶面位置。';
+    reviewed.issues = [{where: '天花与户型', detail}, ...reviewed.issues.slice(0, 7)];
+    return {...ceilingMeta, reviewState: 'unavailable', reviewSummary: reviewed.issues[0].detail};
+  }
+
+  const changed = Boolean(candidate) && !isDeepStrictEqual(current, candidate);
+  if (changed) reviewed.fixed = {plan, furniture, ceiling: candidate, ceilingMeta};
+  if (changed || ['differ', 'unavailable'].includes(ceilingMeta.reviewState)) {
+    const detail = ceilingMeta.reviewSummary || (changed ? '天花复核提出了修正。' : '请核对天花复核结果。');
+    if (reviewed.verdict === 'match') reviewed.summary = `户型核对完成。\n${detail}`.slice(0, 120);
+    reviewed.verdict = 'differ';
+    reviewed.issues = [...reviewed.issues.slice(0, 7), {where: '天花', detail: detail.slice(0, 200)}];
+  }
+  return ceilingMeta;
 }
 
 async function handlePlanReview(req, res, id, owner) {
@@ -1788,7 +2019,7 @@ async function handlePlanReview(req, res, id, owner) {
       if (sourceDirectory) {
         temporaryDirectory = await fsp.mkdtemp(path.join(os.tmpdir(), 'interior-design-review-'));
         workDirectory = temporaryDirectory;
-        const files = await copyDrawingFiles(sourceDirectory, workDirectory);
+        const files = await copyDrawingFiles(sourceDirectory, workDirectory, true);
         if (!files.length) return sendJson(res, 404, { error: '原图归档为空，无法重新复核。' });
       }
 
@@ -1803,6 +2034,7 @@ async function handlePlanReview(req, res, id, owner) {
         workDirectory,
         body: { note },
         result,
+        retryUnavailable: true,
         signal: controller.signal,
         updateReview: patch => importJobs.setReview(owner, id, patch),
         saveReview: review => importJobs.saveReview(owner, id, review),

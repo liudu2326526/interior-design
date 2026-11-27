@@ -333,6 +333,81 @@ async function main(){
     return '逐房预览、转角侧、台面形状和高度可保存与撤销';
   });
 
+  await check('importReview.ceilingSourcesAndVariants', async () => {
+    const w = win(), {App:app, document:doc} = w, importer = app.importer;
+    const $ = selector => doc.querySelector(selector);
+    const plan = dimensionFixture(studio().getPlan());
+    const ceiling = {version:1, baseHeight:2900, rooms:{west:{
+      zones:[{id:'ui-zone',name:'复核样板顶',poly:[[600,600],[2400,600],[2400,2600],[600,2600]],drop:180,color:'#faf6ed'}],
+      edges:[], fixtures:[{id:'ui-light',type:'downlight',x:1500,y:1300,zoneId:'ui-zone'}],
+    }}};
+    const revised = structuredClone(ceiling);
+    revised.rooms.west.zones[0].drop = 220;
+    const ceilingMeta = {source:'drawing',alignment:'两处墙角对齐',warnings:['饰面待核对']};
+    const reportMeta = {...ceilingMeta,reviewState:'differ',reviewSummary:'核对完成面标高'};
+    const uploadXHR = w.XMLHttpRequest, fetch = w.fetch;
+    let request, applied;
+    try {
+      w.XMLHttpRequest = class {
+        upload = {};
+        open() {}
+        setRequestHeader() {}
+        send(body){
+          request = JSON.parse(body);
+          this.status = 400;
+          this.responseText = '{"error":"测试上传未登记"}';
+          this.onload();
+        }
+      };
+      importer.impOpen();
+      const attach = (selector,name) => {
+        const files = new w.DataTransfer();
+        files.items.add(new w.File(['fixture'], name));
+        const input = $(selector);
+        input.files = files.files;
+        input.dispatchEvent(new w.Event('change'));
+      };
+      attach('#impCeilingFile','顶面图.png');
+      assert($('#impStart').disabled && $('#impCeilingFiles').textContent.includes('顶面图.png'), '仅上传天花图时不应创建户型任务');
+      attach('#impFile','户型图.png');
+      assert(!$('#impStart').disabled && $('#impFiles').textContent.includes('户型图.png'), '户型图未登记为独立输入');
+      $('#impStart').click();
+      assert(await waitFor(() => request, 1000, 20), '上传请求未提交');
+      assert(request.files.find(file => file.name === '户型图.png')?.kind === 'floor' &&
+        request.files.find(file => file.name === '顶面图.png')?.kind === 'ceiling', '上传没有区分户型图和天花图');
+      importer.impClose();
+
+      const report = {
+        state:'differ', ceilingMeta:reportMeta, issues:[{where:'天花',detail:'核对完成面标高'}],
+        fixed:{plan,furniture:[],ceiling:revised,ceilingMeta:reportMeta},
+      };
+      w.fetch = (url,options) => String(url).endsWith('/api/jobs/ceiling-ui-test/review')
+        ? Promise.resolve(new w.Response(JSON.stringify(report))) : fetch.call(w,url,options);
+      const opened = importer.impOpenResult({plan,furniture:[],ceiling,ceilingMeta}, data => {
+        applied = data;
+        return {ok:true,plan};
+      }, {jobId:'ceiling-ui-test',reviewState:'differ'});
+      assert(opened && await waitFor(() => $('#impReviewCeilingMeta').textContent.includes('核对完成面标高'), 1000, 20), '天花复核结论未显示');
+      $('#impRoomLayer button:nth-child(2)').click();
+      assert($('#impRoomDrawing').textContent.includes('2720 mm') && $('#impRoomCeiling').textContent.includes('饰面待核对'), '初始顶面或识别说明未显示');
+      $('#impReview .imp-review-controls [role="group"]:nth-child(2) button:nth-child(2)').click();
+      assert($('#impReview .imp-review-map').textContent.includes('2680 mm'), '修正版顶面未显示');
+      $('#impReview .imp-review-controls [role="group"]:first-child button:first-child').click();
+      assert($('#impReview .imp-review-map').textContent.includes('2720 mm'), '无法切回原识别顶面');
+      $('#impReview .imp-review-expand').click();
+      assert($('#impViewCanvas').textContent.includes('2720 mm'), '大图没有沿用当前天花对比状态');
+      $('#impViewClose').click();
+      $('#impReview .imp-review-foot .primary').click();
+      $('#impApply').click();
+      assert(await waitFor(() => applied, 1000, 20) && applied.ceiling.rooms.west.zones[0].drop === 220 &&
+        applied.ceilingMeta.source === 'drawing', '打开项目没有传递修正后的天花和来源');
+    } finally {
+      importer.impClose();
+      w.XMLHttpRequest = uploadXHR;
+      w.fetch = fetch;
+    }
+  });
+
   await check('applyPlan.terracesAndRaisedBays', () => {
     const S = studio(), original = S.projectJSON(), host = original.plan.rooms[0];
     const terrace = {id:'out',name:'露台',poly:[[0,-2000],[4000,-2000],[4000,0],[0,0]],outdoor:true,counted:false};
@@ -812,6 +887,48 @@ async function main(){
     assert(await projects.switchScheme(copied.id), '无法打开复制方案');
     assert(!S.getState().demolished.length, '编辑复制方案时串入了其他方案');
     return '底稿新建、独立复制、切换、独立撤销和同尺度只读比较';
+  });
+
+  await check('projects.recognizedCeilingSurvivesOpeningAndReview', async () => {
+    const S = studio(), w = win(), {io, projects} = w.App;
+    const plan = {...dimensionFixture(S.getPlan()), name:'天花图纸导入测试'};
+    const ceiling = {baseHeight:2850, rooms:{west:{
+      zones:[{id:'imported-zone', name:'局部吊顶', poly:[[600,600],[2400,600],[2400,2600],[600,2600]], drop:180}],
+      fixtures:[{id:'imported-light', type:'downlight', x:1500, y:1300, zoneId:'imported-zone'}],
+    }}};
+    const ceilingMeta = {source:'generated', estimated:true, warnings:['原顶净高需要现场核对。']};
+    const furniture = [{type:'downlight', cx:1500, cy:1300, w:90, d:90, rot:0}];
+    const id = 'selftest-ceiling-import', createdAt = Date.now();
+    const result = {plan, furniture, ceiling, ceilingMeta};
+    assert(await projects.putProject({id, jobId:'import-selftest-ceiling', name:plan.name, phase:'done', result, createdAt, updatedAt:createdAt}), '测试图纸任务未保存');
+    projects.openProjects(id);
+    w.document.querySelector(`[data-project-id="${id}"] [data-project-action="preview"]`).click();
+    w.document.querySelector('#impApply').click();
+    assert(await waitFor(() => projects.activeProjectId === id, 3000), '识别结果未打开为可编辑项目');
+    assert(S.getState().furniture.length === 1 && S.getState().furniture[0].id === 'imported-light', '同一灯位重复导入');
+    const first = projects.activeSchemeId;
+    const baseline = projects.projectSchemesJSON().baseline;
+    assert(S.getState().ceiling.rooms.west.zones[0].drop === 180 && baseline.state.ceilingMeta.estimated &&
+      S.getState().ceilingMeta.warnings[0] === ceilingMeta.warnings[0], '打开项目时丢失顶面或估算信息');
+    const manual = [
+      {op:'addFurniture', id:'manual-light', type:'downlight', cx:1700, cy:1300, w:90, d:90},
+      {op:'addFurniture', id:'near-wall-light', type:'downlight', cx:2700, cy:1300, w:90, d:90},
+    ];
+    assert(S.applyOps(manual).applied === 2, '测试灯具未布置');
+    const beforeReview = S.projectJSON();
+    const fixedPlan = {...plan, rooms:plan.rooms.map(room => room.id === 'west'
+      ? {...room, poly:room.poly.map(([x,y]) => [Math.min(x,2500),y])} : room)};
+    const fixed = io.snapshotFromRecognition(fixedPlan, [], {fallbackSnapshot:beforeReview});
+    const correction = await projects.createScheme({snapshot:fixed, origin:'review', name:'户型复核测试', reviewVersion:123});
+    assert(correction && S.getState().furniture.some(item => item.id === 'manual-light') &&
+      !S.getState().furniture.some(item => item.id === 'near-wall-light') &&
+      S.getState().ceiling.rooms.west.zones[0].id === 'imported-zone', '户型修正前后未保留相容的天花对象');
+    const signature = projects.sceneSignature(S.projectJSON());
+    const topOnlyEdit = S.projectJSON();
+    topOnlyEdit.state.ceiling.rooms.west.zones[0].drop += 20;
+    assert(projects.sceneSignature(topOnlyEdit) !== signature, '复核应用状态未纳入天花编辑');
+    assert(await projects.switchScheme(first) && JSON.stringify(S.projectJSON()) === JSON.stringify(beforeReview), '修正写入了原方案');
+    return '顶面对象与估算来源随项目保存，户型复核保留兼容灯位，原方案仍可独立编辑';
   });
 
   finished = true;

@@ -399,7 +399,7 @@
     return zone;
   }
   const api={normalize,validate,apply,room,baseHeight,outline,edgePoints,shapes,fixtureHeight,fixturePlacementProblem,
-    snapFixture,preset,pointIn,fixtureTypes,fixtureDefaults,defaultColor:DEFAULT_COLOR};
+    fixtureFootprint,snapFixture,preset,pointIn,fixtureTypes,fixtureDefaults,defaultColor:DEFAULT_COLOR};
   globalThis.CeilingModel=api;
   if (globalThis.App) globalThis.App.ceilingModel=api;
 })();

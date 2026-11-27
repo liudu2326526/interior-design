@@ -70,6 +70,7 @@ type State = {
   measures: any[],
   dimensionMarks?: {id: string, axis: 'x' | 'y', a: DimensionAnchor, b: DimensionAnchor, original?: number}[],
   ceiling?: {version: 1, baseHeight: number, rooms: Record<roomId, CeilingRoom>},
+  ceilingMeta?: DrawingCeilingMeta,
   walk?: {recent: WalkPose[], views: {id: string, name: string, pose: WalkPose,
     scene?: {hour: number, night: boolean, furn: boolean}}[]},
   renders?: RenderRecord[]
@@ -259,20 +260,38 @@ SSE 事件（`data: <json>\n\n`）：
 ### `POST /api/plan/import` → JSON
 
 ```json
-{ "files": [ { "name": "plan.pdf", "mime": "application/pdf", "data": "<base64>" } ],
+{ "files": [
+    { "name": "plan.pdf", "kind": "floor", "data": "<base64>" },
+    { "name": "ceiling.pdf", "kind": "ceiling", "data": "<base64>" }
+  ],
   "note": "可选" }
 ```
 
-服务端将资料写入 `workdir/import-<uuid>/`，由 codex 识别图纸图片、PDF、CAD 导出或 JSON。纯 PNG、JPEG 或 WebP 请求将原图直接附给模型，并从模型回复读取 JSON。需要从工作目录读取资料时，模型将 JSON 写入 `plan.json`。两种输出都将 `furniture` 与结构字段并列，服务端校验后返回户型和家具。
+同一请求至少一个户型文件，文件总数最多 20 个。旧请求省略 `kind` 时按户型资料处理，也会从中查找附带的天花图。服务端先识别并校验结构和地面家具，再以该户型为底图识别天花。确认没有天花设计时生成草案。天花图存在但无法对齐，或资料不足以判定时，返回待核对说明。天花步骤失败时，仍可打开已识别的户型。编辑器通过下方的后台接口发起识别。
+
+成功结果为 `{id, plan, furniture, explanation, ceiling, ceilingMeta}`。`ceiling` 是工作台天花模型的按房间投影，房间记录带有 `fixtures`。应用时顶装件转成可编辑家具。无可用顶面时 `ceiling` 为 `null`。项目与设计 JSON 可保留 `state.ceilingMeta`。
+
+```ts
+type DrawingCeilingMeta = {
+  source: "drawing" | "generated" | "project" | "unavailable"
+  estimated?: boolean
+  alignment?: string
+  warnings?: string[]
+  reason?: string
+  reviewState?: "match" | "differ" | "unavailable"
+  reviewSummary?: string
+  coveredOutdoorRooms?: { roomId: string, evidence: string }[]
+}
+```
 
 ### `/api/jobs/plan-import` → 后台图纸识别
 
-- `POST /api/jobs/plan-import` 接收同样的文件 JSON，可附 `projectName`，入队后返回 `202` 和任务 `id`。模型回合最长 30 分钟。
+- `POST /api/jobs/plan-import` 接收同样的文件 JSON，可附 `projectName`，入队后返回 `202` 和任务 `id`。归档保留天花图的文件用途，服务重启后重新复核仍能区分两类原图。
 - `GET /api/jobs/plan-import` 返回当前访问范围的近期任务和进行中任务，含 `id`、`name`、`phase`、`review`、`progress` 和毫秒时间戳。可重复传 `id` 查询仍有归档的旧任务。新任务先归档原图再入队，`sourceArchived` 表示已归档。
 - `GET /api/jobs/<id>?cursor=0` 同样提供进度元数据，并返回 `done`、`status`、`chunks` 和下一游标。完成时 `chunks` 中是识别结果 JSON，失败时 `error` 提供失败信息。
 - `DELETE /api/jobs/<id>` 取消任务。公网通过已认证网关访问，项目成果按本机与公网访问范围隔离。
 
-识别成功后服务端会自动复核一次识别结果（默认开启），结果记录在任务的 `review` 字段：
+识别成功后服务端会自动复核一次（默认开启），先核对户型，再在复核后的户型坐标中核对天花。原图方案核对可见图纸证据，生成方案核对布局和安装面。若修正会令已有天花失效且无法重新对齐，保留识别底稿并报告冲突。结果记录在任务的 `review` 字段。
 
 ```ts
 type JobProgress = {
@@ -307,7 +326,8 @@ type JobReviewDetail = {
   state: "match" | "differ",
   summary: string,                                // ≤ 120 字
   issues: ReviewIssue[],                          // 最多 8 条；match 时为 []
-  fixed: { plan: Plan, furniture: ImportedFurniture[] } | null,   // match 时为 null
+  fixed: { plan: Plan, furniture: ImportedFurniture[], ceiling?: object, ceilingMeta?: DrawingCeilingMeta } | null,
+  ceilingMeta?: DrawingCeilingMeta,                // 独立天花复核结果
   delta: ReviewDelta,                             // fixed 相对原识别结果的变化
   updatedAt: number,
   rerun: boolean                                  // 启用了复核且仍有原图可用
@@ -364,6 +384,8 @@ type PlanImportResponse = {
   plan: Plan
   furniture: ImportedFurniture[]
   explanation: string
+  ceiling: object | null
+  ceilingMeta: DrawingCeilingMeta
   id: string
 }
 ```
