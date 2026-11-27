@@ -4,6 +4,35 @@
 (() => {
   'use strict';
   const App = globalThis.App;
+  const flooringCost = (area, price) => area * price * 1.05;
+  const formatYuan = cost => `¥${Math.round(cost).toLocaleString()}`;
+  const formatFloorPrice = price => `¥${price}/m²`;
+
+  // Keep the card layout with its renderer so a cached editor page can load a newer panel safely.
+  const floorCardStyles = document.createElement('style');
+  floorCardStyles.textContent = `
+    #panel .mats{grid-template-columns:repeat(2,minmax(0,1fr))}
+    #panel .floor-card{position:relative;display:flex;align-items:center;gap:8px;padding:6px;cursor:default}
+    #panel .floor-card > i{width:26px;height:26px;flex:none}
+    #panel .floor-copy{flex:1;min-width:0;font-size:12px;line-height:1.3}
+    #panel :is(.floor-pick,.floor-price){display:block;max-width:100%;border:0;padding:0;background:none;font:inherit;text-align:left;cursor:pointer}
+    #panel .floor-pick{overflow-wrap:anywhere}
+    #panel .floor-pick::after{content:"";position:absolute;inset:0;border-radius:8px}
+    #panel .floor-pick:focus-visible{outline:0}
+    #panel .floor-pick:focus-visible::after,#panel .floor-price:focus-visible,#panel .floor-price-editor input:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+    #panel .floor-price-slot{position:relative;z-index:1;display:block;height:13px;color:var(--muted);font-size:10px;line-height:13px;pointer-events:none}
+    #panel .floor-price{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:inherit;pointer-events:auto}
+    #panel .floor-price:hover{text-decoration:underline}
+    #panel .floor-price-editor{position:absolute;inset-inline:0;top:0;display:flex;align-items:center;gap:3px;white-space:nowrap;font:inherit;pointer-events:auto}
+    #panel .floor-price-editor span{font:inherit}
+    #panel .floor-price-editor input{flex:1;min-width:0;height:13px;padding:0 2px;border:1px solid var(--line);border-radius:3px;background:#fff;font:inherit;appearance:textfield}
+    #panel .floor-price-editor input::-webkit-inner-spin-button,#panel .floor-price-editor input::-webkit-outer-spin-button{appearance:none;margin:0}
+    @media (pointer:coarse){
+      #panel .floor-card{padding:9px 8px}
+      #panel .floor-price-editor{top:-2px}
+      #panel .floor-price-editor input{height:18px;font-size:16px;line-height:16px}
+    }`;
+  document.head.append(floorCardStyles);
 
   /* ======================= 右侧面板 ======================= */
 
@@ -47,8 +76,8 @@
     const byMat = {};
     App.store.ROOMS.forEach(r => { const m = App.store.roomState(r.id).mat; byMat[m] = (byMat[m]||0) + App.geom.roomArea(r); });
     let cost = 0;
-    const matRows = Object.entries(byMat).map(([m,a]) => { const info = App.plan.matInfo(m), c = a*info.price*1.05; cost += c;
-      return `<tr><td><span class="sw" style="background:${info.sw}"></span>${App.core.esc(App.core.nm(info.name))}</td><td class="r">${App.geom.fmt(a,1)} m²</td><td class="r">¥${Math.round(c).toLocaleString()}</td></tr>`; }).join('');
+    const matRows = Object.entries(byMat).map(([m,a]) => { const info = App.plan.matInfo(m), c = flooringCost(a, info.price); cost += c;
+      return `<tr><td><span class="sw" style="background:${info.sw}"></span>${App.core.esc(App.core.nm(info.name))}</td><td class="r">${App.geom.fmt(a,1)} m²</td><td class="r">${formatYuan(c)}</td></tr>`; }).join('');
     const dem = App.store.state.demolished.map(App.plan.wallOf).filter(Boolean);
     const demLen = dem.reduce((a,w) => a + App.geom.wallLength(w), 0) / 1000;
     const components = App.geom.componentCount(App.store.state.furniture);
@@ -59,7 +88,7 @@
     <div class="muted" style="font-size:11px;margin-top:4px">${App.core.tr('带 * 的区域不计入套内使用面积，面积按墙体内净尺寸计算。','Areas marked * are excluded from the net interior area. Room areas use inner wall dimensions.')}</div></section>
   <section><h3>${App.core.tr('地面材料估算','Flooring Estimate')} <small>${App.core.tr('含 5% 损耗','incl. 5% waste')}</small></h3>
     <table>${matRows}</table>
-    <div class="total"><span>${App.core.tr('地面材料合计','Flooring total')}</span><b>¥${Math.round(cost).toLocaleString()}</b></div></section>
+    <div class="total"><span>${App.core.tr('地面材料合计','Flooring total')}</span><b>${formatYuan(cost)}</b></div></section>
   <section><h3>${App.core.tr('方案统计','Plan Stats')}</h3>
     <div class="stats"><div><small>${App.core.tr('家具数量','Furniture')}</small><span class="big">${App.store.state.furniture.length - components}</span></div>
       ${components ? `<div><small>${App.core.tr('构件数量','Components')}</small><span class="big">${components}</span></div>` : ''}
@@ -233,7 +262,17 @@
     const inside = App.store.state.furniture.filter(f => App.ceilingFurniture.is(f) ? f.ceiling.roomId===r.id : App.assistant.pointInPoly(f.cx,f.cy,r.poly));
     const spans = App.dimensionGeometry.roomSpans(r, App.store.ui.dimensionRoomPoint);
     const clear = axis => spans ? Math.round((spans[axis][1].value - spans[axis][0].value) * 10) / 10 : '—';
-    const mats = Object.entries(App.store.MATS).map(([k,m]) => `<button class="mat ${k===st.mat?'on':''}" data-mat="${App.core.esc(k)}"><i style="background:${m.sw}"></i><span>${App.core.esc(App.core.nm(m.name))}<small>¥${m.price}/m²</small></span></button>`).join('');
+    const {tr,esc,nm} = App.core;
+    const mats = Object.entries(App.store.MATS).map(([key,material]) => {
+      const name = nm(material.name), selected = key === st.mat;
+      return `<div class="mat floor-card ${selected ? 'on' : ''}">
+        <i style="background:${material.sw}" aria-hidden="true"></i>
+        <div class="floor-copy">
+          <button type="button" class="floor-pick" data-mat="${esc(key)}" aria-pressed="${selected}">${esc(name)}</button>
+          <span class="floor-price-slot"><button type="button" class="floor-price" data-edit-mat-price="${esc(key)}"
+            aria-label="${esc(floorPriceLabel(name, material.price))}">${formatFloorPrice(material.price)}</button></span>
+        </div></div>`;
+    }).join('');
     // 房间效果图：显示该房间最近一张（标题条 / 效果图页签生成的都算）
     const latest = App.assistant.roomLatestRender(r.id);
     const shotHtml = latest
@@ -248,19 +287,71 @@
       <div><small>${App.core.tr('截面净深','Section clear depth')}</small><span class="big">${clear('y')}</span> mm</div></div>
     <div class="muted">${App.core.tr(`墙面面积（原顶高 ${height} m，未扣门窗）约 ${App.geom.fmt(App.geom.roomPerimeter(r)*height,1)} m²`, `Wall area (${height} m base ceiling, openings not deducted) ≈ ${App.geom.fmt(App.geom.roomPerimeter(r)*height,1)} m²`)}</div>
     <div class="actions"><button class="btn primary" id="enterRoomBtn">${App.core.tr('进入房间','Enter room')}</button></div></section>
-  <section><h3>${App.core.tr('地面材料','Flooring')}</h3><div class="mats">${mats}</div>
-    <div class="total"><span>${App.core.tr('材料估价','Estimated cost')}</span><b>¥${Math.round(a*info.price*1.05).toLocaleString()}</b></div></section>
+  <section><h3>${tr('地面材料','Flooring')} <small>${tr('点击价格修改','Click a price to edit')}</small></h3><div class="mats">${mats}</div>
+    <div class="total"><span>${tr('材料估价','Estimated cost')}</span><b data-room-floor-estimate aria-live="polite">${formatYuan(flooringCost(a, info.price))}</b></div></section>
   ${ceilingRoomSection(r)}
   <section><h3>${App.core.tr('房间效果图','Room render')} ${latest ? `<small>${App.core.tr('最近一张','Latest')}</small>` : ''}</h3>${shotHtml}</section>
   <section><h3>${App.geom.componentCount(inside) ? App.core.tr('房间内家具和构件','Furniture and components in room') : App.core.tr('房间内家具','Furniture in room')} <small>${App.core.tr(`${inside.length} 件`, `${inside.length} items`)}</small></h3>
     <table>${inside.map(f => `<tr class="click" data-fid="${App.core.esc(f.id)}"><td>${App.core.esc(App.core.nm(f.name))}</td><td class="r muted">${f.w}×${f.d}</td></tr>`).join('') || `<tr><td class="muted">${App.core.tr('暂无','None')}</td></tr>`}</table>
     <div class="actions"><button class="btn" id="back">${App.core.tr('← 返回总览','← Back to overview')}</button></div></section>`;
   }
+  function floorPriceLabel(name, price){
+    return App.core.tr(`修改${name}单价，当前${price}元每平方米`, `Edit ${name} unit price, currently ${price} CNY per square metre`);
+  }
+
+  function editFloorPrice(button, room, estimate){
+    const {tr,nm} = App.core, key = button.dataset.editMatPrice;
+    const material = App.store.MATS[key], name = nm(material.name);
+    const editor = document.createElement('span');
+    editor.className = 'floor-price-editor';
+    editor.innerHTML = `<span aria-hidden="true">¥</span><input type="number" min="0" step="0.01" required inputmode="decimal"><span aria-hidden="true">/m²</span>`;
+    const input = editor.querySelector('input');
+    input.value = material.price;
+    input.dataset.matPrice = key;
+    input.setAttribute('aria-label', tr(`${name}单价（元/平方米）`, `${name} unit price (CNY per square metre)`));
+
+    function finish(save, refocus){
+      if (!editor.isConnected) return;
+      input.onblur = null;
+      if (save){
+        const cents = Math.round(input.valueAsNumber * 100);
+        if (!input.validity.valid || !Number.isSafeInteger(cents)){
+          App.core.toast(tr('请输入非负单价，最多两位小数。','Enter a non-negative unit price with up to two decimal places.'));
+        } else if (cents / 100 !== material.price){
+          const before = App.store.snap();
+          material.price = cents / 100;
+          App.store.commit(before);
+          if (App.store.roomState(room.id).mat === key){
+            estimate.textContent = formatYuan(flooringCost(App.geom.roomArea(room), material.price));
+          }
+        }
+      }
+      button.textContent = formatFloorPrice(material.price);
+      button.setAttribute('aria-label', floorPriceLabel(name, material.price));
+      editor.replaceWith(button);
+      if (refocus) button.focus({preventScroll:true});
+    }
+
+    input.onblur = () => finish(true, false);
+    input.onkeydown = event => {
+      if (event.key !== 'Enter' && event.key !== 'Escape') return;
+      event.preventDefault();
+      finish(event.key === 'Enter', true);
+    };
+    button.replaceWith(editor);
+    input.focus({preventScroll:true});
+    input.select();
+  }
+
   function bindRoomPanel(){
     const id = App.store.ui.sel.id;
-    bindCeilingRoom(App.plan.roomDef(id));
+    const room = App.plan.roomDef(id);
+    bindCeilingRoom(room);
     App.core.$('#rName').onchange = e => App.store.mutate(() => App.store.roomState(id).name = e.target.value.trim() || App.store.roomState(id).name);
     document.querySelectorAll('#panel [data-mat]').forEach(b => b.onclick = () => App.store.mutate(() => App.store.roomState(id).mat = App.plan.matKey(b.dataset.mat)));
+    const estimate = App.core.$('[data-room-floor-estimate]');
+    document.querySelectorAll('#panel [data-edit-mat-price]').forEach(button =>
+      button.onclick = () => editFloorPrice(button, room, estimate));
     document.querySelectorAll('#panel tr[data-fid]').forEach(tr => tr.onclick = () => App.interact.select({kind:'furn', id:tr.dataset.fid}));
     if (App.core.$('#enterRoomBtn')) App.core.$('#enterRoomBtn').onclick = () => { closeDrawers(); App.io.studioEnterRoom(id); };
     if (App.core.$('#roomThumb')) App.core.$('#roomThumb').onclick = () => { const rec = App.assistant.roomLatestRender(id); if (rec) App.assistant.openLightbox(rec.url, App.assistant.rRecTitle(rec), rec); };

@@ -517,7 +517,13 @@
   // 应用修正时记录户型、家具与顶面几何，效果图等字段不参与。
   function sceneSignature(snapshot, includeCeiling = true){
     const plan = snapshot?.plan ? {...snapshot.plan} : null;
-    if (plan) delete plan.name;
+    if (plan){
+      delete plan.name;
+      if (plan.materials){
+        plan.materials = Object.fromEntries(Object.entries(plan.materials)
+          .map(([key, {price, ...material}]) => [key, material]));
+      }
+    }
     return JSON.stringify({
       plan,
       furniture:snapshot?.state?.furniture ?? [],
@@ -538,8 +544,9 @@
     if (scheme.reviewAppliedSig === current) return true;
     try {
       const legacy = JSON.parse(scheme.reviewAppliedSig);
-      return !Object.hasOwn(legacy, 'ceiling') &&
-        sceneSignature({plan:legacy.plan,state:legacy}, false) === sceneSignature(snapshot, false);
+      const includeCeiling = Object.hasOwn(legacy, 'ceiling');
+      return sceneSignature({plan:legacy.plan,state:legacy}, includeCeiling) ===
+        (includeCeiling ? current : sceneSignature(snapshot, false));
     } catch(e){ return false; }
   }
   const sameReview = (a, b) => (a?.state || '') === (b?.state || '') &&

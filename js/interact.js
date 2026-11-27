@@ -462,9 +462,24 @@
 
   /* ======================= 家具库 ======================= */
   const library = App.core.$('#lib'), librarySearch = App.core.$('#libSearch');
+  const categoryMenu = App.core.$('#libCategoryMenu'), groupMenu = App.core.$('#libGroupMenu');
+  const categoryCurrent = App.core.$('#libCategoryCurrent'), groupCurrent = App.core.$('#libGroupCurrent');
   const categories = App.core.$('#libCategories'), groups = App.core.$('#libGroups');
   const libraryCards = App.core.$('#libItems');
   let libraryCategory = '', libraryGroup = '', libraryEntries = [];
+
+  const libraryMenus = [categoryMenu, groupMenu].filter(Boolean);
+  const LIB_MENUS_KEY = 'huxing-lib-menus';
+  try {
+    const open = JSON.parse(localStorage.getItem(LIB_MENUS_KEY));
+    for (const menu of libraryMenus) if (open?.[menu.id] === false) menu.open = false;
+  } catch(e) {}
+  for (const menu of libraryMenus) menu.addEventListener('toggle', () => {
+    try {
+      const open = Object.fromEntries(libraryMenus.map(item => [item.id, item.open]));
+      localStorage.setItem(LIB_MENUS_KEY, JSON.stringify(open));
+    } catch(e) {}
+  });
 
   function libraryShape(details){
     const {type,w,d,color} = details;
@@ -481,18 +496,24 @@
     const catalog = [...App.geom.FURNITURE_CATALOG, {id:'my-assets',name:'我的素材',en:'My assets',
       groups:[{id:'assets',name:'素材',en:'Assets',items:assets}]}];
     const category = catalog.find(item => item.id === libraryCategory) || catalog[0];
+    const selectedGroup = category.groups.find(group => group.id === libraryGroup);
     libraryCategory = category.id;
-    if (!category.groups.some(group => group.id === libraryGroup)) libraryGroup = '';
+    if (!selectedGroup) libraryGroup = '';
     const query = librarySearch.value.normalize('NFKC').toLowerCase().match(/\S+/gu) || [];
     const active = document.activeElement?.dataset;
     librarySearch.placeholder = tr('搜索全部家具', 'Search all furniture');
     librarySearch.setAttribute('aria-label', librarySearch.placeholder);
     categories.setAttribute('aria-label', tr('家具大类', 'Furniture categories'));
-    groups.setAttribute('aria-label', tr('家具类别', 'Furniture subcategories'));
+    groups.setAttribute('aria-label', tr('家具子类', 'Furniture subcategories'));
+    if (categoryCurrent) categoryCurrent.textContent = query.length ? '' : tr(category.name, category.en);
+    if (groupCurrent) groupCurrent.textContent = selectedGroup ? tr(selectedGroup.name, selectedGroup.en) : tr('全部', 'All');
     categories.innerHTML = catalog.map(item =>
       libraryFilter('category', item.id, tr(item.name, item.en), !query.length && item.id === libraryCategory)).join('');
-    groups.hidden = query.length > 0 || category.groups.length <= 1;
-    groups.innerHTML = groups.hidden ? '' : libraryFilter('group', '', tr('全部', 'All'), !libraryGroup) +
+    // Whether subcategories apply is separate from whether the user prefers to see their panel.
+    const hideGroups = query.length > 0 || category.groups.length <= 1;
+    if (groupMenu) groupMenu.hidden = hideGroups;
+    else groups.hidden = hideGroups;
+    groups.innerHTML = hideGroups ? '' : libraryFilter('group', '', tr('全部', 'All'), !libraryGroup) +
       category.groups.map(group => libraryFilter('group', group.id, tr(group.name, group.en), group.id === libraryGroup)).join('');
 
     libraryEntries = [];
@@ -535,7 +556,8 @@
     libraryCategory='ceiling';libraryGroup='';librarySearch.value='';
     buildLib();App.panel.drawer('lib',true);
     library.scrollIntoView({block:'start'});
-    categories.querySelector('[data-lib-category="ceiling"]')?.focus({preventScroll:true});
+    const focus = categoryMenu?.open === false ? App.core.$('#libCategoryToggle') : categories.querySelector('[data-lib-category="ceiling"]');
+    focus?.focus({preventScroll:true});
   }
   librarySearch.addEventListener('input', buildLib);
   library.addEventListener('click', e => {

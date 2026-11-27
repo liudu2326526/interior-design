@@ -58,8 +58,18 @@ aside.right{border-right:0;border-left:1px solid var(--line)}
   border-bottom:1px solid var(--line);margin-bottom:8px}
 .lib-controls h4{position:static;padding:0;color:var(--ink);font-size:13px;letter-spacing:0}
 #libSearch{width:100%;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.lib-disclosure summary{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px;cursor:pointer;list-style:none;font-weight:600}
+.lib-disclosure summary::-webkit-details-marker{display:none}
+.lib-disclosure summary::before{content:"";flex:none;width:6px;height:6px;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:rotate(-45deg)}
+.lib-disclosure[open] summary::before{transform:rotate(45deg)}
+.lib-disclosure summary:hover{background:#f2ece2}
+.lib-disclosure summary:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+.lib-disclosure summary>span:first-child{white-space:nowrap}
+.lib-current{min-width:0;margin-inline-start:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#6d6252;font-weight:400}
+.lib-disclosure[open] .lib-current,.lib-current:empty{display:none}
 .lib-menu{display:flex;flex-wrap:wrap;gap:4px}
 .lib-menu[hidden]{display:none}
+.lib-disclosure[open] .lib-menu{margin-top:4px}
 .lib-menu .btn{max-width:100%;padding:4px 7px;border:1px solid var(--line);text-align:left;white-space:normal;overflow-wrap:anywhere}
 #libGroups .btn{border-color:transparent;background:#f4efe6;color:var(--ink)}
 #libGroups .btn.on{background:var(--accent-soft);color:#874623}
@@ -141,12 +151,17 @@ tr.click:hover td{background:#faf5ee}
 .actions .btn.primary{background:#a95732}
 .actions .btn.primary:hover{background:#8f4828}
 .actions .btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-.mats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.mat{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff;cursor:pointer;text-align:left}
+.mats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.mat{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff;text-align:left;cursor:pointer}
 .mat.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .mat i{width:26px;height:26px;border-radius:5px;border:1px solid rgba(0,0,0,.12);flex:none}
 .mat span{font-size:12px;line-height:1.3}
 .mat small{display:block;color:var(--muted)}
+/* Older cached versions put the price directly inside the card. */
+.mat:has(> .mat-price){display:grid;align-content:start;gap:4px}
+.mat > .mat-pick{display:flex;align-items:center;gap:6px;border:0;padding:0;background:none;text-align:left;cursor:pointer}
+.mat > .mat-price{display:flex;align-items:center;gap:4px;white-space:nowrap;color:var(--muted)}
+.mat > .mat-price input{flex:1;min-width:0;width:100%;border:1px solid var(--line);border-radius:4px;padding:2px 4px}
 .kbd{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px;color:var(--muted)}
 kbd{font:11px ui-monospace,Menlo,monospace;background:#f2ece2;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--ink)}
 .big{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -491,6 +506,7 @@ main.drawer-panel #fab{opacity:0;visibility:hidden}
   .menu-pop .btn{padding:11px 14px}
   .item{padding:10px 4px 8px}
   #libSearch{font-size:16px;min-height:44px}
+  .lib-disclosure summary{min-height:38px}
   .lib-menu .btn{min-height:38px}
   .form input,.form select{font-size:16px;padding:8px 9px}
   .form input[type=color]{height:40px}
@@ -1096,8 +1112,14 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <div class="lib-controls">
         <h4 id="libTitle" data-en="Furniture library">家具库</h4>
         <input id="libSearch" type="search" placeholder="搜索全部家具" aria-label="搜索全部家具" aria-controls="libItems" autocomplete="off" spellcheck="false">
-        <div class="lib-menu" id="libCategories" role="group" aria-label="家具大类"></div>
-        <div class="lib-menu" id="libGroups" role="group" aria-label="家具类别"></div>
+        <details class="lib-disclosure" id="libCategoryMenu" open>
+          <summary id="libCategoryToggle"><span data-en="Categories">大类</span><span class="lib-current" id="libCategoryCurrent"></span></summary>
+          <div class="lib-menu" id="libCategories" role="group" aria-label="家具大类"></div>
+        </details>
+        <details class="lib-disclosure" id="libGroupMenu" open>
+          <summary id="libGroupToggle"><span data-en="Subcategories">子类</span><span class="lib-current" id="libGroupCurrent"></span></summary>
+          <div class="lib-menu" id="libGroups" role="group" aria-label="家具子类"></div>
+        </details>
       </div>
       <div id="libStatus" aria-live="polite"></div>
       <div id="libItems"></div>
@@ -1451,8 +1473,8 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <script src="./js/store.js?v=5"></script>
 <script src="./js/dimension-calibration.js?v=3"></script>
 <script src="./js/draw2d.js?v=8"></script>
-<script src="./js/panel.js?v=6"></script>
-<script src="./js/interact.js?v=8"></script>
+<script src="./js/panel.js?v=9"></script>
+<script src="./js/interact.js?v=10"></script>
 <script src="./js/ceiling-editor.js?v=6"></script>
 <script src="./js/io.js?v=10"></script>
 <script src="./js/ceiling-showcase.js?v=2"></script>
@@ -1461,7 +1483,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <script src="./js/assistant.js?v=9"></script>
 <script src="./js/schemes-compare.js"></script>
 <script src="./js/schemes-ui.js"></script>
-<script src="./js/projects.js?v=12"></script>
+<script src="./js/projects.js?v=13"></script>
 <script src="./js/tour.js?v=2"></script>
 <script src="./js/view3d-models.js?v=4"></script>
 <script src="./js/view3d.js?v=12"></script>

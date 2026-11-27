@@ -653,6 +653,168 @@ async function main(){
     return '墙面标注与原图值可保存，等比校准与移动终点墙均更新坐标并可撤销';
   });
 
+  await check('floorPlan.editableMaterialPrices', () => {
+    const S = studio(), w = win(), doc = w.document, {store,geom,panel} = w.App;
+    const before = S.projectJSON(), undo = store.undoStack.slice(), redo = store.redoStack.slice();
+    const panelWasOpen = doc.querySelector('#tgPanel').getAttribute('aria-expanded') === 'true';
+    const libraryWasOpen = doc.querySelector('#tgLib').getAttribute('aria-expanded') === 'true';
+    const plan = dimensionFixture(before.plan);
+    const initialWood = plan.materials.wood.price, initialTile = plan.materials.tile800.price;
+    const priceButton = id => doc.querySelector(`#panel [data-edit-mat-price="${id}"]`);
+    const openPrice = id => {
+      const button = priceButton(id), card = button?.closest('.floor-card');
+      assert(card, '缺少地面材料卡片');
+      const bounds = card.getBoundingClientRect();
+      button.click();
+      const field = doc.querySelector(`#panel [data-mat-price="${id}"]`);
+      assert(field && doc.activeElement === field && doc.querySelectorAll('#panel [data-mat-price]').length === 1,
+        '点击价格后应只聚焦这一项单价的输入框');
+      const editing = card.getBoundingClientRect();
+      assert(field.closest('.floor-card') === card &&
+        ['x', 'y', 'width', 'height'].every(key => Math.abs(bounds[key] - editing[key]) <= 1),
+        '编辑单价时应保持原材料卡片的位置与尺寸');
+      return field;
+    };
+    const edit = (id, value, action = 'Enter') => {
+      const field = openPrice(id);
+      field.value = value;
+      if (action === 'blur') field.blur();
+      else field.dispatchEvent(new w.KeyboardEvent('keydown', {key:action, bubbles:true, cancelable:true}));
+      assert(priceButton(id) && !doc.querySelector('#panel [data-mat-price]'), '结束编辑后应恢复价格文字');
+      if (action !== 'blur') assert(doc.activeElement === priceButton(id), '按键结束后应将焦点还给价格文字');
+    };
+    const format = n => '¥' + Math.round(n).toLocaleString();
+    const area = id => geom.roomArea(store.ROOMS.find(room => room.id === id));
+    const estimate = () => doc.querySelector('#panel [data-room-floor-estimate]')?.textContent;
+    try {
+      assert(S.applyPlan(plan, {freshState:true, clearFurniture:true, history:false}).ok, '地面报价测试方案无法加载');
+      if (!panelWasOpen) panel.drawer('panel', true);
+      S.select({kind:'room',id:'west'});
+      const originalReviewSignature = w.App.projects.sceneSignature(S.projectJSON());
+      const woodPrice = priceButton('wood');
+      assert(woodPrice?.textContent.includes(String(initialWood)) && !doc.querySelector('#panel [data-mat-price]'),
+        '默认应显示价格文字且不打开任何输入框');
+      const card = woodPrice.closest('.floor-card'), grid = card?.parentElement;
+      assert(grid && doc.querySelector('#tgPanel').getAttribute('aria-expanded') === 'true' &&
+        w.getComputedStyle(card).visibility === 'visible', '材料卡片应在展开的属性面板内可见');
+      const {width,height} = card.getBoundingClientRect();
+      const columnWidth = (grid.clientWidth - parseFloat(w.getComputedStyle(grid).columnGap)) / 2;
+      assert(width >= 96 && Math.abs(width - columnWidth) <= 2 && height >= 36 && height <= 60,
+        '材料卡片应使用紧凑的双列布局');
+      const swatch = card.querySelector(':scope > i').getBoundingClientRect();
+      assert(Math.abs(swatch.width - 26) <= 1 && Math.abs(swatch.height - 26) <= 1,
+        '材料卡片的色样应为 26 像素方块');
+      const pick = card.querySelector('.floor-pick');
+      assert(pick.getBoundingClientRect().height <= parseFloat(w.getComputedStyle(pick).lineHeight) * 2 + 1,
+        '木地板名称不应逐字折行');
+      const priceText = doc.createRange();
+      priceText.selectNodeContents(woodPrice);
+      assert(woodPrice.clientWidth + 1 >= priceText.getBoundingClientRect().width,
+        '价格文字和单位应完整显示');
+      edit('wood', '317.25');
+      assert(priceButton('wood').textContent.includes('317.25') && estimate() === format(area('west') * 317.25 * 1.05),
+        '提交小数单价后未更新显示和房间估价');
+      S.select({kind:'room',id:'east'});
+      assert(priceButton('wood').textContent.includes('317.25') && estimate() === format(area('east') * 317.25 * 1.05),
+        '同一方案其他房间未同步该材料的价格');
+
+      edit('tile800', '0', 'blur');
+      assert(S.getState().rooms.east.mat === 'wood' && S.getPlan().materials.tile800.price === 0,
+        '编辑未选材料应允许零价，且不能改掉房间材料');
+      const zeroText = priceButton('tile800').textContent;
+      const steps = store.undoStack.length;
+      const reopened = openPrice('tile800');
+      assert(reopened.value === '0', '重新编辑时应读取已保存的单价');
+      reopened.value = '99.5';
+      reopened.dispatchEvent(new w.KeyboardEvent('keydown', {key:'Escape', bubbles:true, cancelable:true}));
+      assert(doc.activeElement === priceButton('tile800') && !doc.querySelector('#panel [data-mat-price]') &&
+        S.getPlan().materials.tile800.price === 0 && S.getState().rooms.east.mat === 'wood' && store.undoStack.length === steps,
+        '按 Escape 应取消编辑、恢复焦点并保留原单价和原材料');
+      edit('tile800', '-1');
+      edit('tile800', '');
+      assert(store.undoStack.length === steps && S.getPlan().materials.tile800.price === 0 &&
+        priceButton('tile800').textContent === zeroText,
+        '负数和空值不应写入价格或占用撤销记录');
+      assert(JSON.parse(w.localStorage.getItem(store.PLAN_KEY)).materials.tile800.price === 0 &&
+        S.projectJSON().plan.materials.wood.price === 317.25, '价格未随方案存储和导出');
+      assert(w.App.projects.sceneSignature(S.projectJSON()) === originalReviewSignature,
+        '单价修改不应影响图纸复核状态');
+
+      S.select(null);
+      const total = [...doc.querySelectorAll('#panel .total')].find(item => item.textContent.includes('地面材料合计'));
+      assert(total?.querySelector('b')?.textContent === format((area('west') + area('east')) * 317.25 * 1.05),
+        '总览未采用更新后的材料单价');
+      S.undo();
+      assert(S.getPlan().materials.tile800.price === initialTile, '撤销未恢复原材料单价');
+      S.undo();
+      assert(S.getPlan().materials.wood.price === initialWood, '连续撤销未恢复房间原材料估价');
+    } finally {
+      S.applyPlan(before.plan, {history:false});
+      store.state = store.fixState(before.state);
+      store.undoStack.splice(0, store.undoStack.length, ...undo);
+      store.redoStack.splice(0, store.redoStack.length, ...redo);
+      store.afterHistory();
+      if (!panelWasOpen) panel.drawer('panel', false);
+      if (libraryWasOpen && w.App.core.narrow()) panel.drawer('lib', true);
+    }
+  });
+
+  await check('furnitureLibrary.collapsibleMenus', async () => {
+    const w = win(), doc = w.document, {interact} = w.App;
+    const menuKey = 'huxing-lib-menus';
+    const previousMenu = w.localStorage.getItem(menuKey);
+    const category = doc.querySelector('#libCategoryMenu'), group = doc.querySelector('#libGroupMenu');
+    const categoryToggle = doc.querySelector('#libCategoryToggle'), groupToggle = doc.querySelector('#libGroupToggle');
+    const search = doc.querySelector('#libSearch'), priorQuery = search.value;
+    assert(category && group && categoryToggle && groupToggle, '家具大类和子类缺少独立折叠入口');
+    const priorOpen = [category.open, group.open];
+    const activeCategory = doc.querySelector('#libCategories [aria-pressed="true"]')?.dataset.libCategory;
+    const activeGroup = doc.querySelector('#libGroups [aria-pressed="true"]')?.dataset.libGroup;
+    const searchFor = value => {
+      search.value = value;
+      search.dispatchEvent(new w.Event('input', {bubbles:true}));
+    };
+    const cards = () => [...doc.querySelectorAll('#libItems [data-key] b')].map(item => item.textContent);
+    try {
+      searchFor('');
+      category.open = true;
+      group.open = true;
+      doc.querySelector('#libCategories [data-lib-category="bedroom"]').click();
+      doc.querySelector('#libGroups [data-lib-group="beds"]').click();
+      const filtered = cards();
+      assert(filtered.length > 1, '成人床子类没有显示家具');
+      categoryToggle.click();
+      assert(!category.open && group.open && categoryToggle.textContent.includes('卧室'),
+        '大类折叠不应关掉子类，且应保留分类名称');
+      groupToggle.click();
+      assert(!category.open && !group.open && groupToggle.textContent.includes('成人床') &&
+        cards().join() === filtered.join(), '收起菜单不应清除子类或隐藏家具列表');
+      assert(await waitFor(() => {
+        const saved = JSON.parse(w.localStorage.getItem(menuKey) || '{}');
+        return saved.libCategoryMenu === false && saved.libGroupMenu === false;
+      }, 1000), '未保存两级菜单的折叠状态');
+
+      searchFor('单人沙发');
+      assert(cards().length > 0 && cards().every(name => name.includes('单人沙发')) && group.hidden,
+        '收起后仍应搜索所有家具');
+      searchFor('');
+      assert(!category.open && !group.open && !group.hidden && cards().join() === filtered.join(),
+        '清空搜索后未恢复折叠状态和原分类结果');
+
+      interact.openCeilingLibrary();
+      assert(!category.open && categoryToggle.textContent.includes('灯具与顶面设备') && cards().length > 0,
+        '折叠菜单不应影响天花工具打开顶装家具');
+    } finally {
+      if (activeCategory) doc.querySelector(`#libCategories [data-lib-category="${activeCategory}"]`)?.click();
+      if (activeGroup !== undefined) doc.querySelector(`#libGroups [data-lib-group="${activeGroup}"]`)?.click();
+      searchFor(priorQuery);
+      [category.open, group.open] = priorOpen;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (previousMenu === null) w.localStorage.removeItem(menuKey);
+      else w.localStorage.setItem(menuKey, previousMenu);
+    }
+  });
+
   await check('floorPlan.furniturePlacementAndLabelFit', () => {
     const S = studio(), w = win(), doc = w.document, {store} = w.App;
     const before = S.projectJSON(), undo = store.undoStack.slice(), redo = store.redoStack.slice();
@@ -886,7 +1048,18 @@ async function main(){
     } finally { comparison.close(); }
     assert(await projects.switchScheme(copied.id), '无法打开复制方案');
     assert(!S.getState().demolished.length, '编辑复制方案时串入了其他方案');
-    return '底稿新建、独立复制、切换、独立撤销和同尺度只读比较';
+    const originalPrice = S.getPlan().materials.wood.price;
+    const newPrice = originalPrice + 42.5;
+    S.select({kind:'room',id:'west'});
+    doc.querySelector('#panel [data-edit-mat-price="wood"]').click();
+    const priceInput = doc.querySelector('#panel [data-mat-price="wood"]');
+    priceInput.value = newPrice;
+    priceInput.dispatchEvent(new w.KeyboardEvent('keydown', {key:'Enter', bubbles:true,cancelable:true}));
+    assert(await projects.switchScheme(firstId) && S.getPlan().materials.wood.price === originalPrice,
+      '复制方案修改后的材料单价串入了方案一');
+    assert(await projects.switchScheme(copied.id) && S.getPlan().materials.wood.price === newPrice,
+      '切回复制方案后丢失材料单价');
+    return '底稿新建、独立复制、切换、单价独立保存、独立撤销和同尺度只读比较';
   });
 
   await check('projects.recognizedCeilingSurvivesOpeningAndReview', async () => {
