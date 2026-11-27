@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { validatePlan } from '../lib/codex/plan.mjs';
 import {
   buildReviewMessage,
   checkPlan,
@@ -125,6 +126,23 @@ test('checkPlan survives malformed plans and checks doors against arc walls', ()
   assert.ok(checkPlan(offArc, []).some(issue => issue.where.includes('偏门')), JSON.stringify(checkPlan(offArc, [])));
 });
 
+test('keeps room boundary glazing and distinguishes raised bays from open terraces', () => {
+  const raw = basePlan({
+    wins:[[9600,1000,9680,3000]],
+    rooms:[
+      ...basePlan().rooms,
+      { id:'bay',name:'飘窗',poly:rect(9600,1000,1000,2000),bay:{roomId:'bed',openingEdges:[3,3,20],sillHeight:620} },
+      { id:'out',name:'露台',poly:rect(9600,3500,1000,2500),outdoor:true,counted:false,bay:{sillHeight:700} },
+    ],
+  });
+  const result = validatePlan(raw);
+  assert.ok(result.ok);
+  assert.deepEqual(result.plan.rooms[2].bay,{roomId:'bed',openingEdges:[3],sillHeight:620});
+  assert.equal(result.plan.rooms[2].counted,false);
+  assert.equal(result.plan.rooms[3].outdoor,true);
+  assert.equal(result.plan.rooms[3].bay,undefined);
+  assert.ok(!checkPlan(result.plan,[]).some(issue => issue.where === '窗 1'));
+});
 test('checkPlan caps the pairwise room overlap scan for implausible room counts', () => {
   const rooms = Array.from({ length: 300 }, (_, index) => ({
     id: `room${index}`, name: `房间 ${index + 1}`, poly: rect(0, 0, 4000, 4000), mat: 'tile800',

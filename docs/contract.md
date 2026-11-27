@@ -15,7 +15,8 @@ node server.mjs        # 127.0.0.1:4173（PORT 可覆盖），静态服务 + /ap
 ## 目录
 
 ```
-index.html          页面 + 2D/3D 引擎（保持单文件）
+index.html          页面样式、DOM、Three.js importmap 与脚本入口
+js/                 2D/3D 编辑器、界面交互、项目和 AI 接口的原生 JS 脚本
 server.mjs          HTTP/SSE 桥接、静态服务、文件落盘
 lib/codex/*         从 baocut 移植的精简 codex app-server 客户端
 data/empty-plan.json  默认空户型（已存在）
@@ -43,7 +44,8 @@ type Plan = {
   wins: (Rect | ArcBand)[],
   doors: { name:string, rect:Rect, h:Point, c:Point, o:Point, len:number, entry?:boolean }[],
   slides: { rect:Rect, v:boolean }[],
-  rooms: { id:string, name:string, poly:Point[], arcs?:{edge:number,sweep:number}[], mat:string, at?:Point, counted?:boolean }[],
+  rooms: { id:string, name:string, poly:Point[], arcs?:{edge:number,sweep:number}[], mat:string, at?:Point, counted?:boolean,
+           outdoor?:true, bay?:{roomId?:string,openingEdges?:number[],sillHeight?:number} }[],
   materials: Record<string, { name:string, price:number, sw:string }>
 }
 ```
@@ -52,8 +54,8 @@ type Plan = {
 - 直墙和直窗的矩形坐标已包含厚度。圆弧墙窗的 `from`、`to` 为中心线起止点，`thickness` 为总厚度（小于直径）。`sweep` 为有符号角度，顺时针为正，逆时针为负，绝对值为 0.5–180 度。同一墙体的编号始终使用其在 `walls` 中的下标。
 - 墙体可单独指定 `height`（mm）。省略时，矮墙默认 1000 mm，其他墙默认 2800 mm。剖切视图按显示高度裁切。
 - `rooms[].arcs` 中的 `edge` 从零开始，指 `poly[i]` 与 `poly[(i+1)%poly.length]` 之间的边，`sweep` 与墙窗的角度规则相同。每条边至多一个弧段，折线和圆弧端点只记一次。面积包含圆弧边围出的面积。
-- `at` 是房间标签位置；`counted:false` 表示不计面积（飘窗）。
-- 现有 `index.html` 里的 `WALLS/WINS/DOORS/SLIDES/ROOMS/MATS` 是这套结构的来源，运行时统一由 `PLAN` 驱动。
+- `at` 是房间标签位置。`counted:false` 表示不计入套内使用面积，独立于区域类型。室外露台和花园用 `outdoor:true`，在地平面显示。图面确认的飘窗台用 `bay`，其中 `roomId` 关联室内房间，`openingEdges` 指向飘窗轮廓上朝向室内的开口边，`sillHeight` 为已知窗台高度（mm）。
+- 编辑器由 `PLAN` 驱动，`WALLS/WINS/DOORS/SLIDES/ROOMS/MATS` 随方案加载同步更新，供渲染和查找使用。
 - 125-C 户型作为“示例方案”保留为 `data/125c-plan.json`（由任务 1 生成），默认加载 `data/empty-plan.json`。
 
 ## 2. 会话状态 State
@@ -66,9 +68,19 @@ type State = {
   rooms: Record<roomId, { name, mat }>,
   demolished: string[],        // 'w'+index
   measures: any[],
+  dimensionMarks?: {id: string, axis: 'x' | 'y', a: DimensionAnchor, b: DimensionAnchor, original?: number}[],
+  walk?: {recent: WalkPose[], views: {id: string, name: string, pose: WalkPose,
+    scene?: {hour: number, night: boolean, furn: boolean}}[]},
   renders?: RenderRecord[]
 }
+
+type DimensionAnchor = {kind: 'wall' | 'room', id: string, edge: number, t: number}
+type WalkPose = {x: number, y: number, height: number, yaw: number, pitch: number, roomId: string | null}
 ```
+
+`dimensionMarks` 使用墙面或房间边的几何引用，`t` 为边上的位置比例。显示值由当前几何沿 `axis` 计算。可选的 `original` 是人工记录的原图读数，单位 mm。旧项目缺少此字段时按空列表读取。
+
+`walk` 随项目保存。`recent` 在退出漫游时记录各漫游范围最近的相机位置和方向，`views` 用于兼容已有项目数据。`x`、`y` 沿用户型毫米坐标，`height` 用米，`yaw`、`pitch` 用弧度。编辑撤销保留漫游记录。漫游截图用作当前项目会话的效果图参考。
 
 localStorage 键：方案 `interior-plan-v1`，状态 `interior-state-v1`（新键，避免读旧站数据）。
 
@@ -83,7 +95,7 @@ window.Studio = {
   applyPlan(plan, opts),     // 校验 + 替换 PLAN，重建 2D/3D，入撤销栈
   applyOps(ops),             // 见下；整体作为一个撤销步骤；返回 { applied, skipped, errors }
   getSelection(),            // { kind:'furn'|'room'|'wall'|null, id }
-  select(sel),               // 与现有 select() 一致
+  select(sel),               // 更新画布选中项及属性面板
   flyToRoom(id),
   renderAll(),               // 2D 重绘 + 3D sync
   sync(),                    // 仅 3D
@@ -154,23 +166,27 @@ codex 的最终回答必须是**一个 JSON 对象**（允许包在 ```json 围�
 ```json
 { "sessionId": "optional-stable-id",
   "message": "把客厅沙发移到窗边",
-  "context": { "mode": "2d"|"3d", "selection": {...}|null,
+  "context": { "mode": "2d"|"3d", "task": "create-furniture", "selection": {...}|null,
                "plan": { ... 当前完整 Plan ... }, "state": { ... 完整场景状态，不含效果图 ... },
                "view": { "camera": {...}|null, "room": "living"|null } },
-  "images": [ { "mime": "image/png", "data": "<base64，不含 data: 前缀>" } ] }
+  "images": [ { "mime": "image/png", "role": "furniture-reference", "data": "<base64，不含 data: 前缀>" } ] }
 ```
+
+`context.task` 和 `images[].role` 均可省略。`create-furniture` 指定可复用家具素材的创建意图。`furniture-reference` 标记用户提供的 PNG、JPEG 或 WebP 家具参考图，省略 `role` 时按场景截图处理。
 
 SSE 事件（`data: <json>\n\n`）：
 
 ```
 {"type":"status","text":"..."}      // 可多次，显示进度
 {"type":"delta","text":"..."}       // 可多次，正文增量（可选实现）
-{"type":"result","result":{"reply":"...","ops":[...],"focus":{...}}}
+{"type":"result","result":{"reply":"...","ops":[...],"focus":{...},"furniture":[...]}}
 {"type":"error","message":"..."}
 {"type":"done"}
 ```
 
 服务端负责：拼上下文 + prompts/patch.md → 常驻 codex 会话 → 从最终 agent 消息解析 JSON；解析失败时 `{reply: 原文, ops: []}`。
+
+`result.furniture` 可省略，每次最多返回 8 个素材。素材包含 `type`、`name`、毫米单位的 `w` 和 `d`，还可包含 `rot`、`color`、`parts`、`handedness`、`topShape` 和 `height`。素材由客户端存入当前浏览器的「我的素材」。场景变更通过 `ops` 应用，用户也可选择把素材放入方案。
 
 ### `POST /api/render` → `text/event-stream`
 
@@ -185,6 +201,12 @@ SSE 事件（`data: <json>\n\n`）：
 
 事件：`status`（多次）、`{"type":"image","url":"/files/renders/xxx.png","prompt":"..."}`、`error`、`done`。
 服务端保存图片到 `projects/renders/<uuid>.png`。
+
+### `POST /api/export/dwg` → `image/vnd.dwg`
+
+请求使用 `application/json`，包含当前 `plan`、`state` 的 `furniture`、`rooms`、`demolished` 以及 `dimensions`。每行尺寸包含 `axis`、标注线位置 `at`、几何锚点数组 `points: [{value, across}]`、`kind: 'overall' | 'chain' | 'manual'`，人工标注可附带 `original`。
+
+正常响应通过 `Content-Disposition` 下载 AutoCAD 2000 DWG（`AC1015`）。图形采用毫米和 1:1 模型空间，按用途分层。服务将经过校验的方案转换成 CAD 图形，并调用本机 `dxf2dwg`。转换器缺失返回 503，输入无效返回 422。
 
 ### `POST /api/plan/import` → JSON
 
@@ -329,4 +351,4 @@ type PlanImportResponse = {
 - 界面文案沿用现有 `tr('中文','English')` / `data-en` 机制，中英双语。
 - 不改变现有视觉风格（配色/字号/圆角）。
 - 不改 `LICENSE`；不执行 `git commit` / `git push`。
-- 新增代码用注释分节，风格与现有 `index.html` 一致（简洁、少依赖）。
+- `js/` 使用普通脚本，跨文件调用通过 `App` 中对应的命名空间。脚本按初始化顺序在 `index.html` 中加载。

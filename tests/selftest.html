@@ -91,8 +91,22 @@ const studio = () => {
 const API_METHODS = ['getPlan','getState','applyPlan','applyOps','getSelection','select',
                      'flyToRoom','renderAll','sync','toast','is3D','shot'];
 
+function dimensionFixture(plan){
+  return {
+    ...plan,
+    bounds:{x:-900,y:-800,w:8000,h:5800},
+    walls:[[0,0,6200,240,'e'],[0,3960,6200,4200,'e'],[0,240,240,3960,'e'],
+      [5960,240,6200,3960,'e'],[2960,240,3080,3960,'n']],
+    wins:[], doors:[], slides:[],
+    rooms:[
+      {id:'west',name:'西侧房间',mat:'wood',poly:[[240,240],[2960,240],[2960,3960],[240,3960]],at:[1600,2100]},
+      {id:'east',name:'东侧房间',mat:'wood',poly:[[3080,240],[5960,240],[5960,3960],[3080,3960]],at:[4520,2100]},
+    ],
+  };
+}
+
 async function main(){
-  // Studio 由页面内联脚本同步挂载；等 iframe 文档就绪即可，最长 15 秒
+  // 等 iframe 中的入口脚本安装 Studio，最长 15 秒。
   const ready = await waitFor(() => win() && win().Studio && win().document.readyState !== 'loading', 15000, 25);
   if (ready){
     // 默认方案是异步 fetch 的，等它落地再开始，避免断言读到半初始化状态
@@ -109,6 +123,16 @@ async function main(){
     const missing = API_METHODS.filter(k => typeof S[k] !== 'function');
     assert(!missing.length, '缺少方法：' + missing.join(', '));
     return '全部 ' + API_METHODS.length + ' 个方法均为函数';
+  });
+
+  await check('app.namespaces', () => {
+    const w = win(), app = w.App;
+    assert(typeof app?.plan?.sanitizePlan === 'function', '缺少 App.plan.sanitizePlan');
+    assert(typeof app?.store?.undo === 'function', '缺少 App.store.undo');
+    assert(typeof app?.importer?.impOpenResult === 'function' && typeof app.importer.impClose === 'function', '缺少图纸预览接口');
+    assert(typeof w.impOpenResult !== 'function' && typeof w.impClose !== 'function', '图纸预览接口泄漏到 window');
+    if (w.View3D) assert(app.view3d === w.View3D, '3D 接口未连接');
+    return '方案解析、撤销和图纸预览均由对应模块提供';
   });
 
   await check('plan.shape', () => {
@@ -259,17 +283,18 @@ async function main(){
 
   await check('importReview.furnitureGeometry', () => {
     const S = studio(), w = win(), doc = w.document, original = S.projectJSON();
+    const importer = w.App.importer;
     const plan = {...original.plan, rooms:[{id:'living',name:'客餐厅',mat:'wood',poly:[[0,0],[6000,0],[6000,5000],[0,5000]]}]};
     const furniture = [
       {type:'cornersofa',name:'右转角沙发',cx:3600,cy:1700,w:3300,d:2800,rot:0,handedness:'right'},
       {type:'coffeetable',name:'小圆茶几',cx:3200,cy:1800,w:800,d:800,rot:0,topShape:'round',height:310},
       {type:'sidetable',name:'矩形条几',cx:5500,cy:1600,w:1750,d:400,rot:90,topShape:'rect'},
     ];
-    assert(w.impOpenResult({plan, furniture}, () => null), '无法打开图纸结果预览');
+    assert(importer.impOpenResult({plan, furniture}, () => null), '无法打开图纸结果预览');
     try {
       const preview = doc.querySelector('#impRoomDrawing');
       assert(preview.querySelector('g[transform="scale(-1 1)"]') && preview.querySelector('ellipse[rx="400"]') && preview.querySelector('rect[width="1750"]'), '预览与家具几何不一致');
-    } finally { w.impClose(); }
+    } finally { importer.impClose(); }
 
     assert(S.applyPlan(plan, {furniture, clearFurniture:true, freshState:true}).ok, '无法应用家具几何');
     try {
@@ -288,6 +313,25 @@ async function main(){
     } finally { S.undo(); }
     assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original), '撤销未恢复原项目');
     return '逐房预览、转角侧、台面形状和高度可保存与撤销';
+  });
+
+  await check('applyPlan.terracesAndRaisedBays', () => {
+    const S = studio(), original = S.projectJSON(), host = original.plan.rooms[0];
+    const terrace = {id:'out',name:'露台',poly:[[0,-2000],[4000,-2000],[4000,0],[0,0]],outdoor:true,counted:false};
+    const bay = {id:'bay',name:'弧形飘窗',poly:[[4000,0],[4400,-700],[5400,-700],[5800,0]],
+      arcs:[{edge:0,sweep:45},{edge:2,sweep:45}],bay:{roomId:host.id,openingEdges:[3,3,8],sillHeight:620}};
+    assert(S.applyPlan({...original.plan,rooms:[host,terrace,bay]}).ok,'飘窗方案应用失败');
+    try {
+      const [,open,raised] = S.getPlan().rooms;
+      assert(open.outdoor && open.counted === false && !open.bay,'露台不得被当作窗台');
+      assert(raised.counted === false && raised.bay.roomId === host.id && raised.bay.sillHeight === 620 &&
+        JSON.stringify(raised.bay.openingEdges) === '[3]' && raised.arcs.length === 2,'飘窗开口、标高和弧边未完整保留');
+      assert(win().document.querySelector('path[data-room="bay"]')?.getAttribute('d').includes('A'),'飘窗弧边未绘制');
+      const stored = JSON.parse(win().localStorage.getItem('interior-plan-v1'));
+      assert(stored.rooms[2].bay.sillHeight === 620,'窗台标高未随项目保存');
+    } finally { S.undo(); }
+    assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original),'撤销未恢复原项目');
+    return '室外地坪和弧形飘窗分别保留，开口和标高随项目保存';
   });
 
   await check('applyOps.editScene', () => {
@@ -320,6 +364,126 @@ async function main(){
     }
     assert(JSON.stringify(S.projectJSON()) === JSON.stringify(before), '一次撤销应恢复原户型及布置');
     return '保留墙高，联动修改房间与构件，无效补丁不落盘，统一撤销';
+  });
+
+  await check('dimensions.geometryAndSelection', () => {
+    const S = studio(), doc = win().document, original = S.projectJSON();
+    const fixture = dimensionFixture(original.plan);
+    const sofa = {type:'sofa',name:'测试沙发',cx:1600,cy:1500,w:1800,d:850,rot:35};
+    assert(S.applyPlan(fixture, {furniture:[sofa],clearFurniture:true,freshState:true}).ok, '尺寸测试方案无法加载');
+    try {
+      const values = (kind, axis) => [...doc.querySelectorAll(`#gDims .dim-${kind}[data-axis="${axis}"] [data-dimension-value]`)]
+        .map(node => Number(node.dataset.dimensionValue));
+      assert(values('total', 'x')[0] === 6200 && values('total', 'y')[0] === 4200, '总尺寸应取外墙尺寸');
+      const segments = values('chain', 'x');
+      assert(segments.length >= 2 && segments.every(value => value > 0) &&
+        segments.reduce((sum, value) => sum + value, 0) === 6200, '连续分段之和应等于总宽');
+      for (const [id, width] of [['west',2720],['east',2880]]){
+        S.select({kind:'room',id});
+        assert(values('selection', 'x')[0] === width && values('selection', 'y')[0] === 3720,
+          id + ' 房间的净宽或净深不正确');
+      }
+      const item = S.getState().furniture[0];
+      S.select({kind:'furn',id:item.id});
+      const selectionText = () => doc.querySelector('#gDims .dim-selection[data-axis="x"] [data-dimension-value]').textContent;
+      assert(selectionText().includes('1800 × 850 mm'), '旋转家具应注明实际宽深');
+      const angle = 35 * Math.PI / 180;
+      const projectedWidth = (w,d) => Math.round((w * Math.cos(angle) + d * Math.sin(angle)) * 10) / 10;
+      assert(values('selection', 'x')[0] === projectedWidth(1800,850), '横向标注未与家具投影对应');
+      const resize = S.applyOps([{op:'resizeFurniture',id:item.id,w:1900,d:900}]);
+      assert(resize.applied === 1, '无法调整家具尺寸');
+      try {
+        assert(selectionText().includes('1900 × 900 mm') && values('selection', 'x')[0] === projectedWidth(1900,900),
+          '画布标注未随家具更新');
+      } finally {
+        S.undo();
+      }
+      assert(selectionText().includes('1800 × 850 mm'), '撤销后未恢复家具标注');
+    } finally {
+      S.select(null);
+      S.undo();
+    }
+    assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original), '撤销未恢复尺寸测试前的项目');
+    return '外墙总尺寸、分段合计、房间净宽深和旋转家具标注均来自模型';
+  });
+
+  await check('dimensions.recordAndCalibrate', () => {
+    const S = studio(), w = win(), doc = w.document, original = S.projectJSON();
+    const {dimensions} = w.App;
+    assert(S.applyPlan(dimensionFixture(original.plan), {freshState:true,clearFurniture:true}).ok, '校准方案无法加载');
+    let undoSteps = 1;
+    try {
+      const before = JSON.stringify(S.getPlan());
+      dimensions.addPoint([0,1800]);
+      dimensions.addPoint([6200,1800]);
+      const [mark] = S.projectJSON().state.dimensionMarks;
+      if (mark) undoSteps++;
+      assert(mark?.axis === 'x' && mark.a.kind === 'wall' && mark.b.kind === 'wall', '手动标注未吸附到墙面');
+      const value = () => Number(doc.querySelector('#gDims .dim-manual[data-axis="x"] [data-dimension-value]').dataset.dimensionValue);
+      assert(value() === 6200 && !doc.querySelector('#dimensionEditor').hidden, '手动标注未显示模型尺寸');
+      doc.querySelector('#dimensionOriginal').value = '7440';
+      doc.querySelector('#dimensionForm').requestSubmit();
+      const recorded = S.projectJSON().state.dimensionMarks[0];
+      if (recorded?.original === 7440) undoSteps++;
+      const stored = JSON.parse(w.localStorage.getItem('interior-state-v1'));
+      assert(recorded?.original === 7440 && stored?.dimensionMarks?.[0]?.original === 7440, '原图尺寸未保存');
+      assert(JSON.stringify(S.getPlan()) === before && value() === 6200, '记录原图值时不应移动几何');
+
+      doc.querySelector('#dimensionScale').click();
+      const scaled = S.getPlan();
+      if (JSON.stringify(scaled) !== before) undoSteps++;
+      assert(scaled.walls[3][2] === 7440 && scaled.rooms[0].poly[1][0] === 3552, '按原图值校准后墙面与房间坐标不匹配');
+      assert(value() === 7440 && S.projectJSON().state.dimensionMarks[0].id === mark.id, '标注未跟随校准后的墙面');
+      S.undo();
+      undoSteps--;
+      assert(JSON.stringify(S.getPlan()) === before && value() === 6200 &&
+        S.projectJSON().state.dimensionMarks[0].original === 7440, '撤销校准应保留之前记录的原图值');
+
+      const move = doc.querySelector('#dimensionMove');
+      assert(!move.hidden, '垂直墙面的标注应允许移动终点墙');
+      doc.querySelector('#dimensionOriginal').value = '6500';
+      move.click();
+      const moved = S.getPlan();
+      if (JSON.stringify(moved) !== before) undoSteps++;
+      assert(moved.walls[3][2] === 6500 && moved.walls[3][0] === 6260 &&
+        moved.rooms[1].poly[1][0] === 6260 && moved.rooms[0].poly[1][0] === 2960,
+        '移动终点墙应保持墙厚并只调整相接房间。' + doc.querySelector('#dimensionEditorStatus').textContent);
+      assert(value() === 6500 && S.projectJSON().state.dimensionMarks[0].original === 7440, '移动墙体应更新模型值并保留原图值');
+      S.undo();
+      undoSteps--;
+      assert(JSON.stringify(S.getPlan()) === before && value() === 6200 &&
+        JSON.stringify(S.projectJSON().state.dimensionMarks[0]) === JSON.stringify(recorded), '撤销移墙应恢复坐标和原有标注');
+    } finally {
+      dimensions.clearDraft();
+      dimensions.closeEditor();
+      while (undoSteps-- > 0) S.undo();
+    }
+    assert(JSON.stringify(S.projectJSON()) === JSON.stringify(original), '撤销未恢复校准前项目');
+    return '墙面标注与原图值可保存，等比校准与移动终点墙均更新坐标并可撤销';
+  });
+
+  await check('walk.projectViewpoints', () => {
+    const S = studio(), {store} = win().App, old = store.state.walk;
+    const room = S.getPlan().rooms[0];
+    const pose = {x:room.at[0],y:room.at[1],height:1.55,yaw:.5,pitch:-.1,roomId:room.id};
+    const view = {id:'test-view',name:'室内机位',pose,scene:{hour:15,night:false,furn:true}};
+    try {
+      store.state = store.fixState({...store.state, walk:{recent:[pose,pose],views:[view,{...view,id:'invalid',pose:{...pose,height:-1}}]}});
+      store.save();
+      const saved = JSON.parse(win().localStorage.getItem('interior-state-v1')).walk;
+      assert(saved.recent.length === 1 && saved.views.length === 1, '漫游位置未去重或非法视角被保留');
+      assert(saved.views[0].scene.hour === 15, '视角未保存场景显示设置');
+      const edit = S.applyOps([{op:'editScene',changes:[{action:'replace',path:['plan','name'],value:store.PLAN.name + ' 测试'}]}]);
+      assert(edit.applied === 1, '联动编辑失败');
+      try {
+        assert(JSON.stringify(S.projectJSON().state.walk) === JSON.stringify(saved), '联动编辑移除了项目视角');
+      } finally { S.undo(); }
+      assert(JSON.stringify(S.projectJSON().state.walk) === JSON.stringify(saved), '编辑撤销移除了项目视角');
+    } finally {
+      store.state.walk = old;
+      store.save();
+    }
+    return '最近的位置和命名视角随项目保存，保留朝向和场景设置';
   });
 
   await check('shot.png', () => {

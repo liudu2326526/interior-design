@@ -144,6 +144,18 @@ test('renders arc walls, arc windows and small rooms without crashing', () => {
   assert.ok(countPixels(image, isLight) > 1000);
 });
 
+test('review PNG fills a room up to its curved edge and keeps terraces distinct', () => {
+  const arcRoom = { id:'bed', poly:[[2000,2000],[6000,2000],[6000,5300],[2000,5300]], arcs:[{edge:0,sweep:90}] };
+  const terrace = { id:'terrace', poly:[[1000,6000],[7000,6000],[7000,7200],[1000,7200]], outdoor:true, counted:false };
+  const plan = { bounds:{x:0,y:0,w:8000,h:8000}, rooms:[arcRoom,terrace] };
+  const image = decodePng(renderPlanPng(plan));
+  const pixel = (x,y) => [x,y].map(value => Math.round(24 + value * (image.width - 48) / 8000));
+  assert.deepEqual(image.at(...pixel(4000,1600)), [0xf2,0xec,0xe2]);
+  assert.deepEqual(image.at(...pixel(4000,6500)), [0xcc,0xdf,0xc1]);
+  const chord = decodePng(renderPlanPng({...plan,rooms:[{...arcRoom,arcs:[]},terrace]}));
+  assert.deepEqual(chord.at(...pixel(4000,1600)), [255,255,255]);
+});
+
 test('stays fast when model geometry lands far outside the canvas', () => {
   const started = Date.now();
   const image = decodePng(renderPlanPng({

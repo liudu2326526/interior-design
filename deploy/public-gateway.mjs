@@ -20,6 +20,7 @@ const assets = new Map([
   ['/data/empty-plan.json', new URL('../data/empty-plan.json', import.meta.url)],
   ['/data/125c-plan.json', new URL('../data/125c-plan.json', import.meta.url)],
 ]);
+const editorScriptPath = /^\/js\/[a-z][a-z0-9-]*\.js$/;
 const editorFile = new URL('../index.html', import.meta.url);
 const encoder = (value) => createHash('sha256').update(value).digest();
 
@@ -185,7 +186,7 @@ async function sendRender(req, res, pathname) {
   await pipeline(Readable.fromWeb(upstream.body), res);
 }
 
-async function sendImportJob(req, res, pathname, search) {
+async function forwardBridge(req, res, pathname, search = '') {
   const controller = new AbortController();
   res.once('close', () => controller.abort());
   const options = { method: req.method, headers: { ...bridgeHeaders }, signal: controller.signal };
@@ -198,7 +199,7 @@ async function sendImportJob(req, res, pathname, search) {
   }
   const upstream = await fetch(origin + pathname + search, options);
   const headers = {};
-  for (const name of ['content-type', 'content-length', 'allow', 'retry-after']) {
+  for (const name of ['content-type', 'content-length', 'content-disposition', 'allow', 'retry-after']) {
     const value = upstream.headers.get(name);
     if (value) headers[name] = value;
   }
@@ -230,6 +231,13 @@ async function route(req, res) {
   if (read && assets.has(pathname)) {
     return send(res, req, 200, 'application/json; charset=utf-8', await readFile(assets.get(pathname)));
   }
+  if (read && editorScriptPath.test(pathname)) {
+    const script = await readFile(new URL('..' + pathname, import.meta.url)).catch(error => {
+      if (error.code === 'ENOENT' || error.code === 'EISDIR') return null;
+      throw error;
+    });
+    if (script) return send(res, req, 200, 'text/javascript; charset=utf-8', script);
+  }
   if (pathname === '/auth/login' && read) {
     if (owner) return redirect(res, prefix + '/');
     return loginPage(res, req, prefix);
@@ -247,6 +255,11 @@ async function route(req, res) {
     sessions.set(id, { expires: Date.now() + lifetime, origin: mount.origin });
     return redirect(res, prefix + '/', { 'Set-Cookie': cookie(mount, id, lifetime / 1000) });
   }
+  if (pathname === '/api/export/dwg' && req.method === 'POST') {
+    if (!owner) return json(res, 401, { error: '请登录后导出 DWG' });
+    if (!isSameOrigin(req, mount)) return json(res, 403, { error: '请求来源无效' });
+    return forwardBridge(req, res, pathname);
+  }
   if (pathname.startsWith('/api/jobs/') || pathname === '/api/health' || renderPath.test(pathname)) {
     if (!owner) return json(res, 401, { error: '请登录 AI 后重试' });
     if (read && pathname === '/api/health') return sendHealth(res);
@@ -254,7 +267,7 @@ async function route(req, res) {
     if (pathname.startsWith('/api/jobs/')) {
       if (!read && !isSameOrigin(req, mount)) return json(res, 403, { error: '请求来源无效' });
       const url = new URL(rawUrl.slice(prefix.length), 'http://localhost');
-      if (isImportJobPath(pathname)) return sendImportJob(req, res, pathname, url.search);
+      if (isImportJobPath(pathname)) return forwardBridge(req, res, pathname, url.search);
       if (await relay(req, res, url, owner)) return;
     }
   }
