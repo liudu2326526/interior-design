@@ -75,7 +75,7 @@
     App.dimensions.clearDraft();
     App.dimensions.closeEditor();
     clearTimeout(App.assistant.chatState.focusT);
-    App.assistant.chatState.msgs = []; App.assistant.chatEls.msgs.replaceChildren(); App.assistant.resetChatDraft();
+    App.assistant.resetChatHistory();
     App.assistant.resetRenderReference();
     App.assistant.renderState.last = null;
     App.assistant.renderEls.out.removeAttribute('src');

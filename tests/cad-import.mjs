@@ -62,6 +62,11 @@ test('DXF report retains native curves and adjacent segments in model space', as
   const straight = result.adjacentSegments.find(line => line.handle === 'A2');
   assert.ok(continuation.links[1].includes(straight.id));
   assert.deepEqual(straight.to, [-20,0]);
+  assert.equal(result.straightSegments, undefined);
+  const sampled = await readCadCurveEvidence(file, 'source.dxf', { includeLineSamples: true });
+  assert.deepEqual(sampled.straightSegments, {
+    count: 1, samples: [{ layer: '弧窗', from: [-10, 0], to: [-20, 0], elevation: 0 }],
+  });
   assert.equal(negative.sweepDeg, -90);
   assert.equal(negative.elevation, -3);
   nearPoint(negative.from, [-40,0]); nearPoint(negative.to, [-30,10]);

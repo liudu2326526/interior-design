@@ -169,10 +169,13 @@ codex 的最终回答必须是**一个 JSON 对象**（允许包在 ```json 围�
   "context": { "mode": "2d"|"3d", "task": "create-furniture", "selection": {...}|null,
                "plan": { ... 当前完整 Plan ... }, "state": { ... 完整场景状态，不含效果图 ... },
                "view": { "camera": {...}|null, "room": "living"|null } },
-  "images": [ { "mime": "image/png", "role": "furniture-reference", "data": "<base64，不含 data: 前缀>" } ] }
+  "images": [ { "mime": "image/png", "role": "scene", "data": "<base64，不含 data: 前缀>" } ],
+  "attachments": [ { "name": "方案参考.pdf", "mime": "application/pdf", "data": "<base64，不含 data: 前缀>" } ] }
 ```
 
-`context.task` 和 `images[].role` 均可省略。`create-furniture` 指定可复用家具素材的创建意图。`furniture-reference` 标记用户提供的 PNG、JPEG 或 WebP 家具参考图，省略 `role` 时按场景截图处理。
+用户上传的文件通过 `attachments` 发送，支持 PNG、JPEG、WebP、PDF、ASCII DXF、DWG 和 UTF-8 的 TXT、Markdown、JSON、CSV。每条消息最多 6 个文件，单个文件最多 8 MiB，合计最多 20 MiB。文本附件最多 128 KiB，分析时每个文件提供前 6000 个字符。PDF 提供首页预览，CAD 提供有界的原生几何样本。Linux 上的 PDF 预览使用服务路径中的 `pdftoppm`，DWG 几何读取使用 LibreDWG 的 `dwgread`。
+
+有用户附件时可省略 `message`。助手根据消息和附件内容判断用途，只有附件的请求不会修改当前方案。`context.task: "create-furniture"` 和 `images[].role: "furniture-reference"` 仍支持旧版家具流程。省略 `images[].role` 时按场景截图处理。
 
 SSE 事件（`data: <json>\n\n`）：
 
@@ -184,7 +187,7 @@ SSE 事件（`data: <json>\n\n`）：
 {"type":"done"}
 ```
 
-服务端负责：拼上下文 + prompts/patch.md → 常驻 codex 会话 → 从最终 agent 消息解析 JSON；解析失败时 `{reply: 原文, ops: []}`。
+服务端将上下文和 `prompts/patch.md` 交给内存中的 Codex 会话，并从最终回复解析 JSON。同一个 `sessionId` 在会话存活期间可以继续追问。附件临时文件在请求处理结束后清理。含通用附件的请求只返回进度和结构化结果。旧版请求在解析失败时降级为 `{reply: 原文, ops: []}`。
 
 `result.furniture` 可省略，每次最多返回 8 个素材。素材包含 `type`、`name`、毫米单位的 `w` 和 `d`，还可包含 `rot`、`color`、`parts`、`handedness`、`topShape` 和 `height`。素材由客户端存入当前浏览器的「我的素材」。场景变更通过 `ops` 应用，用户也可选择把素材放入方案。
 

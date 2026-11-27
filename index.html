@@ -427,7 +427,7 @@ main.drawer-panel #fab{opacity:0;visibility:hidden}
 .ptabs .btn:hover{background:#f2ece2}
 .ptabs .btn.on:hover{background:var(--ink)}
 aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
-#chat{display:flex;flex-direction:column;flex:1;min-height:0}
+#chat{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto}
 #chat[hidden]{display:none!important}
 #chat .msgs{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:12px 12px 8px;display:flex;flex-direction:column;gap:9px}
 .msg{max-width:94%;border-radius:10px;padding:7px 10px;font-size:13px;line-height:1.55;word-break:break-word;-webkit-user-select:text;user-select:text}
@@ -441,24 +441,42 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .msg.err{align-self:stretch;background:#fbeae7;border:1px solid #f0c9c2;color:#8e2f22;font-size:12px}
 .msg .meta{margin-top:5px;font-size:11px;color:var(--muted)}
 .chatbar{flex:none;padding:8px 10px 10px;border-top:1px solid var(--line);background:var(--panel)}
-.chatbar textarea{display:block;width:100%;min-height:62px;max-height:150px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff;font:inherit;line-height:1.5}
-.chatbar textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
-.chatbar textarea:disabled{background:#f4f0e8;color:var(--muted)}
-.chatrow{display:flex;align-items:center;gap:6px;margin-top:6px}
+.chat-compose{position:relative;border:1px solid var(--line);border-radius:12px;background:#fff;padding:7px;
+  transition:border-color .14s ease,box-shadow .14s ease}
+.chat-compose:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.chat-compose.is-dropping{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.chat-drop-hint{position:absolute;inset:4px;z-index:1;display:none;place-items:center;border:1px dashed #b87752;border-radius:8px;
+  background:#fff6edee;color:#7b462d;font-weight:650;pointer-events:none;text-align:center;padding:8px}
+.chat-compose.is-dropping .chat-drop-hint{display:grid}
+.chat-compose textarea{display:block;width:100%;min-height:60px;max-height:150px;resize:vertical;border:0;outline:none;
+  border-radius:5px;padding:4px;background:transparent;color:var(--ink);font:inherit;line-height:1.5}
+.chat-compose textarea:disabled{color:var(--muted)}
+.chatrow{display:flex;align-items:center;gap:6px;margin-top:4px}
 .chatrow .btn{border:1px solid var(--line);background:#fff}
 .chatrow .btn.primary{border-color:transparent;background:var(--accent);color:#fff}
 .chatrow .btn.primary:hover{background:#9f5530}
 .chatrow .btn:disabled{opacity:.45;cursor:not-allowed}
-.chattools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
-.chattools .btn,.chat-asset .btn{border:1px solid var(--line);background:#fff}
-.chattools .btn[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-.chat-refs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px}
-.chat-refs[hidden]{display:none}
-.chat-ref{display:flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:7px;background:#fff;overflow:hidden}
-.chat-ref img,.chat-sent-refs img{display:block;width:44px;height:38px;object-fit:cover}
-.chat-ref .btn{padding:4px 6px}
-.chat-sent-refs{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
-.chat-sent-refs img{border-radius:4px}
+#chatAttach{display:grid;place-items:center;flex:none;width:32px;min-height:32px;padding:0;border-radius:8px;
+  background:#f7f2ea;color:var(--ink);font:400 22px/1 system-ui,sans-serif}
+#chatAttach:not(:disabled):hover{border-color:#cdb49f;background:var(--accent-soft)}
+.chat-attachments{display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-height:138px;overflow:auto;
+  margin:0 0 5px;padding:2px;scrollbar-width:thin}
+.chat-attachments[hidden]{display:none}
+.chat-attachment{position:relative;display:flex;align-items:center;gap:5px;min-width:0;max-width:100%;
+  border:1px solid var(--line);border-radius:7px;background:#f9f6f0;color:var(--ink);overflow:hidden}
+.chat-attachment.is-image{width:66px;height:55px;flex:none}
+.chat-attachment img{display:block;width:100%;height:100%;object-fit:cover}
+.chat-attachment.is-file{min-height:37px;padding:4px 4px 4px 6px}
+.chat-file-type{flex:none;border-radius:4px;padding:2px 4px;background:#ece5d9;color:#62503d;font-size:9px;font-weight:650}
+.chat-file-name{max-width:108px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.chat-attachment .chat-remove{display:grid;place-items:center;flex:none;padding:0;width:22px;height:22px;border-radius:50%;
+  border:0;background:transparent;color:#634f3c;font:400 17px/1 system-ui,sans-serif}
+.chat-attachment .chat-remove:hover{background:#eae0d2}
+.chat-attachment.is-image .chat-remove{position:absolute;top:3px;right:3px;background:#fffffff0;box-shadow:0 1px 3px #35241435}
+.chat-attachment.is-image .chat-remove:hover{background:#fff}
+.chat-sent-attachments{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.chat-sent-attachments:first-child{margin-top:0}
+.chat-asset .btn{border:1px solid var(--line);background:#fff}
 .chat-assets{display:grid;gap:6px;margin-top:8px}
 .chat-asset{display:grid;grid-template-columns:60px minmax(0,1fr);align-items:center;gap:5px 8px;
   border:1px solid var(--line);border-radius:8px;padding:6px;background:#fffdf8}
@@ -466,12 +484,18 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 .chat-asset b{overflow-wrap:anywhere}
 .chat-asset small{display:block;color:var(--muted);font-variant-numeric:tabular-nums}
 .chat-asset .btn{justify-self:start;min-height:30px}
-@media (pointer:coarse){.chattools .btn,.chat-ref .btn,.chat-asset .btn{min-height:40px}}
+@media (pointer:coarse){
+  #chatAttach{width:40px;min-height:40px}
+  .chatrow .btn,.chat-asset .btn{min-height:40px}
+  .chat-attachment .chat-remove{width:28px;height:28px}
+  .chat-compose textarea{font-size:16px}
+}
 .chatrow .st{flex:1;min-width:0;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chatrow .st.spin:before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;
   border:1.5px solid var(--accent);border-top-color:transparent;animation:chatspin .8s linear infinite;vertical-align:-1px}
 @keyframes chatspin{to{transform:rotate(360deg)}}
 .chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.chips[hidden]{display:none}
 .chips .btn{border:1px solid var(--line);background:#fff;font-size:12px;padding:3px 9px;border-radius:20px;color:var(--muted)}
 .chips .btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .chat-off{display:none;margin:0 0 7px;font-size:12px;color:#8e2f22;background:#fbeae7;border:1px solid #f0c9c2;border-radius:8px;padding:6px 8px;line-height:1.45}
@@ -940,17 +964,17 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <div class="chatbar">
         <div class="chat-off" id="chatOff"></div>
         <div class="chips" id="chatChips"></div>
-        <div class="chattools">
-          <button class="btn" id="chatCreateAsset" type="button" aria-pressed="false" data-en="Create furniture">创建家具</button>
-          <button class="btn" id="chatAttach" type="button" data-en="Add reference photo">添加参考图</button>
-          <input id="chatFile" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
-        </div>
-        <div class="chat-refs" id="chatRefs" hidden></div>
-        <textarea id="chatIn" rows="2" spellcheck="false"></textarea>
-        <div class="chatrow">
-          <span class="st" id="chatSt"></span>
-          <button class="btn" id="chatStop" hidden>停止</button>
-          <button class="btn primary" id="chatSend">发送</button>
+        <div class="chat-compose" id="chatCompose">
+          <input id="chatFile" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.json,.csv,.dxf,.dwg" multiple hidden>
+          <div class="chat-attachments" id="chatRefs" aria-label="附件" hidden></div>
+          <textarea id="chatIn" rows="2" spellcheck="false" aria-label="助手消息"></textarea>
+          <div class="chatrow">
+            <button class="btn" id="chatAttach" type="button" aria-label="添加附件"><span aria-hidden="true">+</span></button>
+            <span class="st" id="chatSt"></span>
+            <button class="btn" id="chatStop" hidden>停止</button>
+            <button class="btn primary" id="chatSend">发送</button>
+          </div>
+          <span class="chat-drop-hint" id="chatDropHint" aria-hidden="true">松开即可添加附件</span>
         </div>
       </div>
     </div>
@@ -1077,8 +1101,8 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 <script src="./js/interact.js?v=5"></script>
 <script src="./js/io.js?v=4"></script>
 <script src="./js/import.js?v=4"></script>
-<script src="./js/assistant.js?v=3"></script>
-<script src="./js/projects.js?v=6"></script>
+<script src="./js/assistant.js?v=4"></script>
+<script src="./js/projects.js?v=7"></script>
 <script src="./js/tour.js"></script>
 <script src="./js/view3d-models.js?v=3"></script>
 <script src="./js/view3d.js?v=5"></script>

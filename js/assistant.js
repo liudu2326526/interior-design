@@ -160,9 +160,18 @@
     ['主卧换成橡木地板', 'Switch the master bedroom to oak flooring'],
     ['这个户型怎么布置更好？', 'How would you improve this layout?'],
   ];
-  const chatState = {msgs:[], sending:false, online:null, ctrl:null, notice:null, focusT:0, creating:false, refs:[], readingRefs:false, draftVersion:0};
+  const chatState = {msgs:[], sending:false, online:null, ctrl:null, notice:null, focusT:0, attachments:[]};
   const chatEls = {};
-  const MAX_CHAT_REFERENCES = 3;
+  const MAX_CHAT_ATTACHMENTS = 6;
+  const CHAT_FILE_LIMIT = 8 * 1024 * 1024;
+  const CHAT_TOTAL_LIMIT = 20 * 1024 * 1024;
+  const CHAT_TEXT_LIMIT = 128 * 1024;
+  const CHAT_FILE_TYPES = {
+    png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', pdf:'application/pdf',
+    txt:'text/plain', md:'text/markdown', json:'application/json', csv:'text/csv',
+    dxf:'application/dxf', dwg:'image/vnd.dwg',
+  };
+  const CHAT_TEXT_TYPES = new Set(['txt', 'md', 'json', 'csv']);
 
   const roomAtPoint = (x, y) => (App.store.ROOMS.find(r => pointInPoly(x, y, r.poly)) || {}).id || null;
 
@@ -199,84 +208,93 @@
 
   function syncChatComposer(){
     if (!chatEls.attach) return;
-    const {creating, refs, readingRefs, sending, online} = chatState;
-    const unavailable = sending || readingRefs || online !== true;
-    chatEls.send.disabled = unavailable;
-    chatEls.attach.disabled = unavailable || refs.length >= MAX_CHAT_REFERENCES;
-    chatEls.create.disabled = unavailable;
-    chatEls.create.setAttribute('aria-pressed', String(creating));
-    chatEls.in.placeholder = creating
-      ? App.core.tr('描述家具的样式、材料和尺寸，或添加参考图', 'Describe the style, materials and dimensions, or add reference photos')
-      : App.core.tr('描述你想怎么改，例如「把沙发移到窗边」 (Enter 发送 / Shift+Enter 换行)',
-        'Describe a change, e.g. "move the sofa to the window" (Enter to send / Shift+Enter for a new line)');
+    const {attachments, sending, online} = chatState;
+    chatEls.send.disabled = sending || online !== true || (!attachments.length && !chatEls.in.value.trim());
+    chatEls.attach.disabled = sending || online !== true || attachments.length >= MAX_CHAT_ATTACHMENTS;
+    chatEls.chips.hidden = attachments.length > 0 || chatState.msgs.length > 0;
+  }
+
+  function chatAttachmentMarkup(attachments, removable){
+    const {tr, esc} = App.core;
+    return attachments.map(({name, type, preview}, index) => `<span class="chat-attachment ${preview ? 'is-image' : 'is-file'}" title="${esc(name)}">
+      ${preview ? `<img src="${esc(preview)}" alt="${esc(name)}">`
+        : `<span class="chat-file-type" aria-hidden="true">${esc(type.toUpperCase())}</span><span class="chat-file-name">${esc(name)}</span>`}
+      ${removable ? `<button type="button" class="chat-remove" data-remove-attachment="${index}" aria-label="${esc(tr('移除附件','Remove attachment') + ' ' + name)}">×</button>` : ''}</span>`).join('');
   }
 
   function renderChatAttachments(){
-    const {tr, esc} = App.core;
-    chatEls.refs.hidden = !chatState.refs.length;
-    chatEls.refs.innerHTML = chatState.refs.map(({url, name}, index) => `<span class="chat-ref">
-      <img src="${url}" alt="${esc(name)}" title="${esc(name)}">
-      <button type="button" class="btn" data-remove-ref="${index}" aria-label="${esc(tr('移除参考图','Remove reference') + ' ' + name)}">×</button></span>`).join('');
+    chatEls.refs.hidden = !chatState.attachments.length;
+    chatEls.refs.innerHTML = chatAttachmentMarkup(chatState.attachments, true);
     syncChatComposer();
   }
 
-  async function readChatReference(file){
-    const url = URL.createObjectURL(file);
-    try {
-      const img = await new Promise((resolve, reject) => {
-        const image = new Image();
-        image.onload = () => resolve(image); image.onerror = reject; image.src = url;
-      });
-      const {naturalWidth:w, naturalHeight:h} = img;
-      if (!w || !h || w*h > 60_000_000) throw Error('Invalid image size');
-      const scale = Math.min(1, 1800 / Math.max(w,h));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(w*scale)); canvas.height = Math.max(1, Math.round(h*scale));
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.drawImage(img,0,0,canvas.width,canvas.height);
-      const data = canvas.toDataURL('image/jpeg', .86);
-      if (!data.startsWith('data:image/jpeg;base64,') || data.length <= 100) throw Error('Image preparation failed');
-      const name = String(file.name || App.core.tr('粘贴的图片','Pasted picture')).slice(0, 100);
-      return {name,url:data};
-    } finally { URL.revokeObjectURL(url); }
+  function chatFileDescription(file){
+    const original = file.name.split(/[\\/]/).at(-1).trim();
+    const suffix = /\.([a-z0-9]+)$/i.exec(original);
+    const type = suffix?.[1].toLowerCase() || Object.keys(CHAT_FILE_TYPES).find(ext => CHAT_FILE_TYPES[ext] === file.type);
+    if (!type || !Object.hasOwn(CHAT_FILE_TYPES, type)) return null;
+    const stem = suffix ? original.slice(0, suffix.index) : original;
+    const fallback = App.core.tr('粘贴的附件','Pasted attachment');
+    return { name:`${(stem || fallback).slice(0,110)}.${type}`, mime:CHAT_FILE_TYPES[type], type };
   }
 
-  async function attachChatReferences(files){
-    if (chatState.sending || chatState.readingRefs || chatState.online !== true) return;
-    const {tr, toast} = App.core, available = MAX_CHAT_REFERENCES - chatState.refs.length;
-    const picked = Array.from(files);
-    const references = picked.filter(file => file.size > 0 && file.size <= 20*1024*1024 &&
-      (/^image\/(?:jpeg|png|webp)$/i.test(file.type) || (!file.type && /\.(?:jpe?g|png|webp)$/i.test(file.name))));
-    if (references.length < picked.length) toast(tr('参考图支持 20 MB 以内的 JPG、PNG 和 WebP。', 'Choose JPG, PNG or WebP files under 20 MB.'));
-    else if (references.length > available) toast(tr('一条消息最多添加 3 张参考图。', 'Add up to 3 reference photos per message.'));
-    if (!available || !references.length) return;
-    const draft = chatState.draftVersion;
-    chatState.readingRefs = true;
-    syncChatComposer();
-    try {
-      for (const file of references.slice(0, available)){
-        const ref = await readChatReference(file).catch(() => null);
-        if (draft !== chatState.draftVersion) break;
-        if (ref) chatState.refs.push(ref);
-        else toast(tr('这张参考图无法读取。', 'This reference image could not be read.'));
+  function attachChatFiles(files){
+    if (chatState.sending || chatState.online !== true) return;
+    const {tr, toast} = App.core;
+    const {attachments} = chatState;
+    let total = attachments.reduce((size, entry) => size + entry.file.size, 0);
+    let issue = '';
+    for (const file of files){
+      const details = chatFileDescription(file);
+      if (!details){ issue ||= tr('支持 PNG、JPG、WebP、PDF、TXT、MD、JSON、CSV、DXF 和 DWG。', 'Choose PNG, JPG, WebP, PDF, TXT, MD, JSON, CSV, DXF or DWG.'); continue; }
+      if (!file.size){ issue ||= tr('无法添加空文件。', 'Empty files cannot be attached.'); continue; }
+      if (CHAT_TEXT_TYPES.has(details.type) && file.size > CHAT_TEXT_LIMIT){
+        issue ||= tr('文本附件最多 128 KB。', 'Text attachments can be up to 128 KB.'); continue;
       }
-    } finally {
-      if (draft === chatState.draftVersion){ chatState.readingRefs = false; renderChatAttachments(); }
+      if (file.size > CHAT_FILE_LIMIT || attachments.length >= MAX_CHAT_ATTACHMENTS || total + file.size > CHAT_TOTAL_LIMIT){
+        issue ||= tr('最多 6 个附件，单个 8 MB，合计 20 MB。', 'Up to 6 attachments, 8 MB each and 20 MB in total.'); continue;
+      }
+      const preview = details.mime.startsWith('image/') && details.type !== 'dwg'
+        ? URL.createObjectURL(file.slice(0, file.size, details.mime)) : '';
+      attachments.push({...details, file, preview});
+      total += file.size;
     }
+    renderChatAttachments();
+    if (issue) toast(issue);
+  }
+
+  function chatFilesFromTransfer(transfer){
+    const files = Array.from(transfer?.items || []).filter(item => item.kind === 'file')
+      .map(item => item.getAsFile()).filter(Boolean);
+    return files.length ? files : Array.from(transfer?.files || []);
+  }
+
+  async function encodeChatAttachment({file,name,mime}){
+    const url = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error(App.core.tr(`无法读取附件 ${name}`, `Could not read the attachment ${name}`)));
+      reader.readAsDataURL(file);
+    });
+    return {name, mime, data:url.slice(url.indexOf(',')+1)};
   }
 
   function resetChatDraft(){
-    chatState.draftVersion++;
-    chatState.creating = false; chatState.refs = []; chatState.readingRefs = false;
+    for (const {preview} of chatState.attachments) if (preview) URL.revokeObjectURL(preview);
+    chatState.attachments.length = 0;
     chatEls.in.value = ''; chatEls.file.value = '';
     renderChatAttachments();
   }
 
+  function resetChatHistory(){
+    for (const {attachmentUrls} of chatState.msgs) for (const url of attachmentUrls || []) URL.revokeObjectURL(url);
+    chatState.msgs.length = 0;
+    chatEls.msgs.replaceChildren();
+    resetChatDraft();
+  }
+
   function startFurnitureCreation(){
     if (App.core.PUBLIC_ACCESS === 'guest') return;
-    chatState.creating = true;
-    syncChatComposer();
     App.panel.drawer('panel', true);
     chatPane('chat');
   }
@@ -303,7 +321,7 @@
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'btn';
       b.dataset.zh = zh; b.dataset.en = en; b.textContent = App.core.tr(zh, en);
-      b.onclick = () => { chatEls.in.value = App.core.tr(zh, en); chatEls.in.focus(); };
+      b.onclick = () => { chatEls.in.value = App.core.tr(zh, en); syncChatComposer(); chatEls.in.focus(); };
       chatEls.chips.appendChild(b);
     });
   }
@@ -311,8 +329,16 @@
   // 语言切换时刷新动态文案（静态文案走 applyStaticLang 的 data-en）
   function chatRelang(){
     if (!chatEls.in) return;
-    chatEls.send.textContent = App.core.tr('发送', 'Send');
-    chatEls.stop.textContent = App.core.tr('停止', 'Stop');
+    const {tr} = App.core;
+    chatEls.send.textContent = tr('发送', 'Send');
+    chatEls.stop.textContent = tr('停止', 'Stop');
+    chatEls.attach.setAttribute('aria-label', tr('添加附件', 'Add attachments'));
+    chatEls.attach.title = tr('添加文件，也可拖入或粘贴', 'Add files, or drag or paste them');
+    chatEls.in.setAttribute('aria-label', tr('助手消息', 'Assistant message'));
+    chatEls.in.title = tr('Enter 发送，Shift+Enter 换行', 'Enter to send, Shift+Enter for a new line');
+    chatEls.in.placeholder = tr('描述你的需求，也可拖入或粘贴附件', 'Describe what you need, or drag or paste attachments');
+    chatEls.refs.setAttribute('aria-label', tr('附件', 'Attachments'));
+    chatEls.dropHint.textContent = tr('松开即可添加附件', 'Drop to add attachments');
     renderChatAttachments();
     renderChatChips();
     paintChatNotice();
@@ -325,6 +351,7 @@
     App.core.$('#panel').hidden = !(which === 'props');
     App.core.$('aside.right').classList.toggle('chattab', onChat);
     document.querySelectorAll('#ptabs [data-pane]').forEach(b => b.classList.toggle('on', b.dataset.pane === which));
+    if (!onChat) chatEls.compose.classList.remove('is-dropping');
     if (onChat){ chatScroll(); setTimeout(() => { try { chatEls.in.focus({preventScroll:true}); } catch(e){ chatEls.in.focus(); } }, 0); }
     else if (onRender) renderPaneShown();
   }
@@ -335,7 +362,7 @@
   }
 
   // 当前选中和视角指明关注点，整份方案提供跨房间编辑所需的索引。
-  async function buildChatContext(task){
+  async function buildChatContext(includeSceneImage){
     const sel = App.io.studio.getSelection();
     const plan = App.io.studio.getPlan(), state = editableChatState();
     const selF = sel.kind === 'furn' ? App.store.getF(sel.id) : null;
@@ -352,7 +379,7 @@
     const images = [];
     if (App.io.studio.is3D()){
       try { view.camera = App.view3d?.viewInfo?.() || null; } catch(e){}
-      if (!task){
+      if (includeSceneImage){
         try {
           const url = await App.io.studio.shot({scale: 0.5, clean: true});
           const cut = typeof url === 'string' ? url.indexOf(',') : -1;
@@ -361,7 +388,6 @@
       }
     }
     const context = {mode:App.io.studio.is3D() ? '3d' : '2d', selection:sel.kind ? sel : null, plan, state, view};
-    if (task) context.task = task;
     return [context, images];
   }
 
@@ -455,32 +481,38 @@
   }
 
   async function chatSend(){
-    if (chatState.sending || chatState.readingRefs || chatState.online !== true) return;
-    const input = chatEls.in.value.trim(), refs = [...chatState.refs];
-    if (!input && !refs.length) return;
-    const task = chatState.creating || !input ? 'create-furniture' : null;
-    const text = input || App.core.tr('识别参考图中主要的家具，创建可复用的家具素材。', 'Identify the main furniture in the reference photos and create reusable furniture assets.');
+    if (chatState.sending || chatState.online !== true) return;
+    const message = chatEls.in.value.trim();
+    if (!message && !chatState.attachments.length) return;
+    const files = chatState.attachments.splice(0);
     resetChatDraft();
-    const sent = chatAdd('me', text);
-    if (refs.length){
-      const thumbnails = document.createElement('div'); thumbnails.className = 'chat-sent-refs';
-      for (const {url,name} of refs){ const img = document.createElement('img'); img.src = url; img.alt = name; thumbnails.appendChild(img); }
-      sent.el.appendChild(thumbnails); chatScroll();
+    const sent = chatAdd('me', message);
+    if (files.length){
+      const sentFiles = document.createElement('div');
+      sentFiles.className = 'chat-sent-attachments';
+      sentFiles.innerHTML = chatAttachmentMarkup(files, false);
+      sent.attachmentUrls = files.map(file => file.preview).filter(Boolean);
+      sent.el.appendChild(sentFiles); chatScroll();
     }
     const ctrl = new AbortController();
     chatState.ctrl = ctrl;
     chatBusy(true);
-    chatStatus(App.core.tr('正在准备上下文…', 'Preparing context…'), true);
+    chatStatus(files.length ? App.core.tr('正在准备附件…', 'Preparing attachments…')
+      : App.core.tr('正在准备上下文…', 'Preparing context…'), true);
     let cur = null;
     try {
-      const [context, images] = await buildChatContext(task);
-      for (const {url} of refs) images.push({mime:'image/jpeg', data:url.slice(url.indexOf(',')+1), role:'furniture-reference'});
-      if (ctrl.signal.aborted) throw new DOMException('aborted', 'AbortError');
+      const [context, images] = await buildChatContext(Boolean(message));
+      const attachments = [];
+      for (const file of files){
+        ctrl.signal.throwIfAborted();
+        attachments.push(await encodeChatAttachment(file));
+      }
+      ctrl.signal.throwIfAborted();
       chatStatus(App.core.tr('正在思考…', 'Thinking…'), true);
       const chunks = aiTextChunks('chat', {
         method:'POST',
         headers:{'content-type':'application/json'},
-        body: JSON.stringify({sessionId: App.projects.activeProjectId ? `${chatSid}-${App.projects.activeProjectId}` : chatSid, message: text, context, images}),
+        body: JSON.stringify({sessionId: App.projects.activeProjectId ? `${chatSid}-${App.projects.activeProjectId}` : chatSid, message, context, images, attachments}),
         signal: ctrl.signal,
       });
       let buf = '', acc = '', got = false, erred = false;
@@ -518,7 +550,6 @@
       chatState.ctrl = null;
       chatBusy(false);
       chatStatus('', false);
-      if (chatState.online === null) chatState.online = true;
     }
   }
 
@@ -537,34 +568,64 @@
     } catch(e){ return null; }
   }
 
+  function bindChatFileDrop(){
+    let depth = 0;
+    const isFileDrag = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+    const showDrop = () => chatEls.compose.classList.toggle('is-dropping', depth > 0 && !chatEls.attach.disabled);
+    chatEls.root.addEventListener('dragenter', e => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault(); depth++; showDrop();
+    });
+    chatEls.root.addEventListener('dragover', e => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = chatEls.attach.disabled ? 'none' : 'copy';
+    });
+    chatEls.root.addEventListener('dragleave', () => { depth = Math.max(0, depth-1); showDrop(); });
+    chatEls.root.addEventListener('drop', e => {
+      depth = 0; showDrop();
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      attachChatFiles(chatFilesFromTransfer(e.dataTransfer));
+      if (!chatEls.in.disabled) chatEls.in.focus();
+    });
+  }
+
   async function chatInit(){
     chatEls.root = App.core.$('#chat'); chatEls.msgs = App.core.$('#chatMsgs'); chatEls.in = App.core.$('#chatIn');
     chatEls.send = App.core.$('#chatSend'); chatEls.stop = App.core.$('#chatStop'); chatEls.st = App.core.$('#chatSt');
     chatEls.off = App.core.$('#chatOff'); chatEls.chips = App.core.$('#chatChips');
-    chatEls.attach = App.core.$('#chatAttach'); chatEls.create = App.core.$('#chatCreateAsset');
+    chatEls.compose = App.core.$('#chatCompose'); chatEls.attach = App.core.$('#chatAttach');
+    chatEls.dropHint = App.core.$('#chatDropHint');
     chatEls.file = App.core.$('#chatFile'); chatEls.refs = App.core.$('#chatRefs');
     chatPane('props');
     chatRelang();
     App.core.$('#ptabs').onclick = e => { const b = e.target.closest('[data-pane]'); if (b) chatPane(b.dataset.pane); };
     chatEls.send.onclick = () => chatSend();
     chatEls.stop.onclick = () => { try { chatState.ctrl?.abort(); } catch(e){} };
-    chatEls.create.onclick = () => {
-      if (chatState.creating){ chatState.creating = false; syncChatComposer(); chatEls.in.focus(); }
-      else startFurnitureCreation();
-    };
     chatEls.attach.onclick = () => chatEls.file.click();
-    chatEls.file.onchange = () => { const files = [...chatEls.file.files]; chatEls.file.value = ''; void attachChatReferences(files); };
-    chatEls.refs.onclick = e => {
-      const button = e.target.closest('[data-remove-ref]');
-      if (!button || chatState.readingRefs || chatState.sending) return;
-      chatState.refs.splice(Number(button.dataset.removeRef),1); renderChatAttachments();
+    chatEls.file.onchange = () => {
+      const files = [...chatEls.file.files];
+      chatEls.file.value = '';
+      attachChatFiles(files);
+      if (files.length && !chatEls.in.disabled) chatEls.in.focus();
     };
-    chatEls.in.addEventListener('paste', e => {
-      const files = Array.from(e.clipboardData?.files || []).filter(file => file.type.startsWith('image/'));
-      if (!files.length || chatEls.attach.disabled) return;
+    chatEls.refs.onclick = e => {
+      const button = e.target.closest('[data-remove-attachment]');
+      if (!button || chatState.sending) return;
+      const [removed] = chatState.attachments.splice(Number(button.dataset.removeAttachment),1);
+      if (removed?.preview) URL.revokeObjectURL(removed.preview);
+      renderChatAttachments();
+      chatEls.attach.focus();
+    };
+    chatEls.in.oninput = syncChatComposer;
+    chatEls.compose.addEventListener('paste', e => {
+      const files = chatFilesFromTransfer(e.clipboardData);
+      if (!files.length) return;
       if (!e.clipboardData.getData('text/plain')) e.preventDefault();
-      void attachChatReferences(files);
+      attachChatFiles(files);
     });
+    bindChatFileDrop();
     chatEls.in.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); chatSend(); }
     });
@@ -580,7 +641,7 @@
       paintChatNotice();
       return;
     }
-    chatState.online = true; chatEls.in.disabled = false; chatEls.send.disabled = false;
+    chatState.online = true; chatEls.in.disabled = false;
     syncChatComposer();
     if (info.codex && info.codex.found === false){ chatState.notice = 'codex'; paintChatNotice(); }
   }
@@ -1176,7 +1237,7 @@
   }
 
   Object.assign(App.assistant, {
-    aiResponseMessage, publicAiOffline, pointInPoly, chatState, chatEls, chatRelang, chatPane, resetChatDraft, startFurnitureCreation,
+    aiResponseMessage, publicAiOffline, pointInPoly, chatState, chatEls, chatRelang, chatPane, resetChatHistory, startFurnitureCreation,
     chatInit, renderState, renderEls, roomLatestRender, rRecTitle, renderAvailability, renderStatus,
     renderErr, renderShowRec, renderHistory, renderRelang, renderViewSync, openLightbox, renderInit,
     renderGenerate, captureWalkReference, resetRenderReference,
