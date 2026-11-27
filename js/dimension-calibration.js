@@ -69,7 +69,7 @@
       return {...raw, x, y};
     };
 
-    let nextPlan, furniture, measures;
+    let nextPlan, furniture, measures, ceiling;
     try {
       const actual = Math.abs(point(b)[coordinate] - a[coordinate]);
       if (actual <= 0 || Math.abs(actual - target) > Math.max(1e-7, target * 1e-12)) return invalidGeometry();
@@ -94,6 +94,17 @@
         return {...item, cx, cy};
       });
       measures = App.store.state.measures.map(item => ({...item, a:measurePoint(item.a), b:measurePoint(item.b)}));
+      const previousCeiling = App.store.state.ceiling;
+      const ceilingRooms = Object.fromEntries(Object.entries(previousCeiling.rooms).map(([id, room]) => [id, {
+        ...room,
+        zones:room.zones.map(zone => ({
+          ...zone, poly:zone.poly.map(point),
+          ...(zone.holes ? {holes:zone.holes.map(hole => hole.map(point))} : {}),
+          ...(zone.preset ? {preset:{...zone.preset, width:length(zone.preset.width)}} : {}),
+        })),
+        fixtures:room.fixtures.map(measurePoint),
+      }]));
+      ceiling = App.ceilingModel.validate({...previousCeiling, rooms:ceilingRooms}, nextPlan.rooms);
     } catch {
       return invalidGeometry();
     }
@@ -101,6 +112,7 @@
     applyGeometry(nextPlan, state => {
       state.furniture = furniture;
       state.measures = measures;
+      state.ceiling = ceiling;
     });
     return {ok:true};
   }
@@ -245,6 +257,11 @@
       if (!nextPlan) return invalidGeometry();
     } catch (cause) {
       return cause instanceof WallMoveError ? {ok:false, error:cause.message} : invalidGeometry();
+    }
+    try {
+      App.ceilingModel.validate(App.store.state.ceiling, nextPlan.rooms);
+    } catch (cause) {
+      return {ok:false, error:App.core.tr('移动后的房间与天花设计冲突', 'The moved room conflicts with its ceiling design') + ' · ' + cause.message};
     }
     applyGeometry(nextPlan);
     return {ok:true};

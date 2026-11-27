@@ -15,6 +15,7 @@
   // PLAN 各字段同步成模块级别名；planRev 变化会让 3D 顶层重建
   function installPlan(plan){
     PLAN = plan; planRev++;
+    ui.ceilingPreview = null;
     WALLS = plan.walls.map(w => {
       if (Array.isArray(w)) return w;
       const curve = App.geom.curvedSpan(w);
@@ -94,6 +95,7 @@
   }
   function fixState(s){
     s = (s && typeof s === 'object') ? s : {};
+    s.ceiling = App.ceilingModel.normalize(s.ceiling, PLAN.rooms);
     s.furniture = (Array.isArray(s.furniture) ? s.furniture : []).map(App.geom.normalizeFurn).filter(Boolean);
     s.rooms = reconcileRooms(s.rooms);
     s.demolished = (Array.isArray(s.demolished) ? s.demolished : []).map(String).filter(App.plan.validWallId);
@@ -111,7 +113,7 @@
   /* ======================= 状态 / 历史 / 存储 ======================= */
   let state;
   const ui = {tool:'select', sel:null, mA:null, mCur:null,
-    layers:{dims:true, labels:true, furn:true, grid:false, bearing:false, wallSnap:true}};
+    layers:{dims:true, labels:true, furn:true, grid:false, bearing:false, wallSnap:true}, ceilingPreview:null};
   const view = {x0:0, y0:0, s:.06};
   const undoStack = [], redoStack = [];
   let onProjectSave = () => {};
@@ -132,7 +134,13 @@
     if (o && o.plan && o.state){ const r = App.plan.sanitizePlan(o.plan); if (r.ok) installPlan(r.plan); state = fixState({...o.state, renders: state.renders, walk:state.walk}); }
     else if (o && Array.isArray(o.furniture)) state = fixState({...o, renders: state.renders, walk:state.walk});   // 兼容旧格式快照
   }
-  function commit(before){ undoStack.push(before); if (undoStack.length > 150) undoStack.shift(); redoStack.length = 0; save(); }
+  function commit(before){
+    ui.ceilingPreview = null;
+    undoStack.push(before);
+    if (undoStack.length > 150) undoStack.shift();
+    redoStack.length = 0;
+    save();
+  }
   function mutate(fn){ const b = snap(); fn(); commit(b); App.draw2d.renderAll(); }
   // 撤销 / 重做 / 换方案后：除状态外，材质图案、尺寸标注、门窗也都可能变
   function afterHistory(){ validateSel(); App.geom.buildDefs(); App.draw2d.renderDims(); App.draw2d.renderOpenings(); save(); App.draw2d.renderAll(); }

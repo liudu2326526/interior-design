@@ -7,6 +7,7 @@ const ROUTES = new Map([
   ['chat', '/api/chat'],
   ['render', '/api/render'],
   ['plan-import', '/api/plan/import'],
+  ['ceiling-import', '/api/ceiling-import'],
 ]);
 const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const MAX_BODY = 40 * 1024 * 1024;

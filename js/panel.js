@@ -8,6 +8,7 @@
   /* ======================= 右侧面板 ======================= */
 
   function renderPanel(){
+    if (App.ceilingEditor?.active()){ App.ceilingEditor.renderPanel(); return; }
     renderFab();
     const p = App.core.$('#panel');
     if (App.store.ui.sel?.kind === 'furn'){ const f = App.store.getF(App.store.ui.sel.id); if (f){ p.innerHTML = furnPanel(f); bindFurnPanel(f); return; } }

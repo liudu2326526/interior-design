@@ -1008,6 +1008,6 @@
   }
 
   Object.assign(App.importer, {
-    impState, impOpen, impClose, impOpenResult, impRelang, impInit,
+    impState, impOpen, impClose, impOpenResult, impRelang, impInit, impReviewMap, impFileB64,
   });
 })();

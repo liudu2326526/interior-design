@@ -80,7 +80,7 @@
     const nice = [100,200,500,1000,2000,5000].find(v => v*App.store.view.s >= 60) || 5000;
     App.core.$('#sbBar').style.width = nice*App.store.view.s + 'px';
     App.core.$('#sbText').textContent = nice >= 1000 ? `${nice/1000} m` : `${nice} mm`;
-    App.draw2d.renderSel(); App.draw2d.renderMeasure(); App.dimensions.updateView();
+    App.draw2d.renderSel(); App.draw2d.renderMeasure(); App.dimensions.updateView(); App.ceilingEditor?.renderSketch();
   }
   function fitView(){
     const W = App.core.svg.clientWidth, H = App.core.svg.clientHeight;
@@ -145,6 +145,7 @@
   function endDrag(cancel){
     const d = drag; drag = null; App.core.svg.classList.remove('panning');
     if (!d) return;
+    if (d.kind === 'ceiling'){ App.ceilingEditor.endPointer(d, cancel); return; }
     if (d.kind === 'measure'){
       if (cancel){ App.store.ui.mA = App.store.ui.mCur = null; App.draw2d.renderMeasure(); return; }
       if (d.moved && App.store.ui.mA && App.store.ui.mCur && Math.hypot(App.store.ui.mCur.x-App.store.ui.mA.x, App.store.ui.mCur.y-App.store.ui.mA.y) > 20){
@@ -170,7 +171,7 @@
       touches.set(e.pointerId, {x:e.clientX, y:e.clientY});
       App.core.svg.setPointerCapture(e.pointerId);
       if (touches.size >= 2){                    // 第二根手指落下：取消单指操作，进入双指缩放 / 平移
-        endDrag(['measure','pan','dimension'].includes(drag?.kind));
+        endDrag(['measure','pan','dimension','ceiling'].includes(drag?.kind));
         const {d, c} = pinchInfo();
         pinch = {d, c, s:App.store.view.s, px:App.store.view.x0 + c[0]/App.store.view.s, py:App.store.view.y0 + c[1]/App.store.view.s};
         return;
@@ -178,6 +179,11 @@
     }
     if (pinch) return;
     const p = toMM(e), t = e.target;
+    if (App.ceilingEditor?.active()){
+      drag = App.ceilingEditor.startPointer(e, p);
+      App.core.svg.setPointerCapture(e.pointerId);
+      return;
+    }
     if (App.store.ui.tool === 'dimension'){
       drag = {kind:'dimension', point:[p.x,p.y], sx:e.clientX, sy:e.clientY, moved:false};
       App.core.svg.setPointerCapture(e.pointerId);
@@ -216,6 +222,7 @@
     const p = toMM(e);
     App.core.$('#cx').textContent = Math.round(p.x) + ' mm'; App.core.$('#cy').textContent = Math.round(p.y) + ' mm';
     if (!drag){
+      if (App.ceilingEditor?.active()){ App.ceilingEditor.hover(p); return; }
       const room = e.target.closest && e.target.closest('[data-room]'), def = room && App.plan.roomDef(room.dataset.room);
       App.core.$('#hover').innerHTML = def ? `<b>${App.core.esc(App.core.nm(App.store.roomState(def.id).name))}</b> ${App.geom.fmt(App.geom.roomArea(def))} m²` : '';
       if (App.store.ui.tool === 'measure' && App.store.ui.mA){ App.store.ui.mCur = snapPoint(p, e.shiftKey); App.draw2d.renderMeasure(); }
@@ -223,6 +230,7 @@
       return;
     }
     const far = Math.hypot(e.clientX-drag.sx, e.clientY-drag.sy) >= App.core.TAP;
+    if (drag.kind === 'ceiling'){ App.ceilingEditor.movePointer(drag,e,p,far); return; }
     if (drag.kind === 'measure'){
       if (far) drag.moved = true;
       App.store.ui.mCur = snapPoint(p, e.shiftKey); App.draw2d.renderMeasure(); return;
@@ -283,6 +291,7 @@
     const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
     if (mod && k === 'z'){ e.preventDefault(); e.shiftKey ? App.store.redo() : App.store.undo(); return; }
     if (mod && k === 'y'){ e.preventDefault(); App.store.redo(); return; }
+    if (App.ceilingEditor?.active() && App.ceilingEditor.key(e)) return;
     if (mod && k === 'd'){ e.preventDefault(); duplicateSel(); return; }
     if (mod) return;
     if (k === '[' || k === ']'){ App.panel.drawer(k === '[' ? 'lib' : 'panel'); return; }
@@ -462,6 +471,6 @@
 
   Object.assign(App.interact, {
     select, rotateSel, deleteSel, duplicateSel, pushOut, toggleWall, setTool, syncModeHint, applyView,
-    fitView, zoomCenter, setRatio, snapMove, buildLib, placeLibraryAsset,
+    fitView, zoomCenter, setRatio, snapMove, snapPoint, buildLib, placeLibraryAsset,
   });
 })();

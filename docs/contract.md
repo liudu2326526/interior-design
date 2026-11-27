@@ -69,6 +69,7 @@ type State = {
   demolished: string[],        // 'w'+index
   measures: any[],
   dimensionMarks?: {id: string, axis: 'x' | 'y', a: DimensionAnchor, b: DimensionAnchor, original?: number}[],
+  ceiling?: {version: 1, baseHeight: number, rooms: Record<roomId, CeilingRoom>},
   walk?: {recent: WalkPose[], views: {id: string, name: string, pose: WalkPose,
     scene?: {hour: number, night: boolean, furn: boolean}}[]},
   renders?: RenderRecord[]
@@ -76,9 +77,22 @@ type State = {
 
 type DimensionAnchor = {kind: 'wall' | 'room', id: string, edge: number, t: number}
 type WalkPose = {x: number, y: number, height: number, yaw: number, pitch: number, roomId: string | null}
+type CeilingRoom = {
+  baseHeight?: number,
+  zones: {id:string, name:string, poly:Point[], arcs?:{edge:number,sweep:number}[],
+          holes?:Point[][], drop:number, color:string, finish?:string,
+          preset?:{type:'perimeter'|'island', width:number}}[],
+  edges: {id:string, zoneId?:string, hole?:number, edge:number, type:'cove'|'trim',
+          width:number, depth:number, color:string}[],
+  fixtures: {id:string, type:'downlight'|'spot'|'pendant'|'linear'|'track'|'vent'|'access'|'curtain',
+             x:number, y:number, zoneId?:string, rotation?:number, length?:number, width?:number,
+             hang?:number, kelvin?:number, intensity?:number, tilt?:number, color?:string}[]
+}
 ```
 
 `dimensionMarks` 使用墙面或房间边的几何引用，`t` 为边上的位置比例。显示值由当前几何沿 `axis` 计算。可选的 `original` 是人工记录的原图读数，单位 mm。旧项目缺少此字段时按空列表读取。
+
+`ceiling` 保存在项目装修状态中，沿用户型平面坐标。高度、下吊量、宽深及吊线长度均用 mm。每个房间可覆盖默认原顶净高（2800 mm）。区域完成面标高为原顶净高减去 `drop`。收边通过 `zoneId`、可选的 `hole` 和 `edge` 定位。灯具和设备可以指向指定顶面，也可以由位置自动决定安装高度。旧项目读入时采用默认原顶与空设计记录。
 
 `walk` 随项目保存。`recent` 在退出漫游时记录各漫游范围最近的相机位置和方向，`views` 用于兼容已有项目数据。`x`、`y` 沿用户型毫米坐标，`height` 用米，`yaw`、`pitch` 用弧度。编辑撤销保留漫游记录。漫游截图用作当前项目会话的效果图参考。
 
@@ -210,6 +224,12 @@ SSE 事件（`data: <json>\n\n`）：
 请求使用 `application/json`，包含当前 `plan`、`state` 的 `furniture`、`rooms`、`demolished` 以及 `dimensions`。每行尺寸包含 `axis`、标注线位置 `at`、几何锚点数组 `points: [{value, across}]`、`kind: 'overall' | 'chain' | 'manual'`，人工标注可附带 `original`。
 
 正常响应通过 `Content-Disposition` 下载 AutoCAD 2000 DWG（`AC1015`）。图形采用毫米和 1:1 模型空间，按用途分层。服务将经过校验的方案转换成 CAD 图形，并调用本机 `dxf2dwg`。转换器缺失返回 503，输入无效返回 422。
+
+### `POST /api/ceiling-import` → JSON
+
+请求携带当前项目的 `plan` 和 `ceiling`，以及 `mode`（`drawing` 或 `photo`）、`roomId`、`files`（`{name,data}`，`data` 为 Base64）和可选 `note`。图纸模式可对照整张底图，照片模式需要指定房间。公网入口通过 `/api/jobs/ceiling-import` 提交。
+
+返回 `{aligned,alignment,warnings,estimated,items}`。`items` 是当前项目坐标中的候选对象，有对齐及估算说明。页面验证用户选中的候选后，通过一次 `editScene` 更新天花层。
 
 ### `POST /api/plan/import` → JSON
 

@@ -22,7 +22,10 @@
    * ============================================================ */
 
   const stage = App.core.$('#stage'), host = App.core.$('#view3d');
-  const H = App.plan.DEFAULT_WALL_HEIGHT / 1000, FOV = 45;   // 默认层高（米）
+  const FULL_WALL_MODE = 2.8, FOV = 45;   // 全高按钮的值；实际顶面标高来自项目
+  const ceilingModel = App.ceilingModel;
+  const ceiling = () => App.store.ui.ceilingPreview || App.store.state.ceiling;
+  const ceilingY = id => ceilingModel.baseHeight(ceiling(),id) / 1000;
   // 世界原点跟着方案范围中心走，换户型时 2D / 3D 坐标系仍然对齐
   const PC = () => App.store.PLAN ? {x: App.store.PLAN.bounds.x + App.store.PLAN.bounds.w/2, y: App.store.PLAN.bounds.y + App.store.PLAN.bounds.h/2} : {x:6000, y:5300};
   const wx = x => (x - PC().x) / 1000, wz = y => (y - PC().y) / 1000, M = v => v / 1000;
@@ -31,7 +34,7 @@
 
   let inited = false, active = false, raf = 0, anim = null, fly = null;
   let renderer, labelRenderer, scene, camera, orbit, walkCtl, hemi, sun, ground, glassMat, wallMat, capMat, frameMat;
-  let archFloor, archUp, furnG, labelG, doorG, lampG, colliders = [], selKey = null, selHelper = null;
+  let archFloor, archUp, furnG, labelG, doorG, lampG, ceilingG, colliders = [], selKey = null, selHelper = null;
   let attachedBays = [];
   let sigArch = '', sigFurn = '', sigLabels = '', grow = 1, furnGrow = 1;
   const doors = [], keys = {};
@@ -91,8 +94,8 @@
     wallMat = mat('#f4f1eb', {roughness:.92}); capMat = mat('#34312d', {roughness:.9}); frameMat = mat('#5d6166', {roughness:.5, metalness:.4});
 
     archFloor = new THREE.Group(); archUp = new THREE.Group(); furnG = new THREE.Group(); labelG = new THREE.Group();
-    doorG = new THREE.Group(); lampG = new THREE.Group();
-    scene.add(archFloor, archUp, furnG, labelG, doorG, lampG);
+    doorG = new THREE.Group(); lampG = new THREE.Group(); ceilingG = new THREE.Group();
+    scene.add(archFloor, archUp, furnG, labelG, doorG, lampG, ceilingG);
 
     const cv = renderer.domElement; let downAt = null, look = null;
     cv.addEventListener('pointerdown', e => {
@@ -364,7 +367,7 @@
   }
   function visibleWallHeight(wall, cut){
     const height = M(App.plan.wallHeight(wall));
-    return cut < H ? Math.min(height, cut) : height;
+    return opt.cut === FULL_WALL_MODE ? height : Math.min(height,cut);
   }
   function openingTop(rect, walls, cut){
     // 洞口与相邻墙段的端点相接。有实测高度时，过梁与较低的一侧对齐。
@@ -577,13 +580,201 @@
     return door;
   }
 
+  // An unspecified full wall follows its adjacent rooms. A measured wall and a parapet
+  // retain their own height. Mesh generation uses a derived span, never edits the Plan.
+  function ceilingWallHeights(walls){
+    const scene=ceiling();
+    if (!scene || (scene.baseHeight===2800 && !Object.values(scene.rooms).some(r=>r.baseHeight))) return walls;
+    const boundaries=App.store.ROOMS.filter(r=>!outdoors(r)).map(r=>({height:ceilingModel.baseHeight(scene,r.id),outline:r.poly}));
+    return walls.map(w=>{
+      if (w[5]!==undefined || w[4]==='low') return w;
+      const along=alongAxis(w), across=1-along, curve=w[6];
+      const tolerance=(curve ? curve.thickness : w[across+2]-w[across])/2+contact;
+      const nearby=boundaries.filter(({outline})=>outline.some((a,i)=>{
+        const b=outline[(i+1)%outline.length];
+        if (curve) return App.geom.curveDistance(curve,(a[0]+b[0])/2,(a[1]+b[1])/2)<=tolerance;
+        const overlap=Math.min(w[along+2],Math.max(a[along],b[along]))-Math.max(w[along],Math.min(a[along],b[along]));
+        return overlap>contact && Math.abs(b[across]-a[across])<contact &&
+          Math.abs((a[across]+b[across]-w[across]-w[across+2])/2)<=tolerance;
+      }));
+      const span=[...w];
+      span[5]=nearby.length ? Math.max(...nearby.map(r=>r.height)) : scene.baseHeight;
+      return span;
+    });
+  }
+
+  const lightSites=[], luminousMaterials=new Set();
+  const isClockwise=poly=>poly.reduce((sum,p,i)=>{
+    const q=poly[(i+1)%poly.length]; return sum+p[0]*q[1]-p[1]*q[0];
+  },0)>0; // in plan coordinates, Y points down
+  function surfaceMesh(poly,holes,bottom,top,color,index){
+    const outer=isClockwise(poly)?poly:poly.slice().reverse();
+    const shape=shapeOf(outer);
+    for (const h of holes) shape.holes.push(shapeOf(isClockwise(h)?h.slice().reverse():h));
+    const geometry=new THREE.ExtrudeGeometry(shape,{depth:Math.max(.001,top-bottom),bevelEnabled:false});
+    geometry.rotateX(-Math.PI/2);
+    const panel=new THREE.Mesh(geometry,mat(color,{roughness:.92,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-index-1}));
+    panel.position.y=bottom; panel.receiveShadow=true; panel.renderOrder=index+1;
+    return panel;
+  }
+  function warmLight(kelvin){
+    // Visual white balance anchors for warm, neutral daylight and cool-white lamps.
+    const k=kelvin??3000;
+    return k<=5000 ? new THREE.Color('#ffac61').lerp(new THREE.Color('#fff6e8'),(k-1800)/3200)
+      : new THREE.Color('#fff6e8').lerp(new THREE.Color('#c4d9ff'),(k-5000)/5000);
+  }
+  function lens(color,brightness=1){
+    const m=mat(color,{emissive:color,roughness:.45,emissiveIntensity:brightness*.35});
+    m.userData.brightness=brightness; luminousMaterials.add(m); return m;
+  }
+  function fixtureMesh(room,group,f,mount,implicit=false){
+    const type=f.type, root=new THREE.Group(), pitch=(f.tilt??0)*Math.PI/180;
+    root.position.set(wx(f.x),mount,wz(f.y)); root.rotation.y=-(f.rotation??0)*Math.PI/180;
+    group.add(root);
+    const width=M(f.width ?? ({vent:160,curtain:180,access:400,pendant:240,track:37,linear:48}[type] || 90));
+    const length=M(f.length ?? ({linear:1000,track:1200,vent:600,curtain:1800,access:400}[type] || 240));
+    const power=(f.intensity??100)/100, lightColor='#'+warmLight(f.kelvin).getHexString();
+    const body=mat(f.color || (['track','spot','curtain'].includes(type)?'#474747':'#ece7dd'));
+    const luminous=lens(lightColor,power), dark=mat('#444048'), metalTrim=mat('#b4aca0');
+    const solid=(w,h,d,x,y,z,m=body,parent=root)=>{
+      const part=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);
+      part.position.set(x,y,z); parent.add(part); return part;
+    };
+    const cylinder=(r,h,x,y,m,parent=root)=>{
+      const part=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,24),m);
+      part.position.set(x,y,0); parent.add(part); return part;
+    };
+    let offset=.05;
+    if (type==='linear'){
+      solid(length,.034,width,0,-.017,0); solid(length*.98,.006,width*.74,0,-.036,0,luminous);
+    } else if(type==='track' || type==='spot'){
+      const centers=type==='track'?[-.33*length,0,.33*length]:[0];
+      if(type==='track') solid(length,.035,width,0,-.017,0);
+      for(const x of centers){
+        const head=new THREE.Group();head.position.set(x,-.038,0);head.rotation.z=pitch;root.add(head);
+        const r=type==='track'?.038:width/2;
+        cylinder(r,.095,0,-.044,body,head); cylinder(r*.82,.004,0,-.093,luminous,head);
+      }
+      offset=.14;
+    } else if(type==='pendant'){
+      const hang=M(f.hang??Math.min(480,mount*1000*.35));
+      cylinder(.045,.025,0,-.012,body); cylinder(.004,Math.max(.004,hang),0,-hang/2,metalTrim);
+      cylinder(width/2,.08,0,-hang-.04,body); cylinder(width*.46,.005,0,-hang-.08,luminous);
+      offset=hang+.095;
+    } else if(type==='vent'){
+      solid(length,.018,width,0,-.01,0);
+      const n=Math.max(2,Math.min(12,Math.floor(width/.024)));
+      for(let i=0;i<n;i++) solid(length*.94,.003,width*.43/n,0,-.021,width*((i+.5)/n-.5),dark);
+    } else if(type==='access'){
+      solid(length,.018,width,0,-.009,0,metalTrim);solid(length*.984,.004,width*.984,0,-.02,0);
+    } else if(type==='curtain'){
+      solid(length,.012,width,0,-.007,0,dark);
+      for(const side of [-1,1]) solid(length,.055,.013,0,-.028,side*(width-.013)/2);
+    } else {
+      cylinder(width/2,.028,0,-.015,body); cylinder(width*.39,.005,0,-.031,luminous);
+    }
+    if (['vent','access','curtain'].includes(type)||!power) return;
+    const position=new THREE.Vector3(root.position.x,mount-offset,root.position.z);
+    const directed=!implicit && ['track','spot','downlight'].includes(type);
+    const direction=directed ? new THREE.Vector3(Math.sin(pitch),-Math.cos(pitch),0).applyAxisAngle(new THREE.Vector3(0,1,0),root.rotation.y) : null;
+    lightSites.push({roomId:room.id,position,direction,color:lightColor,power:power*(directed?12:6)});
+  }
+  function ceilingEdge(group,def,zones,edge,base){
+    const zone=zones.find(z=>z.id===edge.zoneId);
+    const surface=edge.hole!=null ? {poly:zone.holes[edge.hole]} : (zone||def);
+    const points=ceilingModel.edgePoints(surface,edge.edge);
+    const width=M(edge.width), depth=M(edge.depth), mount=base-M(zone?.drop||0);
+    const sign=(isClockwise(ceilingModel.outline(surface)) ? 1 : -1)*(edge.hole!=null ? -1 : 1);
+    const cove=edge.type==='cove', material=cove ? lens(edge.color,.65) : mat(edge.color,{roughness:.75});
+    let longest=0, glowPosition;
+    for (let i=1;i<points.length;i++){
+      const [a,b]=[points[i-1],points[i]], dx=M(b[0]-a[0]), dz=M(b[1]-a[1]);
+      const len=Math.hypot(dx,dz); if (!len) continue;
+      const strip=new THREE.Group();
+      strip.position.set(wx((a[0]+b[0])/2)-sign*dz/len*width/2,mount,wz((a[1]+b[1])/2)+sign*dx/len*width/2);
+      strip.rotation.y=-Math.atan2(dz,dx); group.add(strip);
+      if (cove){
+        const liner=mat('#c3b9a6');
+        for (const side of [-1,1]){
+          const lip=new THREE.Mesh(new THREE.BoxGeometry(len,depth,width*.12),liner);
+          lip.position.set(0,-depth/2,side*width*.44); strip.add(lip);
+        }
+        const led=new THREE.Mesh(new THREE.BoxGeometry(len,.003,width*.70),material);
+        led.position.y=-Math.max(.003,depth*.22); strip.add(led);
+        if(len>longest){longest=len; glowPosition=strip.position.clone(); glowPosition.y-=depth+.04;}
+      }else{
+        const trim=new THREE.Mesh(new THREE.BoxGeometry(len,depth,width),material);
+        trim.position.y=-depth/2; strip.add(trim);
+      }
+    }
+    if(glowPosition) lightSites.push({roomId:def.id,position:glowPosition,color:edge.color,power:2.3,direction:null});
+  }
+  function buildCeiling(def,openAir,bay){
+    const data=ceiling(), design=ceilingModel.room(data,def.id), h=ceilingY(def.id);
+    const group=new THREE.Group();
+    group.userData.room=def.id; group.userData.height=h; group.userData.footprint=def.poly; ceilingG.add(group);
+    if (!openAir){
+      const geom=new THREE.ShapeGeometry(shapeOf(def.poly,true)); geom.rotateX(Math.PI/2);
+      const original=new THREE.Mesh(geom,mat('#fbfaf7',{roughness:1}));
+      original.position.y=h; group.add(original);
+    }
+    ceilingModel.shapes(data,def).forEach((shape,i)=>{
+      const mesh=surfaceMesh(shape.poly,shape.holes,M(shape.height),h,shape.color,i);
+      mesh.userData.zone=shape.id; group.add(mesh);
+    });
+    for(const edge of design.edges) ceilingEdge(group,def,design.zones,edge,h);
+    for(const f of design.fixtures) fixtureMesh(def,group,f,M(ceilingModel.fixtureHeight(data,def,f)));
+    // Previously saved designs did not store lamps. Retain their implied room light until edited.
+    if (!openAir && !bay && def.at && !Object.hasOwn(data?.rooms||{},def.id)){
+      fixtureMesh(def,group,{type:'downlight',width:440,x:def.at[0],y:def.at[1]},h,true);
+    }
+  }
+  function updateCeilingVisibility(){
+    const full=opt.cut===FULL_WALL_MODE && grow>.99;
+    ceilingG.visible=full;
+    lampG.visible=grow>.99;
+    if (!full) return;
+    const planOrigin=PC(), px=planOrigin.x+camera.position.x*1000, py=planOrigin.y+camera.position.z*1000;
+    for(const group of ceilingG.children){
+      const {room,footprint,height}=group.userData;
+      const selected=roomView.id===room || attachedBays.some(b=>b.roomId===roomView.id && b.id===room);
+      group.visible=opt.mode==='walk' || (camera.position.y<height+.05 &&
+        (roomView.id ? selected : App.assistant.pointInPoly(px,py,footprint)));
+    }
+  }
+  function initializeCeilingLights(){
+    const point=lightSites.filter(site=>!site.direction).length, spot=lightSites.length-point;
+    // Limit actual GPU lights independently of the number of visible fixture meshes.
+    const nPoint=Math.min(point,Math.max(4,8-spot)), nSpot=Math.min(spot,8-nPoint);
+    for(let i=0;i<nPoint;i++) lampG.add(new THREE.PointLight(0xffffff,0,8,1.6));
+    for(let i=0;i<nSpot;i++) lampG.add(new THREE.SpotLight(0xffffff,0,9,.65,.48,1.6));
+  }
+  let lastLightUpdate=-Infinity;
+  function updateCeilingLights(force,now=performance.now()){
+    if (!force && (!opt.night || now-lastLightUpdate<220)) return;
+    lastLightUpdate=now;
+    const visible=opt.night ? lightSites.filter(site=>!roomView.id || site.roomId===roomView.id)
+      .sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position)) : [];
+    const spots=visible.filter(s=>s.direction), points=visible.filter(s=>!s.direction);
+    for(const light of lampG.children){
+      const site=(light.isSpotLight?spots:points).shift();
+      light.intensity=site?.power||0;
+      if (!site) continue;
+      light.position.copy(site.position);light.color.set(site.color);
+      if (light.isSpotLight){
+        light.target.position.copy(site.position).add(site.direction);
+        light.target.updateMatrixWorld();
+      }
+    }
+  }
+
   function buildArch(){
     const previousDoors = new Map(doorPlanRev === App.store.planRev ? doors.map(d => [d.key, d.open]) : []);
     doorPlanRev = App.store.planRev;
     doorG.clear(); lastDoorVisibility = -Infinity;
-    clearGroup(archFloor); clearGroup(archUp); lampG.clear(); doors.length = 0; colliders = [];
-    const top = opt.cut;
-    const walls = App.store.WALLS.filter((_, i) => !App.store.state.demolished.includes('w'+i));
+    clearGroup(archFloor); clearGroup(archUp); clearGroup(ceilingG); lampG.clear(); lightSites.length = 0; doors.length = 0; colliders = [];
+    const top = opt.cut === FULL_WALL_MODE ? ceilingY() : opt.cut;
+    const walls = ceilingWallHeights(App.store.WALLS.filter((_, i) => !App.store.state.demolished.includes('w'+i)));
     // 阴影相机跟着方案大小走，换大户型也不会被裁掉
     const ext = Math.max(App.store.BOUNDS.w, App.store.BOUNDS.h) / 2000 + 3;
     Object.assign(sun.shadow.camera, {left:-ext, right:ext, top:ext, bottom:-ext, near:1, far:ext*4});
@@ -598,17 +789,10 @@
       const fl = new THREE.Mesh(geo, bay ? [m, mat('#e9e4da')] : m);
       fl.receiveShadow = true; fl.userData.room = r.id;
       if (bay){ fl.castShadow = true; archUp.add(fl); } else archFloor.add(fl);
-      if (openAir) return;
-      // 天花：法线朝下，只在室内仰视时可见
-      const cg = new THREE.ShapeGeometry(shapeOf(r.poly, true)); cg.rotateX(Math.PI/2);
-      const ceil = new THREE.Mesh(cg, mat('#fbfaf7', {roughness:1})); ceil.position.y = H; ceil.visible = top >= H; archUp.add(ceil);
-      if (r.at && !bay){
-        const lamp = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, .02, 32), new THREE.MeshStandardMaterial({color:'#fff', emissive:'#fff2d6', emissiveIntensity:.3}));
-        lamp.position.set(wx(r.at[0]), H - .012, wz(r.at[1])); lamp.visible = top >= H; lampG.add(lamp);
-        const pl = new THREE.PointLight(0xffd9a8, 0, 7, 1.6); pl.position.set(wx(r.at[0]), H - .25, wz(r.at[1])); lampG.add(pl);
-      }
+      buildCeiling(r,openAir,bay);
     });
     [...App.store.DOORS, ...App.store.SLIDES].forEach(d => { const [x0, y0, x1, y1] = d.rect; const s = box(M(x1-x0), .012, M(y1-y0), mat('#d8d0c0', {roughness:.3}), wx((x0+x1)/2), 0, wz((y0+y1)/2)); s.castShadow = false; archFloor.add(s); });
+    initializeCeilingLights();
     const glazing = buildOpenings(walls,App.store.WINS,bays,top);
     bays.forEach(bay => bay.mouths.forEach(edge => {
       const rect = edge.curve ? App.geom.curveBounds(edge.curve) : App.geom.bbox([edge.a,edge.b]);
@@ -696,7 +880,7 @@
     App.store.ROOMS.filter(r => r.at).forEach(r => {
       const el = document.createElement('div'); el.className = 'rlabel';
       el.innerHTML = `${App.core.esc(App.core.nm(App.store.roomState(r.id).name))}<small>${App.geom.roomArea(r).toFixed(1)}m²</small>`;
-      const o = new CSS2DObject(el); o.position.set(wx(r.at[0]), opt.cut + .15, wz(r.at[1])); o.visible = labelG.visible; labelG.add(o);
+      const o = new CSS2DObject(el); o.position.set(wx(r.at[0]), (opt.cut === FULL_WALL_MODE ? ceilingY(r.id) : opt.cut) + .15, wz(r.at[1])); o.visible = labelG.visible; labelG.add(o);
     });
     const counted = App.store.ROOMS.filter(r => r.counted !== false);
     App.core.$('#roomList').innerHTML = counted.map(r => `<div class="rrow">
@@ -725,7 +909,7 @@
   function sync(force){
     if (!inited || (!active && !force)) return;
     // 家具的 3D 坐标由 PLAN.bounds 中心换算（wx/wz），换方案时必须一起重建
-    const a = JSON.stringify([App.store.planRev, App.store.PLAN.name, App.store.state.rooms, App.store.state.demolished, opt.cut]), f = JSON.stringify([App.store.planRev, App.store.state.furniture]), l = JSON.stringify([App.store.planRev, App.store.state.rooms, opt.cut]);
+    const a = JSON.stringify([App.store.planRev, App.store.PLAN.name, App.store.state.rooms, App.store.state.demolished, ceiling(), opt.cut]), f = JSON.stringify([App.store.planRev, App.store.state.furniture]), l = JSON.stringify([App.store.planRev, App.store.state.rooms, ceiling(), opt.cut]);
     if (force || a !== sigArch){ sigArch = a; buildArch(); }
     if (force || f !== sigFurn){ sigFurn = f; buildFurn(); }
     if (force || l !== sigLabels){ sigLabels = l; buildLabels(); }
@@ -745,7 +929,7 @@
     if (!inited) return;
     archUp.scale.y = Math.max(grow, .001);
     furnG.scale.y = Math.max(furnGrow, .001);
-    lampG.visible = grow > .99;
+    updateCeilingVisibility();
   }
 
   /* ======================= 日照 / 夜景 ======================= */
@@ -757,7 +941,8 @@
     hemi.intensity = opt.night ? .12 : 1.1;
     scene.background = new THREE.Color(opt.night ? 0x1c2130 : 0xf7f4ee);
     ground.material.color.set(opt.night ? 0x2a2e38 : 0xf2eee7);
-    lampG.children.forEach(o => { if (o.isPointLight) o.intensity = opt.night ? 6 : 0; else o.material.emissiveIntensity = opt.night ? 2 : .3; });
+    for (const m of luminousMaterials) m.emissiveIntensity=m.userData.brightness*(opt.night ? 1.8 : .35);
+    updateCeilingLights(true);
     renderer.toneMappingExposure = opt.night ? 1.25 : 1.05;
     envK = opt.night ? .15 : 1; matCache.forEach(m => { if (m.envMap) m.envMapIntensity = m.userData.env*envK; });
     const h = Math.floor(opt.hour), m = Math.round((opt.hour - h)*60);
@@ -839,6 +1024,35 @@
     const tx = longX ? x0 + w * .64 : cx, ty = longX ? cy : y0 + d * .64;
     return pose(new THREE.Vector3(wx(tx), ROOM_LOOK, wz(ty)), new THREE.Vector3(wx(cx), ROOM_EYE, wz(cy)));
   }
+  function ceilingPose(id){
+    const def=App.plan.roomDef(id), poly=def.poly, h=ceilingY(id);
+    const [x0,y0,x1,y1]=App.geom.bbox(poly), w=x1-x0, d=y1-y0;
+    const at=(u,v)=>[x0+w*u,y0+d*v];
+    const inside=p=>App.assistant.pointInPoly(p[0],p[1],poly);
+    const xMargin=Math.min(.18,650/w), yMargin=Math.min(.18,650/d);
+    // A diagonal catches two walls, the ceiling's depth and the opposite corner in one view.
+    // Additional points accommodate concave or curved rooms with inaccessible AABB corners.
+    const corners=[[xMargin,yMargin],[1-xMargin,1-yMargin],[xMargin,1-yMargin],[1-xMargin,yMargin]];
+    const candidates=corners.map(([u,v])=>at(u,v)).filter(inside);
+    for(const u of [.14,.5,.86]) for(const v of [.14,.5,.86]){
+      const p=at(u,v); if(inside(p)) candidates.push(p);
+    }
+    let best;
+    for(const from of candidates) for(const to of candidates){
+      const dx=to[0]-from[0], dy=to[1]-from[1], span=dx*dx+dy*dy;
+      if (span<1 || (best && best.span>=span)) continue;
+      if ([.2,.4,.6,.8].every(t=>inside([from[0]+dx*t,from[1]+dy*t]))) best={from,dx,dy,span};
+    }
+    if (!best) return interiorPose(id);
+    const {from,dx,dy}=best;
+    const eye=Math.min(1.12,h*.39), targetHeight=h*.88;
+    return pose(new THREE.Vector3(wx(from[0]+dx*.62),targetHeight,wz(from[1]+dy*.62)),
+      new THREE.Vector3(wx(from[0]),eye,wz(from[1])));
+  }
+  function roomLens(wide){
+    const fov=wide ? 68 : FOV;
+    if(camera.fov!==fov){camera.fov=fov;camera.updateProjectionMatrix();}
+  }
   function interiorWalkPose(id){
     const P = interiorPose(id); if (!P) return entryPose();
     return [P.p.x, P.p.y, P.p.z, P.t.x, P.t.y, P.t.z];
@@ -864,7 +1078,7 @@
     return [
       new N(new V(1, 0, 0), -X0),  new N(new V(-1, 0, 0), X1),
       new N(new V(0, 0, 1), -Z0),  new N(new V(0, 0, -1), Z1),
-      new N(new V(0, 1, 0), .05),  new N(new V(0, -1, 0), H + .05),
+      new N(new V(0, 1, 0), .05),  new N(new V(0, -1, 0), ceilingY(id) + .05),
     ];
   }
   // 应用 / 清除裁切；出错时退回剖切墙
@@ -886,7 +1100,7 @@
       roomView.fallback = true;
       roomView.planes = null;
       try { renderer.clippingPlanes = clipDefault ?? null; } catch(_) {}
-      if (opt.cut < H){
+      if (opt.cut === FULL_WALL_MODE){
         opt.cut = 1.2; syncCutBtns(); sync(true);             // 退回剖切墙：墙切到 1.2m，仍能看见室内
         App.core.toast(App.core.tr('当前环境不支持室内裁切，已退回剖切墙视图', 'Interior clipping is not supported here — using the cut-wall view'));
       }
@@ -919,9 +1133,11 @@
     if (!inited || !active || !App.plan.roomDef(id)) return false;
     // 3D 入场 / 退场动画期间收到请求：等动画结束再进，避免和 animate() 抢相机
     if (anim){ setTimeout(() => { if (active && App.plan.roomDef(id)) enterRoom(id, opts); }, 140); return true; }
-    const P = interiorPose(id); if (!P) return false;         // 退化房间：不进也不改状态
+    const P = opts.ceiling ? ceilingPose(id) : interiorPose(id);
+    if (!P) return false;
     if (opt.mode === 'walk') setMode('orbit');
-    if (opt.cut < H){ opt.cut = H; syncCutBtns(); sync(); }   // 室内需要整墙与天花
+    roomLens(Boolean(opts.ceiling));
+    if (opt.cut !== FULL_WALL_MODE){ opt.cut = FULL_WALL_MODE; syncCutBtns(); sync(); }   // 室内需要整墙与天花
     roomView.id = id; roomView.arrived = false; roomView.fallback = false;
     stage.classList.add('roomview');
     orbit.enabled = false; fly = null;
@@ -943,6 +1159,7 @@
 
   function exitRoom(opts = {}){
     if (!roomView.id) return;
+    roomLens(false);
     roomView.id = null; roomView.arrived = false; roomView.fallback = false;
     stage.classList.remove('roomview');
     applyRoomClip(null);                                      // 清除裁切（恢复默认 null）
@@ -1244,10 +1461,10 @@
       return false;
     }
     if (opt.mode === 'walk' && m === 'orbit') rememberWalkExit();
-    opt.mode = m; syncModeBtns();
+    opt.mode = m; roomLens(false); syncModeBtns();
     if (m === 'walk'){
       App.interact.select(null);
-      if (opt.cut < H){ opt.cut = H; syncCutBtns(); sync(); }
+      if (opt.cut !== FULL_WALL_MODE){ opt.cut = FULL_WALL_MODE; syncCutBtns(); sync(); }
       orbit.enabled = false; fly = null;
       const start = requestedPoint || lastWalkExit(currentRoom);
       const roomId = start ? start.roomId : currentRoom;
@@ -1437,13 +1654,13 @@
     const dt = Math.min(clock.getDelta(), .05), now = performance.now();
     if (anim){ const t = clamp01((now - anim.t0)/anim.dur); anim.fn(t); if (t >= 1){ const r = anim.res; anim = null; r(); } }
     else if (fly){ const t = clamp01((now - fly.t0)/fly.dur); camTween(fly.A, fly.B, ease(t)); if (t >= 1){ const f = fly; fly = null; f.done && f.done(); } }
-    else if (opt.mode === 'orbit') orbit.update();
-    else stepWalk(dt);
+    else if (opt.mode === 'walk') stepWalk(dt);
+    else if (orbit.enabled) orbit.update();
     doors.forEach(d => {
       d.progress += (Number(d.open) - d.progress) * Math.min(1, dt*6);
       d.move(d.progress);
     });
-    updateSel();
+    updateSel(); updateCeilingVisibility(); updateCeilingLights(false,now);
     renderer.render(scene, camera);
     updateDoorControls(now);
     labelRenderer.render(scene, camera);
@@ -1478,7 +1695,7 @@
     if (!active || !camera) return null;
     const r3 = v => ({x:+v.x.toFixed(3), y:+v.y.toFixed(3), z:+v.z.toFixed(3)});
     const target = opt.mode === 'walk' ? camera.getWorldDirection(new THREE.Vector3()).add(camera.position) : orbit.target;
-    return {mode: opt.mode, fov: FOV, position: r3(camera.position), target: r3(target), room: roomView.id || null};
+    return {mode: opt.mode, fov: camera.fov, position: r3(camera.position), target: r3(target), room: roomView.id || null};
   }
 
   function relang(){ syncWalkTexts(); if (inited){ buildLabels(); doors.forEach(labelDoor); renderRoomBar(); } }

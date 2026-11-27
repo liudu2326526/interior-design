@@ -17,6 +17,7 @@ import { CodexSession, SessionPool, probeModels } from './lib/codex/session.mjs'
 import { loadRenderImageProvider } from './lib/codex/render-image.mjs';
 import { parsePatch, validatePlan, validateImportedFurniture, summarizePlan, extractJson } from './lib/codex/plan.mjs';
 import { createImportJobs, importJobError, isImportJobPath } from './lib/import-jobs.mjs';
+import { reviewCeiling } from './lib/ceiling-recognition.mjs';
 import { renderPlanPng } from './lib/plan-render.mjs';
 import { buildReviewMessage, checkPlan, parseReviewReply, reviewDelta } from './lib/plan-review.mjs';
 import { buildCadDxf } from './lib/cad-dxf.mjs';
@@ -460,6 +461,10 @@ async function route(req, res) {
   if (pathname === '/api/render') {
     if (!api(['POST'])) return;
     return handleRender(req, res, publicRequest);
+  }
+  if (pathname === '/api/ceiling-import') {
+    if (!api(['POST'])) return;
+    return handleCeilingImport(req, res);
   }
   if (pathname === '/api/export/dwg') {
     if (!api(['POST'])) return;
@@ -1229,6 +1234,75 @@ async function handleRender(req, res, publicRequest) {
     settled = true;
     sse.close();
     if (tmpDir) fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// A ceiling import proposes changes to the current design. It never creates a floor-plan job.
+async function handleCeilingImport(req, res) {
+  const controller = new AbortController();
+  const { signal } = controller;
+  let session, directory;
+  const disconnect = () => {
+    controller.abort();
+    session?.interrupt().catch(() => {});
+  };
+  res.once('close', disconnect);
+  try {
+    const body = await readJson(req);
+    const files = validateChatFiles(body?.files);
+    if (!files.length || files.some(file => !['image', 'pdf', 'cad'].includes(file.kind))) {
+      throw importJobError(415, '请上传天花图、照片、PDF 首页或 CAD 图纸。');
+    }
+    const mode = body.mode, roomId = body.roomId || null;
+    if (!['drawing', 'photo'].includes(mode) || (mode === 'photo' && (!roomId || files.some(file => file.kind !== 'image')))) {
+      throw importJobError(400, '照片参考需要选择房间并上传图片。');
+    }
+    if (JSON.stringify([body.plan, body.ceiling]).length > 1024 * 1024) throw importJobError(413, '项目底图或天花数据过大。');
+    const validated = validatePlan(body.plan);
+    if (!validated.ok || (roomId && !validated.plan.rooms.some(r => r.id === roomId))) {
+      throw importJobError(400, '请重新选择当前户型和房间。');
+    }
+    const plan = validated.plan;
+    let ceiling;
+    try { ceiling = globalThis.CeilingModel.validate(body.ceiling, plan.rooms); }
+    catch (error) { throw importJobError(400, '当前项目的天花数据无效：' + error.message); }
+    const probe = await getProbe();
+    if (!probe.found) throw importJobError(503, unusableMessage(probe));
+    signal.throwIfAborted();
+    directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'interior-ceiling-'));
+    const floor = path.join(directory, 'current-floor-plan.png');
+    await fsp.writeFile(floor, renderPlanPng(plan), {mode:0o600, signal});
+    const images = [{file:floor}];
+    const sources = await prepareChatFiles(files, directory, images, signal);
+    if (images.length === 1 && !sources.some(s => s.geometry)) {
+      throw importJobError(422, '图纸没有可辨认的图像或 CAD 几何，请上传对应页的截图。');
+    }
+    const prompt = await readPrompt('ceiling-import.md');
+    if (!prompt) throw new Error('缺少天花图识别提示词。');
+    const text = JSON.stringify({mode, roomId, plan, ceiling, sources, note:String(body.note || '').slice(0, 2000)});
+    const turn = await limitTurns(async () => {
+      signal.throwIfAborted();
+      session = await CodexSession.start({install:probe.install, cwd:directory, sandbox:'read-only',
+        approvalPolicy:'never', developerInstructions:prompt, ephemeral:true, config:CHAT_CODEX_CONFIG});
+      signal.throwIfAborted();
+      return session.runTurn({input:[{type:'text', text, text_elements:[]},
+        ...images.map(({file}) => ({type:'localImage', path:file}))], timeoutMs:CHAT_TIMEOUT_MS});
+    });
+    signal.throwIfAborted();
+    if (turn.outcome !== 'completed') throw importJobError(502, turn.error || '识别回合未完成。');
+    let result;
+    try {
+      result = reviewCeiling(extractJson(finalAgentReply(turn)), {plan, ceiling, roomId, mode, note:String(body.note || '').slice(0, 2000)});
+    } catch (error) {
+      throw importJobError(422, '无法生成有效的天花草稿：' + error.message);
+    }
+    sendJson(res, 200, result);
+  } catch (error) {
+    if (!signal.aborted) sendJson(res, error.status || (error.code === 'timeout' ? 504 : 502), {error:errorMessage(error)});
+  } finally {
+    res.off('close', disconnect);
+    await session?.dispose().catch(() => {});
+    if (directory) await fsp.rm(directory, {recursive:true, force:true}).catch(() => {});
   }
 }
 

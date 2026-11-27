@@ -124,22 +124,27 @@
     }
     App.core.$('#tip').textContent = TIPS()[viewMode];
     switching = false; document.body.classList.remove('busy');
+    App.ceilingEditor?.syncView();
     App.assistant.renderViewSync();
   }
   // 2D 房间面板 / 房间列表的「进入房间」：必要时先切 3D，再飞到室内机位
-  async function studioEnterRoom(id){
+  async function studioEnterRoom(id, options){
     if (!App.plan.roomDef(id)) return;
     if (!is3D()){
       await setView('3d');
       if (!is3D()) return;                       // WebGL 不可用，setView 已提示
     }
-    App.view3d?.enterRoom?.(id);
+    App.view3d?.enterRoom?.(id, options);
   }
   document.querySelectorAll('.menu-pop .btn').forEach(b => b.addEventListener('click', () => b.closest('details').open = false));
-  document.querySelectorAll('#viewSeg .btn').forEach(b => b.onclick = () => setView(b.dataset.view));
+  document.querySelectorAll('#viewSeg .btn').forEach(b => b.onclick = () => {
+    const room = App.ceilingEditor?.active() && App.ceilingEditor.context()?.roomId;
+    if (b.dataset.view === '3d' && room) return studioEnterRoom(room, {ceiling:true});
+    return setView(b.dataset.view);
+  });
 
   document.querySelectorAll('#tools .btn').forEach(b => b.onclick = () => App.interact.setTool(b.dataset.tool));
-  document.querySelectorAll('#layers .btn').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#layers [data-layer]').forEach(b => b.onclick = () => {
     const k = b.dataset.layer; App.store.ui.layers[k] = !App.store.ui.layers[k]; b.classList.toggle('on', App.store.ui.layers[k]);
     if (k === 'dims'){
       if (!App.store.ui.layers.dims && App.store.ui.tool === 'dimension') App.interact.setTool('select');
@@ -241,8 +246,8 @@
     if (!res.ok) return {ok:false, errors:res.errors};
     const old = App.store.PLAN;
     const roomEdges = rooms => rooms.map(({id, poly, arcs}) => [id, poly, arcs]);
-    const sameAnchors = JSON.stringify(res.plan.walls) === JSON.stringify(old.walls) &&
-      JSON.stringify(roomEdges(res.plan.rooms)) === JSON.stringify(roomEdges(old.rooms));
+    const sameRooms = JSON.stringify(roomEdges(res.plan.rooms)) === JSON.stringify(roomEdges(old.rooms));
+    const sameAnchors = JSON.stringify(res.plan.walls) === JSON.stringify(old.walls) && sameRooms;
     if (opts.freshState || !sameAnchors){
       App.store.state.dimensionMarks = [];
       App.dimensions.clearDraft();
@@ -267,6 +272,7 @@
       ];
     }
     App.store.installPlan(res.plan);
+    if (opts.freshState || opts.resetCeiling) delete App.store.state.ceiling;
     if (opts.freshState){ App.store.state.demolished = []; App.store.state.measures = []; App.store.state.rooms = {}; }
     App.store.state = App.store.fixState(App.store.state);
     App.store.ui.sel = null; App.store.ui.mA = App.store.ui.mCur = null;
@@ -290,7 +296,7 @@
   async function loadSamplePlan(){
     const plan = await loadPlanFile('data/125c-plan.json');
     if (!plan) return App.core.toast(App.core.tr('示例户型加载失败（file:// 打开时不可用）', 'Could not load the example (unavailable under file://)'));
-    applyPlan(plan);
+    applyPlan(plan, {resetCeiling:true});
     App.core.toast(App.core.tr('已加载示例户型 125-C', 'Loaded the 125-C example plan'));
   }
 
@@ -351,7 +357,7 @@
 
   const sceneFields = {
     plan: new Set(['name', 'bounds', 'walls', 'wins', 'doors', 'slides', 'rooms', 'materials']),
-    state: new Set(['furniture', 'rooms', 'demolished', 'measures']),
+    state: new Set(['furniture', 'rooms', 'demolished', 'measures', 'ceiling']),
   };
   const unsafeSceneKeys = new Set(['__proto__', 'prototype', 'constructor']);
   const sceneActions = new Set(['add', 'replace', 'remove']);
@@ -419,9 +425,31 @@
     return byValue;
   }
 
+  const ceilingChange = change => change?.path?.[0] === 'state' && change.path[1] === 'ceiling';
+
+  function validateCeiling(draft, rooms){
+    if (!Object.hasOwn(draft, 'ceiling')) return App.ceilingModel.normalize(undefined, rooms);
+    return App.ceilingModel.validate(draft.ceiling, rooms);
+  }
+
+  function prepareCeilingEdit(changes){
+    if (!Array.isArray(changes) || !changes.length || changes.length > 200 || !changes.every(ceilingChange)){
+      throw new Error(App.core.tr('天花编辑需要 1 至 200 项顶面改动', 'A ceiling edit needs 1 to 200 ceiling changes'));
+    }
+    const draft = {state:{ceiling:App.core.deepCopy(App.store.state.ceiling)}};
+    changes.forEach(change => patchSceneValue(draft, change));
+    return validateCeiling(draft.state, App.store.PLAN.rooms);
+  }
+
   function applySceneEdit(changes){
     if (!Array.isArray(changes) || !changes.length || changes.length > 200){
       throw new Error(App.core.tr('场景编辑需要 1 至 200 项改动', 'A scene edit needs 1 to 200 changes'));
+    }
+    if (changes.every(ceilingChange)){
+      const ceiling = prepareCeilingEdit(changes);
+      if (JSON.stringify(ceiling) === JSON.stringify(App.store.state.ceiling)) return null;
+      App.store.state.ceiling = ceiling;
+      return true;
     }
     const draft = JSON.parse(App.store.snap());
     // 保留旧索引对应的墙对象，使插入和删除后的拆除标记与选中对象仍指向同一面墙。
@@ -459,6 +487,12 @@
     };
     const explicitDemolished = changes.some(({path}) => path[0] === 'state' && path[1] === 'demolished');
     const stateDraft = draft.state;
+    if (changes.some(ceilingChange)) stateDraft.ceiling = validateCeiling(stateDraft, plan.rooms);
+    else if (stateDraft.ceiling && changes.some(({path}) => path[0] === 'plan' && path[1] === 'rooms')){
+      const nextRoomIds = new Set(plan.rooms.map(room => room.id));
+      const ceilingRooms = Object.fromEntries(Object.entries(stateDraft.ceiling.rooms).filter(([id]) => nextRoomIds.has(id)));
+      stateDraft.ceiling = App.ceilingModel.validate({...stateDraft.ceiling, rooms:ceilingRooms}, plan.rooms);
+    }
     const furniture = Object.hasOwn(stateDraft, 'furniture') ? stateDraft.furniture : [];
     const measures = Object.hasOwn(stateDraft, 'measures') ? stateDraft.measures : [];
     const rooms = Object.hasOwn(stateDraft, 'rooms') ? stateDraft.rooms : {};
@@ -608,6 +642,7 @@
     getState: () => App.core.deepCopy(App.store.state),
     applyPlan,
     applyOps,
+    prepareCeilingEdit,
     getSelection: () => App.store.ui.sel ? {kind:App.store.ui.sel.kind, id:App.store.ui.sel.id} : {kind:null, id:null},
     select: sel => App.interact.select(sel),
     flyToRoom(id){ if (is3D() && App.view3d?.flyToRoom){

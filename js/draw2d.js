@@ -175,7 +175,7 @@
   }
 
   function renderAll(){
-    renderGrid(); renderRooms(); renderFurn(); renderWalls(); renderLabels(); renderMeasure(); renderSel(); renderDims(); App.panel.renderPanel(); updateHeader();
+    renderGrid(); renderRooms(); renderFurn(); renderWalls(); renderLabels(); renderMeasure(); renderSel(); renderDims(); App.ceilingEditor?.render(); App.panel.renderPanel(); updateHeader();
     App.view3d?.sync();
   }
 

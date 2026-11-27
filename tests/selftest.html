@@ -366,6 +366,43 @@ async function main(){
     return '保留墙高，联动修改房间与构件，无效补丁不落盘，统一撤销';
   });
 
+  await check('ceiling.editPreviewPersistenceAndUndo', () => {
+    const S = studio(), app = win().App;
+    const before = S.projectJSON();
+    const plan = dimensionFixture(before.plan);
+    const path = ['state', 'ceiling', 'rooms', 'west'];
+    const design = {
+      zones:[{id:'test-drop', name:'样板顶', poly:[[600,600],[2400,600],[2400,2600],[600,2600]], drop:180, color:'#faf6ed'}],
+      edges:[],
+      fixtures:[{id:'test-light', type:'downlight', x:1500, y:1300, zoneId:'test-drop'}],
+    };
+    try {
+      assert(S.applyPlan(plan, {freshState:true}).ok, '样板户型未安装');
+      const changes = [{action:'add', path, value:design}];
+      const preview = S.prepareCeilingEdit(changes);
+      assert(!S.getState().ceiling.rooms.west && preview.rooms.west.zones[0].drop === 180, '预览写入了正式方案');
+      const result = S.applyOps([{op:'editScene', changes}]);
+      assert(result.applied === 1, result.errors.join('、'));
+      assert(app.ceilingModel.fixtureHeight(S.getState().ceiling, plan.rooms[0], design.fixtures[0]) === 2620,
+        '灯具没有跟随吊顶完成面');
+      const invalid = S.applyOps([{op:'editScene', changes:[
+        {action:'replace', path:[...path, 'zones', 0, 'drop'], value:150},
+        {action:'replace', path:[...path, 'fixtures', 0, 'x'], value:9000},
+      ]}]);
+      assert(!invalid.applied && S.getState().ceiling.rooms.west.zones[0].drop === 180, '无效补丁部分生效');
+      const exported = JSON.parse(JSON.stringify(S.projectJSON()));
+      assert(app.store.fixState(exported.state).ceiling.rooms.west.fixtures[0].id === 'test-light', '项目 JSON 丢失灯具');
+      S.undo();
+      assert(!S.getState().ceiling.rooms.west, '撤销没有回到原顶');
+      S.redo();
+      assert(S.getState().ceiling.rooms.west.fixtures.length === 1, '重做没有恢复灯位');
+    } finally {
+      S.applyPlan(before.plan, {history:false});
+      app.store.state = app.store.fixState(before.state);
+      app.store.afterHistory();
+    }
+  });
+
   await check('dimensions.geometryAndSelection', () => {
     const S = studio(), doc = win().document, original = S.projectJSON();
     const fixture = dimensionFixture(original.plan);

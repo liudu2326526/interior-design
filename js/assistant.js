@@ -287,6 +287,7 @@
   }
 
   function resetChatHistory(){
+    cancelCeilingReply?.();
     for (const {attachmentUrls} of chatState.msgs) for (const url of attachmentUrls || []) URL.revokeObjectURL(url);
     chatState.msgs.length = 0;
     chatEls.msgs.replaceChildren();
@@ -366,7 +367,8 @@
     const sel = App.io.studio.getSelection();
     const plan = App.io.studio.getPlan(), state = editableChatState();
     const selF = sel.kind === 'furn' ? App.store.getF(sel.id) : null;
-    let roomId = sel.kind === 'room' ? sel.id : (selF ? roomAtPoint(selF.cx, selF.cy) : null);
+    const ceiling = App.ceilingEditor?.context();
+    let roomId = ceiling?.roomId || (sel.kind === 'room' ? sel.id : (selF ? roomAtPoint(selF.cx, selF.cy) : null));
     // 没有选中时，3D 下取视线中心所在的房间（groundAt 返回 2D 世界坐标）
     if (!roomId && App.io.studio.is3D() && App.view3d?.groundAt){
       try {
@@ -387,7 +389,8 @@
         } catch(e){}
       }
     }
-    const context = {mode:App.io.studio.is3D() ? '3d' : '2d', selection:sel.kind ? sel : null, plan, state, view};
+    const mode = App.io.studio.is3D() ? '3d' : App.ceilingEditor?.active() ? 'ceiling' : '2d';
+    const context = {mode, selection:sel.kind ? sel : null, ceilingSelection:ceiling || null, plan, state, view};
     return [context, images];
   }
 
@@ -426,6 +429,10 @@
     if (!focus || typeof focus !== 'object') return;
     const prev = App.io.studio.getSelection();
     let roomId = typeof focus.room === 'string' && App.plan.roomDef(focus.room) ? focus.room : null;
+    if (focus.ceiling && roomId && App.ceilingEditor && !App.io.studio.is3D()){
+      App.ceilingEditor.focus(roomId, focus.ceiling.kind, focus.ceiling.id);
+      return;
+    }
     const fid = Array.isArray(focus.furn) ? focus.furn.find(id => App.store.getF(id)) : (typeof focus.furn === 'string' ? focus.furn : null);
     let sel = null;
     if (fid && App.store.getF(fid)){ const f = App.store.getF(fid); sel = {kind:'furn', id:fid}; if (!roomId) roomId = roomAtPoint(f.cx, f.cy); }
@@ -440,15 +447,72 @@
     }, 1500);
   }
 
+  let cancelCeilingReply = null;
+
+  const chatSceneChanged = context =>
+    JSON.stringify(context.plan) !== JSON.stringify(App.io.studio.getPlan()) ||
+    JSON.stringify(context.state) !== JSON.stringify(editableChatState());
+
+  function previewCeilingReply(changes, bubble, context, focus){
+    const {tr} = App.core;
+    let preview;
+    try { preview = App.io.studio.prepareCeilingEdit(changes); }
+    catch(e){ chatMeta(bubble, e.message); return; }
+    if (JSON.stringify(preview) === JSON.stringify(context.state.ceiling)){
+      chatMeta(bubble, tr('天花方案没有变化', 'The ceiling design is unchanged'));
+      return;
+    }
+    cancelCeilingReply?.();
+    const projectId = App.projects.activeProjectId;
+    const roomId = focus?.room || context.ceilingSelection?.roomId || context.view.room || changes[0]?.path?.[3];
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const apply = document.createElement('button');
+    apply.type = 'button'; apply.className = 'btn primary';
+    apply.textContent = tr('应用天花修改', 'Apply ceiling changes');
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'btn';
+    cancel.textContent = tr('取消', 'Cancel');
+    actions.append(apply, cancel);
+    bubble.el.append(actions);
+    const discard = (message, redraw = true) => {
+      if (App.store.ui.ceilingPreview === preview) App.store.ui.ceilingPreview = null;
+      cancelCeilingReply = null;
+      actions.remove();
+      if (message) chatMeta(bubble, message);
+      if (redraw) App.draw2d.renderAll();
+    };
+    cancelCeilingReply = () => discard(tr('预览已关闭', 'Preview closed'));
+    cancel.onclick = cancelCeilingReply;
+    apply.onclick = () => {
+      if (App.projects.activeProjectId !== projectId || App.store.ui.ceilingPreview !== preview || chatSceneChanged(context)){
+        discard(tr('当前方案已改变，请重新生成天花修改。', 'The design changed. Generate the ceiling edit again.'));
+        return;
+      }
+      discard('', false);
+      const result = App.io.studio.applyOps([{op:'editScene', changes}]);
+      chatMeta(bubble, result.applied ? tr('已应用天花修改，可撤销', 'Ceiling changes applied. Undo is available.') : result.errors[0]);
+      if (result.applied && focus) chatFocus(focus);
+      else if (!result.applied) App.draw2d.renderAll();
+    };
+    App.store.ui.ceilingPreview = preview;
+    if (!App.io.studio.is3D() && App.plan.roomDef(roomId)) App.ceilingEditor?.open(roomId);
+    App.draw2d.renderAll();
+    chatMeta(bubble, tr('正在预览天花修改', 'Previewing ceiling changes'));
+  }
+
   // 局部方案编辑按发送时的索引寻址。期间继续编辑则用最新方案重新生成补丁。
   function chatResult(r, bubble, context){
     const ops = Array.isArray(r.ops) ? r.ops : [];
     if (ops.length){
-      if (ops.some(op => op?.op === 'editScene') &&
-          (JSON.stringify(context.plan) !== JSON.stringify(App.io.studio.getPlan()) ||
-           JSON.stringify(context.state) !== JSON.stringify(editableChatState()))){
+      if (ops.some(op => op?.op === 'editScene') && chatSceneChanged(context)){
         chatMeta(bubble, App.core.tr('等待回复时方案已改变，请基于当前方案重发这条指令。',
           'The design changed while the assistant was working. Send the request again for the current design.'));
+        return;
+      }
+      if (ops.every(op => op?.op === 'editScene' && op.changes?.length &&
+          op.changes.every(change => change.path?.[0] === 'state' && change.path[1] === 'ceiling'))){
+        previewCeilingReply(ops.flatMap(op => op.changes), bubble, context, r.focus);
         return;
       }
       const hasPlan = ops.some(o => o && o.op === 'setPlan'), hasDel = ops.some(o => o && o.op === 'deleteFurniture');
@@ -484,6 +548,8 @@
     if (chatState.sending || chatState.online !== true) return;
     const message = chatEls.in.value.trim();
     if (!message && !chatState.attachments.length) return;
+    cancelCeilingReply?.();
+    const projectId = App.projects.activeProjectId;
     const files = chatState.attachments.splice(0);
     resetChatDraft();
     const sent = chatAdd('me', message);
@@ -527,6 +593,7 @@
             acc += ev.text; const m = ensure(); m.text = acc; m.el.innerHTML = mdLite(acc); chatScroll();
           }
           else if (type === 'result' && ev.result && typeof ev.result === 'object'){
+            if (App.projects.activeProjectId !== projectId) return;
             got = true;
             const r = ev.result;
             const reply = typeof r.reply === 'string' && r.reply.trim() ? r.reply : acc;
@@ -1060,6 +1127,7 @@
     return {
       plan,
       furniture:state.furniture,
+      ceiling:App.store.ui.ceilingPreview || state.ceiling,
       materials:plan.materials,
       roomMaterials:Object.fromEntries(Object.entries(state.rooms).map(([id, v]) => [id, v.mat])),
       camera:{
@@ -1237,7 +1305,7 @@
   }
 
   Object.assign(App.assistant, {
-    aiResponseMessage, publicAiOffline, pointInPoly, chatState, chatEls, chatRelang, chatPane, resetChatHistory, startFurnitureCreation,
+    aiResponseMessage, aiTextChunks, takeSSE, publicAiOffline, pointInPoly, chatState, chatEls, chatRelang, chatPane, resetChatHistory, startFurnitureCreation,
     chatInit, renderState, renderEls, roomLatestRender, rRecTitle, renderAvailability, renderStatus,
     renderErr, renderShowRec, renderHistory, renderRelang, renderViewSync, openLightbox, renderInit,
     renderGenerate, captureWalkReference, resetRenderReference,
