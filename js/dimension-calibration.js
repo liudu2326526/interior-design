@@ -102,9 +102,9 @@
           ...(zone.holes ? {holes:zone.holes.map(hole => hole.map(point))} : {}),
           ...(zone.preset ? {preset:{...zone.preset, width:length(zone.preset.width)}} : {}),
         })),
-        fixtures:room.fixtures.map(measurePoint),
       }]));
-      ceiling = App.ceilingModel.validate({...previousCeiling, rooms:ceilingRooms}, nextPlan.rooms);
+      ceiling = {...previousCeiling, rooms:ceilingRooms};
+      App.ceilingModel.validate(App.ceilingFurniture.project(ceiling,furniture,nextPlan.rooms), nextPlan.rooms);
     } catch {
       return invalidGeometry();
     }
@@ -259,7 +259,7 @@
       return cause instanceof WallMoveError ? {ok:false, error:cause.message} : invalidGeometry();
     }
     try {
-      App.ceilingModel.validate(App.store.state.ceiling, nextPlan.rooms);
+      App.ceilingModel.validate(App.ceilingFurniture.current(), nextPlan.rooms);
     } catch (cause) {
       return {ok:false, error:App.core.tr('移动后的房间与天花设计冲突', 'The moved room conflicts with its ceiling design') + ' · ' + cause.message};
     }

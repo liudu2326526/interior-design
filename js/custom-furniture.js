@@ -11,6 +11,10 @@
     const normalized = App.geom.normalizeFurn({...raw, id:'template', name:raw.name.trim().slice(0, 120), cx:0, cy:0});
     if (!normalized) return null;
     const {cx, cy, id, ...asset} = normalized;
+    if (asset.ceiling){
+      const {roomId, zoneId, ...mount} = asset.ceiling;
+      asset.ceiling = mount;
+    }
     return asset;
   }
 

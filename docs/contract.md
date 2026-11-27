@@ -64,7 +64,7 @@ type Plan = {
 
 ```ts
 type State = {
-  furniture: (ImportedFurniture & { id: string })[],
+  furniture: (ImportedFurniture & { id: string, ceiling?: CeilingMount })[],
   rooms: Record<roomId, { name, mat }>,
   demolished: string[],        // 'w'+index
   measures: any[],
@@ -77,22 +77,24 @@ type State = {
 
 type DimensionAnchor = {kind: 'wall' | 'room', id: string, edge: number, t: number}
 type WalkPose = {x: number, y: number, height: number, yaw: number, pitch: number, roomId: string | null}
+type CeilingMount = {roomId?:string, zoneId?:string, hang?:number, kelvin?:number, intensity?:number, tilt?:number}
 type CeilingRoom = {
   baseHeight?: number,
+  color?: string,
+  finish?: string,
   zones: {id:string, name:string, poly:Point[], arcs?:{edge:number,sweep:number}[],
           holes?:Point[][], drop:number, color:string, finish?:string,
           preset?:{type:'perimeter'|'island', width:number}}[],
   edges: {id:string, zoneId?:string, hole?:number, edge:number, type:'cove'|'trim',
           width:number, depth:number, color:string}[],
-  fixtures: {id:string, type:'downlight'|'spot'|'pendant'|'linear'|'track'|'vent'|'access'|'curtain',
-             x:number, y:number, zoneId?:string, rotation?:number, length?:number, width?:number,
-             hang?:number, kelvin?:number, intensity?:number, tilt?:number, color?:string}[]
 }
 ```
 
 `dimensionMarks` 使用墙面或房间边的几何引用，`t` 为边上的位置比例。显示值由当前几何沿 `axis` 计算。可选的 `original` 是人工记录的原图读数，单位 mm。旧项目缺少此字段时按空列表读取。
 
-`ceiling` 保存在项目装修状态中，沿用户型平面坐标。高度、下吊量、宽深及吊线长度均用 mm。每个房间可覆盖默认原顶净高（2800 mm）。区域完成面标高为原顶净高减去 `drop`。收边通过 `zoneId`、可选的 `hole` 和 `edge` 定位。灯具和设备可以指向指定顶面，也可以由位置自动决定安装高度。旧项目读入时采用默认原顶与空设计记录。
+`ceiling` 存储顶面分区、收边和房间原顶。每个房间可覆盖默认净高（2800 mm），并设置原顶颜色与饰面名称。区域完成面为原顶净高减去 `drop`，收边通过 `zoneId`、可选的 `hole` 和 `edge` 定位。高度与家具尺寸沿用毫米。
+
+顶装灯具与设备存入 `furniture`，通过 `ceiling.zoneId` 指定顶面，省略时由坐标确定完成面。载入旧项目时，将天花记录的 `fixtures` 升级为家具并保留安装参数。图纸识别、预览和天花对话仍使用按房间汇总的 `fixtures` 投影，应用时更新对应家具。
 
 `walk` 随项目保存。`recent` 在退出漫游时记录各漫游范围最近的相机位置和方向，`views` 用于兼容已有项目数据。`x`、`y` 沿用户型毫米坐标，`height` 用米，`yaw`、`pitch` 用弧度。编辑撤销保留漫游记录。漫游截图用作当前项目会话的效果图参考。
 

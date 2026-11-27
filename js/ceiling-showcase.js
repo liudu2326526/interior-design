@@ -93,6 +93,8 @@
       make('vent',0,.31,.27,{length:dim(1100,.38),width:dim(150,.13)}),
       make('access',1,.7,.56,{length:dim(440,.19),width:dim(440,.19)}),
       make('curtain',2,.54,.81,{length:dim(1800,.56),width:dim(180,.15)}),
+      make('ceilingac',3,.25,.56,{length:dim(840,.18),width:dim(840,.18)}),
+      make('ductac',4,.75,.22,{length:dim(1200,.22),width:dim(500,.12)}),
     ];
     if (type==='equipment') return equipment;
     if (type==='array') return [.18,.39,.61,.82].map((u,i) =>
@@ -114,7 +116,7 @@
   function showSample() {
     if (!session) return false;
     const {room, frame} = session;
-    const ceiling = App.store.state.ceiling, height = model.baseHeight(ceiling,room.id);
+    const ceiling = App.ceilingFurniture.current(), height = model.baseHeight(ceiling,room.id);
     try {
       const zones = sampleZones(room,frame,shapeInput.value,height);
       const fixtures = sampleFixtures(frame,fixtureInput.value,height);

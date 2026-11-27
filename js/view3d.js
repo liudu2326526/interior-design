@@ -24,7 +24,10 @@
   const stage = App.core.$('#stage'), host = App.core.$('#view3d');
   const FULL_WALL_MODE = 2.8, FOV = 45;   // 全高按钮的值；实际顶面标高来自项目
   const ceilingModel = App.ceilingModel;
-  const ceiling = () => App.store.ui.ceilingPreview || App.store.state.ceiling;
+  let ceilingSnapshot;
+  const mountedFixtures=new Map();
+  const isCeilingFurniture=f=>Boolean(f && App.ceilingFurniture?.is(f));
+  const ceiling = () => ceilingSnapshot ?? App.store.ui.ceilingPreview ?? App.store.state.ceiling;
   const ceilingY = id => ceilingModel.baseHeight(ceiling(),id) / 1000;
   // 世界原点跟着方案范围中心走，换户型时 2D / 3D 坐标系仍然对齐
   const PC = () => App.store.PLAN ? {x: App.store.PLAN.bounds.x + App.store.PLAN.bounds.w/2, y: App.store.PLAN.bounds.y + App.store.PLAN.bounds.h/2} : {x:6000, y:5300};
@@ -113,23 +116,42 @@
     let fdrag = null;
     host.addEventListener('pointerdown', e => {
       if (e.target !== cv || !e.isPrimary || anim || opt.mode !== 'orbit' || App.store.ui.sel?.kind !== 'furn') return;
-      const h = pick(e), f = h?.fid === App.store.ui.sel.id && App.store.getF(h.fid), g = f && groundAt(e.clientX, e.clientY);
+      const h = pick(e), f = h?.fid === App.store.ui.sel.id && App.store.getF(h.fid);
+      const mounted=isCeilingFurniture(f);
+      const g=f && (mounted ? ceilingAt(e.clientX,e.clientY) : groundAt(e.clientX,e.clientY));
       if (!g) return;
-      fdrag = {id:f.id, pid:e.pointerId, sx:e.clientX, sy:e.clientY, ox:g.x - f.cx, oy:g.y - f.cy, before:App.store.snap(), moved:false};
+      fdrag = {id:f.id, mounted, orbitEnabled:orbit.enabled, pid:e.pointerId, sx:e.clientX, sy:e.clientY, ox:g.x - f.cx, oy:g.y - f.cy, before:App.store.snap(), moved:false};
       orbit.enabled = false; fly = null; cv.setPointerCapture(e.pointerId);
     }, true);
     cv.addEventListener('pointermove', e => {
       if (!fdrag || e.pointerId !== fdrag.pid) return;
       if (!fdrag.moved && Math.hypot(e.clientX - fdrag.sx, e.clientY - fdrag.sy) < App.core.TAP) return;
-      const f = App.store.getF(fdrag.id), g = groundAt(e.clientX, e.clientY); if (!f || !g) return;
+      const f = App.store.getF(fdrag.id);
+      const g=fdrag.mounted ? ceilingAt(e.clientX,e.clientY) : groundAt(e.clientX,e.clientY);
+      if (!f || !g) return;
+      if (fdrag.mounted){
+        const [cx,cy]=App.interact.snapMove(f,g.x-fdrag.ox,g.y-fdrag.oy);
+        const proposed=App.ceilingFurniture.place({...f,cx,cy,ceiling:{...f.ceiling,roomId:g.roomId}});
+        if (!proposed) return;
+        const def=App.plan.roomDef(proposed.ceiling.roomId), mounting=App.ceilingFurniture.toFixture(proposed);
+        const height=ceilingModel.fixtureHeight(ceiling(),def,mounting);
+        mountedFixtures.get(f.id)?.position.set(wx(cx),M(height),wz(cy));
+        fdrag.proposed=proposed;fdrag.moved=true;cv.style.cursor='grabbing';
+        return;
+      }
       fdrag.moved = true; cv.style.cursor = 'grabbing';
       [f.cx, f.cy] = App.interact.snapMove(f, g.x - fdrag.ox, g.y - fdrag.oy);
       furnG.children.find(o => o.userData.fid === f.id)?.position.set(wx(f.cx), 0, wz(f.cy));   // 拖动中只挪模型，松手再整体同步
     });
     const endF = e => {
       if (!fdrag || e.pointerId !== fdrag.pid) return;
-      const d = fdrag; fdrag = null; orbit.enabled = true; cv.style.cursor = '';
-      if (d.moved){ App.store.commit(d.before); App.draw2d.renderAll(); }
+      const d = fdrag; fdrag = null; orbit.enabled = d.orbitEnabled; cv.style.cursor = '';
+      if (!d.moved) return;
+      if (d.mounted){
+        if (e.type==='pointercancel'){sync(true);return;}
+        try {App.ceilingFurniture.update(d.proposed);}
+        catch(error){sync(true);App.core.toast(error.message);}
+      }else{App.store.commit(d.before); App.draw2d.renderAll();}
     };
     cv.addEventListener('pointerup', endF); cv.addEventListener('pointercancel', endF);
 
@@ -704,8 +726,12 @@
     const type=f.type, root=new THREE.Group(), pitch=(f.tilt??0)*Math.PI/180;
     root.position.set(wx(f.x),mount,wz(f.y)); root.rotation.y=-(f.rotation??0)*Math.PI/180;
     root.userData.fixtureType=type; group.add(root);
-    const width=M(f.width ?? ({vent:160,curtain:180,access:400,pendant:240,track:37,linear:48}[type] || 90));
-    const length=M(f.length ?? ({linear:1000,track:1200,vent:600,curtain:1800,access:400}[type] || 240));
+    if (!implicit && !App.store.ui.ceilingPreview && f.id && isCeilingFurniture(App.store.getF(f.id))){
+      root.userData.fid=f.id;
+      mountedFixtures.set(f.id,root);
+    }
+    const width=M(f.width ?? ({vent:160,curtain:180,access:400,pendant:240,track:37,linear:48,ceilingac:840,ductac:310}[type] || 90));
+    const length=M(f.length ?? ({linear:1000,track:1200,vent:600,curtain:1800,access:400,ceilingac:840,ductac:1100}[type] || 240));
     const power=(f.intensity??100)/100, lightColor='#'+warmLight(f.kelvin).getHexString();
     const painted=f.color || (['track','spot'].includes(type)?'#303437':'#f8f9f7');
     const body=mat(painted,{roughness:.56,metalness:.13});
@@ -768,6 +794,45 @@
       const base=-hang-shadeH;
       cylinder(radius,.009,0,base,alloy);cylinder(radius*.92,.008,0,base-.005,luminous);
       offset=hang+shadeH+.018;
+    } else if(type==='ceilingac' || type==='ductac'){
+      // The service enclosure sits above the finished face. Only the fascia, directional
+      // vanes and return grille project into the room.
+      const cassette=type==='ceilingac', size=Math.min(width,length);
+      const depth=Math.min(cassette ? .27 : .20,size*.47), lip=Math.min(.031,size*.057);
+      const cabinet=solid(length*.80,depth,width*.80,0,depth/2,0,alloy);
+      cabinet.userData.concealed=true;
+      const port=solid(length*.24,depth*.61,width*.14,-length*.19,depth*.46,width*.43,dark);
+      port.userData.concealed=true;
+      solid(length,lip,width,0,-lip/2,0);
+      const y=-lip;
+      if(cassette){
+        const w=width*.62, l=length*.62;
+        solid(l,.004,w,0,y-.001,0,dark);
+        const n=Math.max(4,Math.min(24,Math.round(w/.029)));
+        for(let i=0;i<n;i++) solid(l*.98,.006,w*.55/n,0,y-.006,w*((i+.5)/n-.5),body);
+        for(const side of [-1,1]){
+          solid(length*.74,.004,width*.082,0,y-.001,side*width*.412,dark);
+          const blade=solid(length*.70,.005,width*.052,0,y-.007,side*width*.412,alloy);
+          blade.rotation.x=side*.28;
+          solid(length*.082,.004,width*.74,side*length*.412,y-.001,0,dark);
+          const other=solid(length*.052,.005,width*.70,side*length*.412,y-.007,0,alloy);
+          other.rotation.z=side*.28;
+        }
+        solid(length*.047,.004,width*.019,length*.419,y-.004,width*.443,mat('#6a847c'));
+      }else{
+        solid(length*.91,.005,width*.29,0,y-.001,-width*.21,dark);
+        for(const side of [-1,1]){
+          const blade=solid(length*.88,.004,width*.075,0,y-.008,-width*.21+side*width*.07,alloy);
+          blade.rotation.x=.32;
+        }
+        solid(length*.73,.005,width*.34,-length*.085,y-.001,width*.20,dark);
+        const n=Math.max(5,Math.min(32,Math.round(length/.042)));
+        for(let i=0;i<n;i++){
+          const x=length*(.73*((i+.5)/n-.5)-.085);
+          solid(length*.40/n,.006,width*.34,x,y-.006,width*.20,body);
+        }
+        solid(length*.12,.005,width*.34,length*.375,y-.002,width*.20,alloy);
+      }
     } else if(type==='vent'){
       const rim=Math.min(.012,width*.085,length*.055), inner=width-rim*2, run=length-rim*2;
       solid(length,.009,width,0,-.0045,0,dark);
@@ -810,7 +875,7 @@
   }
   function registerFixtureLights(room, root, fixture, mount, offset, length, implicit){
     const type=fixture.type, level=(fixture.intensity??100)/100;
-    if (!level || ['vent','access','curtain'].includes(type)) return;
+    if (!level || !['downlight','spot','pendant','linear','track'].includes(type)) return;
     const color='#'+warmLight(fixture.kelvin).getHexString();
     const pitch=(fixture.tilt??0)*Math.PI/180, rotation=root.rotation.y;
     const directed=!implicit && ['track','spot','downlight'].includes(type);
@@ -834,7 +899,7 @@
     }
     const power=implicit ? 10 : ({spot:20,track:14,downlight:16,pendant:9,linear:8})[type];
     for (const position of positions){
-      lightSites.push({roomId:room.id,position,direction,color,power:level*power/(type==='linear'?positions.length:1),
+      lightSites.push({roomId:room.id,position,direction,color,fixture:!implicit,power:level*power/(type==='linear'?positions.length:1),
         range:directed?9:7,angle:type==='downlight'?.67:.39});
     }
   }
@@ -884,7 +949,9 @@
     group.userData.room=def.id; group.userData.height=h; group.userData.footprint=def.poly; ceilingG.add(group);
     if (!openAir){
       const geom=new THREE.ShapeGeometry(shapeOf(def.poly,true)); geom.rotateX(Math.PI/2);
-      const original=new THREE.Mesh(geom,mat('#ffffff',{roughness:.97}));
+      const original=new THREE.Mesh(geom,mat(design.color || ceilingModel.defaultColor,{roughness:.97}));
+      original.userData.baseCeiling=true;
+      if(design.finish) original.userData.finish=design.finish;
       original.position.y=h; group.add(original);
     }
     ceilingModel.shapes(data,def).forEach((shape,i)=>{
@@ -892,7 +959,11 @@
       mesh.userData.zone=shape.id; group.add(mesh);
     });
     for(const edge of design.edges) ceilingEdge(group,def,design.zones,edge,h);
-    for(const f of design.fixtures) fixtureMesh(def,group,f,M(ceilingModel.fixtureHeight(data,def,f)));
+    if (design.fixtures.length){
+      const fixtures=new THREE.Group();
+      fixtures.visible=opt.furn;group.userData.fixtures=fixtures;group.add(fixtures);
+      for(const f of design.fixtures) fixtureMesh(def,fixtures,f,M(ceilingModel.fixtureHeight(data,def,f)));
+    }
     // Previously saved designs did not store lamps. Retain their implied room light until edited.
     if (!openAir && !bay && def.at && !Object.hasOwn(data?.rooms||{},def.id)){
       fixtureMesh(def,group,{type:'downlight',width:440,x:def.at[0],y:def.at[1]},h,true);
@@ -931,8 +1002,11 @@
     }
   }
 
+  function activeLightSites(showFurniture){
+    return showFurniture ? lightSites.concat(furnitureLightSites) : lightSites.filter(site=>!site.fixture);
+  }
   function syncLightPool(){
-    const all=lightSites.concat(opt.furn ? furnitureLightSites : []);
+    const all=activeLightSites(opt.furn);
     const spots=all.filter(s=>s.direction).length, points=all.length-spots;
     const budget=App.core.COARSE ? 6 : 8;
     const pointCount=Math.min(points,Math.max(Math.floor(budget/2),budget-spots));
@@ -955,7 +1029,7 @@
     furnitureWasLit=includeFurniture;
     if (lampG.visible) lastLightPosition.copy(focus);
     else lastLightPosition.set(Infinity,Infinity,Infinity);
-    const visible=lampG.visible ? lightSites.concat(includeFurniture ? furnitureLightSites : []) : [];
+    const visible=lampG.visible ? activeLightSites(includeFurniture) : [];
     let nearRoom=roomView.id;
     if (!nearRoom && opt.mode==='walk'){
       const origin=PC(), x=origin.x+focus.x*1000, y=origin.y+focus.z*1000;
@@ -993,6 +1067,7 @@
     doorPlanRev = App.store.planRev;
     doorG.clear(); lastDoorVisibility = -Infinity;
     clearGroup(archFloor); clearGroup(archUp); clearGroup(ceilingG);
+    mountedFixtures.clear();selKey=null;
     lensMaterials.forEach(m=>m.dispose()); lensMaterials.clear(); lightSites.length = 0; doors.length = 0; colliders = [];
     const top = opt.cut === FULL_WALL_MODE ? ceilingY() : opt.cut;
     const walls = ceilingWallHeights(App.store.WALLS.filter((_, i) => !App.store.state.demolished.includes('w'+i)));
@@ -1094,6 +1169,7 @@
     furnitureLightSites.length=0;
     const origin=PC();
     for (const f of App.store.state.furniture){
+      if(isCeilingFurniture(f))continue;
       const group=buildFurniture(f);
       furnG.add(group);
       if (!group.userData.emitters) continue;
@@ -1142,8 +1218,12 @@
   // 只重建变化的部分（换方案也算变化：planRev）
   function sync(force){
     if (!inited || (!active && !force)) return;
+    ceilingSnapshot=App.ceilingFurniture?.view() ?? App.store.ui.ceilingPreview ?? App.store.state.ceiling;
     // 家具的 3D 坐标由 PLAN.bounds 中心换算（wx/wz），换方案时必须一起重建
-    const a = JSON.stringify([App.store.planRev, App.store.PLAN.name, App.store.state.rooms, App.store.state.demolished, ceiling(), opt.cut]), f = JSON.stringify([App.store.planRev, App.store.state.furniture]), l = JSON.stringify([App.store.planRev, App.store.state.rooms, ceiling(), opt.cut]);
+    const a = JSON.stringify([App.store.planRev, App.store.PLAN.name, App.store.state.rooms, App.store.state.demolished,
+      ceilingSnapshot, Boolean(App.store.ui.ceilingPreview), opt.cut]);
+    const f = JSON.stringify([App.store.planRev,App.store.state.furniture.filter(item=>!isCeilingFurniture(item))]);
+    const l = JSON.stringify([App.store.planRev,App.store.state.rooms,opt.cut,App.store.ROOMS.map(r=>ceilingY(r.id))]);
     const sourcesChanged=force || a!==sigArch || f!==sigFurn;
     if (force || a !== sigArch){ sigArch = a; buildArch(); }
     if (force || f !== sigFurn){ sigFurn = f; buildFurn(); }
@@ -1503,10 +1583,11 @@
     if (!e) ptr.set(0, 0);
     else { const r = renderer.domElement.getBoundingClientRect(); ptr.set((e.clientX - r.left)/r.width*2 - 1, -(e.clientY - r.top)/r.height*2 + 1); }
     ray.setFromCamera(ptr, camera);
-    const hits = ray.intersectObjects([...(opt.furn ? [furnG] : []), archUp, archFloor], true);
+    const pickable=opt.furn ? [furnG,...Array.from(mountedFixtures.values()).filter(visibleInScene)] : [];
+    const hits = ray.intersectObjects([...pickable,archUp,archFloor],true);
     for (const h of hits){
       let o = h.object;
-      if (!o.visible || clipped(h.point)) continue;
+      if (!o.visible || o.userData.concealed || clipped(h.point)) continue;
       if (o.userData.door) return {door:o.userData.door, dist:h.distance};
       if (o.material === glassMat) continue;
       if (o.userData.room) return {room:o.userData.room};
@@ -1518,29 +1599,53 @@
   }
   // 屏幕点 → 地面（y = 0）上的户型坐标 mm；s = 该处每 mm 对应的屏幕像素，用于拖放时的幽灵图大小
   const ground0 = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  function visibleInScene(object){
+    for(let o=object;o;o=o.parent) if(!o.visible) return false;
+    return true;
+  }
+  function setScreenRay(x,y){
+    const r=renderer.domElement.getBoundingClientRect();
+    ptr.set((x-r.left)/r.width*2-1,-(y-r.top)/r.height*2+1);
+    ray.setFromCamera(ptr,camera);
+    return r;
+  }
+  function planHit(hit,r){
+    const px = v => new THREE.Vector2(v.x*r.width/2, v.y*r.height/2), a = px(hit.clone().project(camera));
+    const s = Math.max(a.distanceTo(px(hit.clone().add(new THREE.Vector3(1, 0, 0)).project(camera))),
+                       a.distanceTo(px(hit.clone().add(new THREE.Vector3(0, 0, 1)).project(camera)))) / 1000;
+    return {x:hit.x*1000+PC().x,y:hit.z*1000+PC().y,s};
+  }
+  // Use the actual picked underside, including holes and dropped levels, for placement.
+  function ceilingAt(x,y){
+    if(!active || anim || !ceilingG.visible)return null;
+    const r=setScreenRay(x,y);
+    const surfaces=ceilingG.children.filter(g=>g.visible).flatMap(g=>g.children.filter(o=>o.userData.baseCeiling || o.userData.zone));
+    const hit=ray.intersectObjects(surfaces,false).find(h=>!clipped(h.point));
+    if(!hit || hit.face.normal.y>-.9)return null;
+    const blocked=ray.intersectObjects(archUp.children,true).some(h=>h.distance<hit.distance-.005 && h.object.isMesh &&
+      h.object.material!==glassMat && visibleInScene(h.object) && !clipped(h.point));
+    if(blocked)return null;
+    const origin=planHit(hit.point,r);
+    return {...origin,roomId:hit.object.parent.userData.room,...(hit.object.userData.zone ? {zoneId:hit.object.userData.zone} : {})};
+  }
   function groundAt(x, y){
     if (!active || anim) return null;
-    const r = renderer.domElement.getBoundingClientRect(), hit = new THREE.Vector3();
-    ptr.set((x - r.left)/r.width*2 - 1, -(y - r.top)/r.height*2 + 1);
-    ray.setFromCamera(ptr, camera);
+    const r = setScreenRay(x,y), hit = new THREE.Vector3();
     if (!ray.ray.intersectPlane(ground0, hit) || hit.distanceTo(camera.position) > 60) return null;
     // 视线先碰到墙体（或飘窗台）时，落点取碰到的位置，而不是穿过墙落到看不见的墙后
     const wall = ray.intersectObjects([archUp, archFloor], true).find(h => h.object.material !== glassMat && h.object.visible);
     if (wall && wall.distance < hit.distanceTo(camera.position) - .01) hit.set(wall.point.x, 0, wall.point.z);
-    const px = v => new THREE.Vector2(v.x*r.width/2, v.y*r.height/2), a = px(hit.clone().project(camera));
-    const s = Math.max(a.distanceTo(px(hit.clone().add(new THREE.Vector3(1, 0, 0)).project(camera))),
-                       a.distanceTo(px(hit.clone().add(new THREE.Vector3(0, 0, 1)).project(camera)))) / 1000;
-    return {x:hit.x*1000 + PC().x, y:hit.z*1000 + PC().y, s};
+    return planHit(hit,r);
   }
   function updateSel(){
     const key = App.store.ui.sel?.kind === 'furn' ? App.store.ui.sel.id : '';
     if (key !== selKey){
       selKey = key;
       if (selHelper){ scene.remove(selHelper); selHelper.geometry.dispose(); selHelper = null; }
-      const g = key && furnG.children.find(g => g.userData.fid === key);
+      const g = key && (mountedFixtures.get(key) || furnG.children.find(g => g.userData.fid === key));
       if (g){ selHelper = new THREE.BoxHelper(g, 0xb5653a); scene.add(selHelper); }
     }
-    if (selHelper) selHelper.update();
+    if (selHelper){selHelper.visible=visibleInScene(selHelper.object);if(selHelper.visible)selHelper.update();}
   }
 
   /* ======================= 漫游 ======================= */
@@ -1866,7 +1971,12 @@
     document.querySelectorAll('[data-cut]').forEach(b => b.onclick = () => { if (opt.mode === 'walk') return; opt.cut = +b.dataset.cut; syncCutBtns(); sync(); });
     document.querySelectorAll('#toggles3d .btn').forEach(b => b.onclick = () => {
       const k = b.dataset.t; opt[k] = !opt[k]; b.classList.toggle('on', opt[k]);
-      if (k === 'furn'){ furnG.visible = opt.furn; syncLightPool(); updateRoomLights(true); if (!opt.furn && App.store.ui.sel?.kind === 'furn') App.interact.select(null); }
+      if (k === 'furn'){
+        furnG.visible=opt.furn;
+        for(const group of ceilingG.children) if(group.userData.fixtures) group.userData.fixtures.visible=opt.furn;
+        syncLightPool(); updateRoomLights(true);
+        if (!opt.furn && App.store.ui.sel?.kind==='furn') App.interact.select(null);
+      }
       if (k === 'labels') showLabels(opt.labels && opt.mode === 'orbit' && !roomView.id);
       if (k === 'night') applyLight();
     });
@@ -1945,7 +2055,7 @@
 
   function relang(){ syncWalkTexts(); if (inited){ buildLabels(); doors.forEach(labelDoor); renderRoomBar(); } }
 
-  App.view3d = window.View3D = {enter, exit, relang, sync:() => sync(), shotURL, groundAt, flyToRoom:id => active && !anim && flyToRoom(id),
+  App.view3d = window.View3D = {enter, exit, relang, sync:() => sync(), shotURL, groundAt, ceilingAt, flyToRoom:id => active && !anim && flyToRoom(id),
     flyIso: () => active && !anim && flyTo(isoWhole()),
     flyTop: () => active && !anim && flyTo(topWhole()),
     flyToWorld: (...a) => active && !anim && flyToWorld(...a),

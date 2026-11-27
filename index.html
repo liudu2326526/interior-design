@@ -758,7 +758,9 @@ aside.right.chattab{display:flex;flex-direction:column;overflow:hidden}
 #ceilingMode.on{background:var(--accent);color:#fff}
 #ceilingLibrary{display:none;padding:10px}
 body.ceiling-edit #ceilingLibrary{display:block}
-body.ceiling-edit #lib,body.ceiling-edit #tools,body.ceiling-edit #fab,body.ceiling-edit #gSel,body.ceiling-edit #clearAll{display:none}
+body.ceiling-edit #tools,body.ceiling-edit #fab,body.ceiling-edit #gSel,body.ceiling-edit #clearAll{display:none}
+body.ceiling-edit #gSel.has-ceiling-item{display:inline}
+body.ceiling-edit #fab.has-ceiling-item{display:flex}
 body.ceiling-edit #gFurn{opacity:.25;pointer-events:none}
 body.ceiling-edit #gRooms{opacity:.44}
 body.ceiling-edit #gLabels{opacity:.7}
@@ -955,6 +957,7 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
       <g id="gWalls"></g>
       <g id="gOpen"></g>
       <g id="gCeiling"></g>
+      <g id="gMountedFurniture"></g>
       <g id="gLabels" pointer-events="none"></g>
       <g id="gDims" pointer-events="none"></g>
       <g id="gMeasure" pointer-events="none"></g>
@@ -1009,6 +1012,8 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
             <option value="vent" data-en="Air grille">条形风口</option>
             <option value="access" data-en="Access hatch">检修口</option>
             <option value="curtain" data-en="Curtain pocket">窗帘盒</option>
+            <option value="ceilingac" data-en="Cassette air conditioner">嵌入式四面出风空调</option>
+            <option value="ductac" data-en="Ducted air conditioner">风管机</option>
           </select>
         </label>
         <button type="button" class="btn" id="ceilingShowcaseClose" data-en="Close sample">关闭样板</button>
@@ -1215,25 +1220,26 @@ html:has(meta[name="studio-public-access"][content="guest"]) :is(#importPlanFile
 
 <script src="./js/core.js?v=2"></script>
 <script src="./js/plan.js?v=2"></script>
-<script src="./js/geom.js?v=4"></script>
-<script src="./js/custom-furniture.js"></script>
+<script src="./js/geom.js?v=5"></script>
+<script src="./js/custom-furniture.js?v=2"></script>
 <script src="./js/dimension-geometry.js"></script>
 <script src="./js/dimensions.js?v=2"></script>
-<script src="./js/ceiling-model.js?v=3"></script>
-<script src="./js/store.js?v=4"></script>
-<script src="./js/dimension-calibration.js?v=2"></script>
-<script src="./js/draw2d.js?v=5"></script>
-<script src="./js/panel.js?v=4"></script>
-<script src="./js/interact.js?v=6"></script>
-<script src="./js/ceiling-editor.js?v=3"></script>
-<script src="./js/io.js?v=6"></script>
-<script src="./js/ceiling-showcase.js"></script>
+<script src="./js/ceiling-model.js?v=4"></script>
+<script src="./js/ceiling-furniture.js"></script>
+<script src="./js/store.js?v=5"></script>
+<script src="./js/dimension-calibration.js?v=3"></script>
+<script src="./js/draw2d.js?v=6"></script>
+<script src="./js/panel.js?v=5"></script>
+<script src="./js/interact.js?v=7"></script>
+<script src="./js/ceiling-editor.js?v=4"></script>
+<script src="./js/io.js?v=7"></script>
+<script src="./js/ceiling-showcase.js?v=2"></script>
 <script src="./js/import.js?v=6"></script>
-<script src="./js/ceiling-import.js?v=2"></script>
-<script src="./js/assistant.js?v=5"></script>
+<script src="./js/ceiling-import.js?v=3"></script>
+<script src="./js/assistant.js?v=7"></script>
 <script src="./js/projects.js?v=8"></script>
 <script src="./js/tour.js"></script>
 <script src="./js/view3d-models.js?v=4"></script>
-<script src="./js/view3d.js?v=7"></script>
+<script src="./js/view3d.js?v=10"></script>
 </body>
 </html>

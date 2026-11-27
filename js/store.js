@@ -95,8 +95,10 @@
   }
   function fixState(s){
     s = (s && typeof s === 'object') ? s : {};
-    s.ceiling = App.ceilingModel.normalize(s.ceiling, PLAN.rooms);
-    s.furniture = (Array.isArray(s.furniture) ? s.furniture : []).map(App.geom.normalizeFurn).filter(Boolean);
+    const ceiling = App.ceilingModel.normalize(s.ceiling, PLAN.rooms);
+    const furniture = (Array.isArray(s.furniture) ? s.furniture : []).map(App.geom.normalizeFurn).filter(Boolean);
+    Object.assign(s, App.ceilingFurniture.split(ceiling,furniture));
+    s.furniture = s.furniture.map(item=>App.ceilingFurniture.place(item,s.ceiling,ROOMS) || item);
     s.rooms = reconcileRooms(s.rooms);
     s.demolished = (Array.isArray(s.demolished) ? s.demolished : []).map(String).filter(App.plan.validWallId);
     s.measures = (Array.isArray(s.measures) ? s.measures : []).filter(m => m && m.a && m.b && [m.a.x, m.a.y, m.b.x, m.b.y].every(Number.isFinite));

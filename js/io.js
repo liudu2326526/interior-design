@@ -233,7 +233,7 @@
 
   /* ======================= 方案切换 / 项目文件 ======================= */
   function drawingFurniture(list){
-    return Array.isArray(list) ? list.filter(f => App.geom.drawingItemTypes.has(f?.type) &&
+    return Array.isArray(list) ? list.filter(f => (App.geom.drawingItemTypes.has(f?.type) || App.ceilingFurniture.is(f)) &&
       [f.cx, f.cy, f.w, f.d, f.rot].every(Number.isFinite) && f.w > 0 && f.d > 0 &&
       (f.type !== 'component' || App.geom.normalizeComponentParts(f.parts).length > 0)) : [];
   }
@@ -436,7 +436,7 @@
     if (!Array.isArray(changes) || !changes.length || changes.length > 200 || !changes.every(ceilingChange)){
       throw new Error(App.core.tr('天花编辑需要 1 至 200 项顶面改动', 'A ceiling edit needs 1 to 200 ceiling changes'));
     }
-    const draft = {state:{ceiling:App.core.deepCopy(App.store.state.ceiling)}};
+    const draft = {state:{ceiling:App.core.deepCopy(App.ceilingFurniture.current())}};
     changes.forEach(change => patchSceneValue(draft, change));
     return validateCeiling(draft.state, App.store.PLAN.rooms);
   }
@@ -447,11 +447,16 @@
     }
     if (changes.every(ceilingChange)){
       const ceiling = prepareCeilingEdit(changes);
-      if (JSON.stringify(ceiling) === JSON.stringify(App.store.state.ceiling)) return null;
-      App.store.state.ceiling = ceiling;
+      const state = App.store.state;
+      const data = App.ceilingFurniture.split(ceiling,state.furniture,true,App.ceilingFurniture.current());
+      if (JSON.stringify(data.ceiling) === JSON.stringify(state.ceiling) &&
+          JSON.stringify(data.furniture) === JSON.stringify(state.furniture)) return null;
+      Object.assign(state,data);
       return true;
     }
     const draft = JSON.parse(App.store.snap());
+    const priorCeiling = changes.some(ceilingChange) ? App.ceilingFurniture.current() : null;
+    if (priorCeiling) draft.state.ceiling = App.core.deepCopy(priorCeiling);
     // 保留旧索引对应的墙对象，使插入和删除后的拆除标记与选中对象仍指向同一面墙。
     let oldWalls = [...draft.plan.walls];
     for (const change of changes){
@@ -487,7 +492,7 @@
     };
     const explicitDemolished = changes.some(({path}) => path[0] === 'state' && path[1] === 'demolished');
     const stateDraft = draft.state;
-    if (changes.some(ceilingChange)) stateDraft.ceiling = validateCeiling(stateDraft, plan.rooms);
+    if (priorCeiling) stateDraft.ceiling = validateCeiling(stateDraft, plan.rooms);
     else if (stateDraft.ceiling && changes.some(({path}) => path[0] === 'plan' && path[1] === 'rooms')){
       const nextRoomIds = new Set(plan.rooms.map(room => room.id));
       const ceilingRooms = Object.fromEntries(Object.entries(stateDraft.ceiling.rooms).filter(([id]) => nextRoomIds.has(id)));
@@ -537,13 +542,21 @@
       do { item.id = App.geom.uid(); } while (ids.has(item.id));
       ids.add(item.id);
     }
+    const mountedItems = items.map(item => {
+      if (!App.ceilingFurniture.is(item)) return item;
+      const mounted = App.ceilingFurniture.place(item,stateDraft.ceiling,plan.rooms);
+      if (mounted) return mounted;
+      if (App.store.getF(item.id)) return item;
+      throw new Error(App.core.tr('顶装家具需要位于可安装的室内顶面', 'Place ceiling furniture on a valid ceiling surface'));
+    });
+    const combined = App.ceilingFurniture.split(stateDraft.ceiling,mountedItems,Boolean(priorCeiling),priorCeiling);
 
     const selectedWall = App.store.ui.sel?.kind === 'wall' ? remapWall(App.store.ui.sel.id) : null;
     const dimensionMarks = App.dimensions.remapMarks(App.store.state.dimensionMarks, remapWall);
     const boundsChanged = JSON.stringify(plan.bounds) !== JSON.stringify(App.store.PLAN.bounds);
     if (JSON.stringify(plan) !== JSON.stringify(App.store.PLAN)) App.store.installPlan(plan);
     const {renders, walk} = App.store.state;
-    App.store.state = App.store.fixState({...stateDraft, furniture:items, measures, rooms, demolished, dimensionMarks, renders, walk});
+    App.store.state = App.store.fixState({...stateDraft, ...combined, measures, rooms, demolished, dimensionMarks, renders, walk});
     if (App.store.ui.sel?.kind === 'wall') App.store.ui.sel = selectedWall ? {kind:'wall', id:selectedWall} : null;
     App.store.validateSel();
     if (boundsChanged) refit();
@@ -555,8 +568,11 @@
     editScene(op){ return applySceneEdit(op.changes); },
     moveFurniture(op){
       const f = App.store.getF(op.id); if (!f) return null;
-      f.cx = Number.isFinite(+op.cx) ? +op.cx : f.cx + App.core.numOr(op.dx);
-      f.cy = Number.isFinite(+op.cy) ? +op.cy : f.cy + App.core.numOr(op.dy);
+      const cx = Number.isFinite(+op.cx) ? +op.cx : f.cx + App.core.numOr(op.dx);
+      const cy = Number.isFinite(+op.cy) ? +op.cy : f.cy + App.core.numOr(op.dy);
+      const moved = App.ceilingFurniture.place({...f,cx,cy});
+      if (!moved) return null;
+      Object.assign(f,moved);
       return true;
     },
     rotateFurniture(op){
@@ -566,8 +582,10 @@
     },
     resizeFurniture(op){
       const f = App.store.getF(op.id); if (!f) return null;
-      if (Number.isFinite(+op.w)) f.w = Math.max(50, Math.round(+op.w));
-      if (Number.isFinite(+op.d)) f.d = Math.max(50, Math.round(+op.d));
+      const mounted = App.ceilingFurniture.is(f);
+      const size = value => mounted ? Math.min(30000, Math.max(1, Math.round(value))) : Math.max(50, Math.round(value));
+      if (Number.isFinite(+op.w)) f.w = size(+op.w);
+      if (Number.isFinite(+op.d)) f.d = size(+op.d);
       if (Number.isFinite(+op.rot)) f.rot = App.geom.norm(+op.rot);
       return true;
     },
@@ -579,8 +597,10 @@
       const f = App.geom.normalizeFurn({...op, type, name:op.name || '家具', cx, cy, w, d, rot:App.geom.norm(App.core.numOr(op.rot))});
       if (!f) return null;
       if (App.store.getF(f.id)) f.id = App.geom.uid();
-      App.interact.pushOut(f);
-      App.store.state.furniture.push(f);
+      const placed = App.ceilingFurniture.place(f);
+      if (!placed) return null;
+      if (!App.ceilingFurniture.is(placed)) App.interact.pushOut(placed);
+      App.store.state.furniture.push(placed);
       return f.id;
     },
     deleteFurniture(op){

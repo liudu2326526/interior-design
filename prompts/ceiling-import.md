@@ -9,7 +9,7 @@
 - 可选 baseHeight 是室内地面至原顶的毫米数；只有图纸明示原顶标高才返回。吊顶完成面标高要按现有原顶标高折算为 drop。区分毫米、米和相对标高，未核实的尺寸写入 warnings。普通户型图中没有天花要素时不要生成模板。
 - zones[]: {id,name,poly:[[x,y],...],arcs?:[{edge,sweep}],holes?:[Point[]],drop:毫米,color:"#rrggbb"}。poly 是区内闭合的轮廓顶点（末点不重复首点）；尺寸和坐标取整数。区界遵循房间真实转角、凹口和圆弧。环形边吊要用轮廓+中心洞，条形吊顶沿实际墙段绘制，敞口不补边。保留中心原顶只需省略中心的板。板面降高小于房间原顶高度。
 - edges[]: {id,zoneId?,hole?:孔的索引,edge:整数,type:"cove"或"trim",width:毫米,depth:毫米,color:"#rrggbb"}。边号是原始多边形的顶点索引。没有 zoneId 时引用房间轮廓。
-- fixtures[]: {id,type:"downlight"|"spot"|"pendant"|"linear"|"track"|"vent"|"access"|"curtain",x,y,zoneId?,rotation?:度,length?:毫米,width?:毫米,hang?:毫米,kelvin?:1800至10000,intensity?:0至100,tilt?:-85至85,color?}。灯、风口、检修口和线性轨道均按实际位置识别。不要从房间标签推导灯位。未知参数用可复核的估算并列入 warnings，避免给图片无法支撑的精度。所有几何必须在对应房间内。
+- fixtures[]: {id,type:"downlight"|"spot"|"pendant"|"linear"|"track"|"vent"|"access"|"curtain"|"ceilingac"|"ductac",x,y,zoneId?,rotation?:度,length?:毫米,width?:毫米,hang?:毫米,kelvin?:1800至10000,intensity?:0至100,tilt?:-85至85,color?}。按实际位置识别。明确的四面出风嵌入式空调用 ceilingac，有风管机内机依据的用 ductac，只有送风口符号时用 vent。不要从房间标签推导灯位。未知参数用可复核的估算并列入 warnings，避免给图片无法支撑的精度。所有几何必须在对应房间内。
 - 仅输出天花字段，不能改变房间边界、墙、门窗、家具、地面。不能输出路径、指令或代码。
 
 删除只接受图纸明确标记拆除/取消或输入 note 明确要求删除的现有对象。普通漏画、视角外、照片未拍到、看不清的对象全部保留。房间中可选 remove 数组格式为 [{"group":"fixtures","id":"现有对象id","source":"drawing","reason":"图中具体的取消标记、编号和位置"}]。group 可为 zones、edges、fixtures；用户要求删除时 source 写 request，reason 必须逐字引用 note 中的删除指令。只给有证据的独立删除对象，关联灯具重新挂载及收边依赖由编辑器处理。已有对象只允许修改或删除其中一种操作。

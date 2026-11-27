@@ -46,17 +46,36 @@
 
   function furnitureShape(f){ return f.type === 'component' ? App.geom.componentSVG(f) : App.geom.furnSVG(f.type,f.w,f.d,f.color,f); }
   function renderFurn(){
-    const g = App.core.$('#gFurn');
-    g.setAttribute('display', App.store.ui.layers.furn ? 'inline' : 'none');
-    g.innerHTML = App.store.state.furniture.map(f => {
+    const regular = [], mounted = [];
+    for (const f of App.store.state.furniture){
+      const top=App.ceilingFurniture?.is(f);
+      if(top && App.store.ui.ceilingPreview)continue;
       const component = f.type === 'component';
       const fs = Math.max(80, Math.min(170, Math.min(f.w,f.d)*.2));
-      const label = Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type)
+      const label = !top && Math.min(f.w,f.d) >= 380 && !NOLABEL.includes(f.type)
         ? `<text transform="rotate(${-f.rot})" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#4a443c" opacity=".8" pointer-events="none">${App.core.esc(App.core.nm(f.name))}</text>` : '';
-      const title = component ? `<title>${App.core.esc(App.core.nm(f.name))}</title>` : '';
-      const shape = furnitureShape(f);
-      return `<g class="furn" data-fid="${App.core.esc(f.id)}" transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${title}${shape}${label}</g>`;
-    }).join('');
+      const title = component || top ? `<title>${App.core.esc(App.core.nm(f.name))}</title>` : '';
+      const shape = top
+        ? `<g data-mounted-symbol="${App.core.esc(f.type)}" data-length="${f.w}" data-width="${f.d}" transform="${App.ceilingEditor.symbolScale(f.type,f.w,f.d,App.store.view.s)}"><rect x="-50" y="-50" width="100" height="100" fill="transparent"/>${App.ceilingEditor.fixtureSymbol(f.type,f.color)}</g>`
+        : furnitureShape(f);
+      (top?mounted:regular).push(`<g class="furn" data-fid="${App.core.esc(f.id)}" transform="translate(${f.cx} ${f.cy}) rotate(${f.rot})">${title}${shape}${label}</g>`);
+    }
+    const visible=App.store.ui.layers.furn?'inline':'none';
+    const floor=App.core.$('#gFurn'),ceiling=App.core.$('#gMountedFurniture');
+    floor.setAttribute('display',visible);floor.innerHTML=regular.join('');
+    ceiling.setAttribute('display',visible);ceiling.innerHTML=mounted.join('');
+    mountedScale=App.store.view.s;
+  }
+
+  let mountedScale=0;
+  function resizeMountedSymbols(){
+    const scale=App.store.view.s;
+    if(mountedScale===scale)return;
+    mountedScale=scale;
+    for(const symbol of App.core.$('#gMountedFurniture').querySelectorAll('[data-mounted-symbol]')){
+      const {mountedSymbol,length,width}=symbol.dataset;
+      symbol.setAttribute('transform',App.ceilingEditor.symbolScale(mountedSymbol,Number(length),Number(width),scale));
+    }
   }
 
   function renderWalls(){
@@ -170,7 +189,11 @@
       const w = App.plan.wallOf(App.store.ui.sel.id);
       if (w) s += wallShape(w, 'fill="none" stroke="#b5653a" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"');
     }
-    App.core.$('#gSel').innerHTML = s;
+    const selection=App.core.$('#gSel'), selected=App.store.ui.sel;
+    const showMounted=selected?.kind==='furn'&&App.ceilingFurniture?.is(App.store.getF(selected.id))&&
+      !App.store.ui.ceilingPreview && App.store.ui.layers.furn && (!App.ceilingEditor.active() || App.ceilingEditor.context()?.tool==='select');
+    selection.classList.toggle('has-ceiling-item',Boolean(showMounted));
+    selection.innerHTML = s;
     App.dimensions.renderSelection();
   }
 
@@ -221,7 +244,7 @@
   App.core.$('#brandEdit').onblur = () => endRename(true);
 
   Object.assign(App.draw2d, {
-    curveBandPath, roomShape, wallShape, furnitureShape, renderFurn, renderOpenings, renderDims,
+    curveBandPath, roomShape, wallShape, furnitureShape, renderFurn, resizeMountedSymbols, renderOpenings, renderDims,
     renderMeasure, renderSel, renderAll,
   });
 })();

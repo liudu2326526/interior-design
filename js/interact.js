@@ -6,17 +6,39 @@
   const App = globalThis.App;
 
   /* ======================= 操作 ======================= */
+  const mounted = item => Boolean(App.ceilingFurniture?.is(item));
+  function placementHint(){
+    App.core.toast(App.core.tr('请放在房间内的可安装顶面上','Place this item on a ceiling inside a room'));
+  }
   function select(sel){
     App.store.ui.sel = App.store.selOk(sel) ? {kind:sel.kind, id:sel.id} : null;
     App.store.ui.dimensionRoomPoint = App.store.ui.sel?.kind === 'room' ? sel.point : null;
+    if(App.store.ui.sel?.kind==='furn'){
+      const f=App.store.getF(sel.id);
+      if(mounted(f)) App.ceilingEditor?.selectFurniture(f);
+    }
     App.draw2d.renderSel(); App.panel.renderPanel();
   }
-  function rotateSel(d){ if (App.store.ui.sel?.kind==='furn') App.store.mutate(() => { const f = App.store.getF(App.store.ui.sel.id); f.rot = App.geom.norm(f.rot + d); }); }
+  function updateFurniture(item,patch){
+    const candidate={...item,...patch};
+    const placed=mounted(candidate)?App.ceilingFurniture.place(candidate):candidate;
+    if(!placed){placementHint();return false;}
+    App.store.mutate(()=>Object.assign(item,placed));
+    if(mounted(placed)&&App.ceilingEditor?.active()) select({kind:'furn',id:item.id});
+    return true;
+  }
+  function rotateSel(d){
+    const f=App.store.ui.sel?.kind==='furn' && App.store.getF(App.store.ui.sel.id);
+    if(f)updateFurniture(f,{rot:App.geom.norm(f.rot+d)});
+  }
   function deleteSel(){ if (App.store.ui.sel?.kind==='furn'){ const id = App.store.ui.sel.id; App.store.ui.sel = null; App.store.mutate(() => App.store.state.furniture = App.store.state.furniture.filter(f => f.id !== id)); } }
   function duplicateSel(){
     if (App.store.ui.sel?.kind !== 'furn') return;
     const f = App.store.getF(App.store.ui.sel.id), n = {...f, id:App.geom.uid(), cx:f.cx+200, cy:f.cy+200};
-    App.store.ui.sel = {kind:'furn', id:n.id}; App.store.mutate(() => App.store.state.furniture.push(n));
+    const copy = mounted(n) ? (App.ceilingFurniture.place(n) || App.ceilingFurniture.place({...n,cx:f.cx,cy:f.cy})) : n;
+    if(!copy){placementHint();return;}
+    App.store.ui.sel = {kind:'furn', id:copy.id}; App.store.mutate(() => App.store.state.furniture.push(copy));
+    if(mounted(copy))select({kind:'furn',id:copy.id});
   }
   // 新放下的家具若压在墙 / 窗上，沿穿透较浅的方向推出来，刚好贴墙
   function pushOut(f){
@@ -32,14 +54,23 @@
       if (!moved) return;
     }
   }
-  function addItem(entry, x, y){
+  function addItem(entry, x, y, surface){
     const cx = Math.round(x/10)*10, cy = Math.round(y/10)*10;
-    const f = App.geom.placeCatalogItem(entry, cx, cy);
+    let f = App.geom.placeCatalogItem(entry, cx, cy);
     if (!f) return null;
-    pushOut(f);
+    if(mounted(f)){
+      if(App.store.ui.ceilingPreview){
+        App.core.toast(App.core.tr('先应用或取消天花预览，再摆放家具','Apply or cancel the ceiling preview before placing furniture'));
+        return null;
+      }
+      if(surface?.roomId)f.ceiling={...f.ceiling,roomId:surface.roomId,...(surface.zoneId?{zoneId:surface.zoneId}:{})};
+      f=App.ceilingFurniture.place(f);
+      if(!f){placementHint();return null;}
+    }else pushOut(f);
     App.store.ui.sel = {kind:'furn', id:f.id};
     const {type, name, w, d} = f;
     App.store.mutate(() => type==='rug' ? App.store.state.furniture.unshift(f) : App.store.state.furniture.push(f));
+    if(mounted(f))select({kind:'furn',id:f.id});
     App.core.toast(App.core.tr(`已添加「${name}」${w}×${d}`, `Added "${App.core.nm(name)}" ${w}×${d}`));
     return f;
   }
@@ -80,7 +111,7 @@
     const nice = [100,200,500,1000,2000,5000].find(v => v*App.store.view.s >= 60) || 5000;
     App.core.$('#sbBar').style.width = nice*App.store.view.s + 'px';
     App.core.$('#sbText').textContent = nice >= 1000 ? `${nice/1000} m` : `${nice} mm`;
-    App.draw2d.renderSel(); App.draw2d.renderMeasure(); App.dimensions.updateView(); App.ceilingEditor?.renderSketch();
+    App.draw2d.renderSel(); App.draw2d.renderMeasure(); App.dimensions.updateView(); App.draw2d.resizeMountedSymbols(); App.ceilingEditor?.renderSketch();
   }
   function fitView(){
     const W = App.core.svg.clientWidth, H = App.core.svg.clientHeight;
@@ -161,7 +192,16 @@
       if (!cancel && !d.moved) App.dimensions.addPoint(d.point);
       return;
     }
-    if (d.moved){ App.store.commit(d.before); App.draw2d.renderAll(); }
+    if(cancel && d.original){
+      const item=App.store.getF(d.id);
+      if(item)Object.assign(item,d.original);
+      App.draw2d.renderAll();return;
+    }
+    if (d.moved){
+      App.store.commit(d.before); App.draw2d.renderAll();
+      const f=App.store.getF(d.id);
+      if(mounted(f)&&App.ceilingEditor?.active())select({kind:'furn',id:f.id});
+    }
   }
 
   App.core.svg.addEventListener('pointerdown', e => {
@@ -171,7 +211,7 @@
       touches.set(e.pointerId, {x:e.clientX, y:e.clientY});
       App.core.svg.setPointerCapture(e.pointerId);
       if (touches.size >= 2){                    // 第二根手指落下：取消单指操作，进入双指缩放 / 平移
-        endDrag(['measure','pan','dimension','ceiling'].includes(drag?.kind));
+        endDrag(!!drag?.original || ['measure','pan','dimension','ceiling'].includes(drag?.kind));
         const {d, c} = pinchInfo();
         pinch = {d, c, s:App.store.view.s, px:App.store.view.x0 + c[0]/App.store.view.s, py:App.store.view.y0 + c[1]/App.store.view.s};
         return;
@@ -179,7 +219,10 @@
     }
     if (pinch) return;
     const p = toMM(e), t = e.target;
-    if (App.ceilingEditor?.active()){
+    const handle=t.closest('[data-handle]'), hit=t.closest('[data-fid]');
+    const editingMounted=App.ceilingEditor?.context()?.tool==='select' &&
+      !App.store.ui.ceilingPreview && mounted(App.store.getF(hit?.dataset.fid || (handle && App.store.ui.sel?.id)));
+    if (App.ceilingEditor?.active() && !editingMounted){
       drag = App.ceilingEditor.startPointer(e, p);
       App.core.svg.setPointerCapture(e.pointerId);
       return;
@@ -195,9 +238,9 @@
       else { const a = App.store.ui.mA; App.store.ui.mA = null; App.store.ui.mCur = null; if (Math.hypot(q.x-a.x, q.y-a.y) > 20) App.store.mutate(() => App.store.state.measures.push({a, b:q})); }
       App.draw2d.renderMeasure(); return;
     }
-    const h = t.closest('[data-handle]');
+    const h = handle;
     if (h && App.store.ui.sel?.kind === 'furn'){
-      drag = {kind:h.dataset.handle, id:App.store.ui.sel.id, sx:e.clientX, sy:e.clientY, before:App.store.snap(), moved:false};
+      drag = {kind:h.dataset.handle, id:App.store.ui.sel.id, sx:e.clientX, sy:e.clientY, start:p, before:App.store.snap(), moved:false};
     } else if (App.store.ui.tool === 'demolish' && t.closest('[data-wall]')){
       toggleWall(t.closest('[data-wall]').dataset.wall); return;
     } else if (App.store.ui.tool === 'select' && t.closest('[data-fid]')){
@@ -207,6 +250,10 @@
     } else {
       const room = t.closest('[data-room]');
       drag = {kind:'pan', sx:e.clientX, sy:e.clientY, x0:App.store.view.x0, y0:App.store.view.y0, room:room && room.dataset.room, roomPoint:[p.x,p.y], moved:false};
+    }
+    if(drag?.id){
+      const f=App.store.getF(drag.id);
+      if(mounted(f))drag.original={...f,ceiling:{...f.ceiling}};
     }
     App.core.svg.setPointerCapture(e.pointerId);
   });
@@ -245,22 +292,36 @@
       drag.moved = true; App.core.svg.classList.add('panning');
       App.store.view.x0 = drag.x0 - (e.clientX-drag.sx)/App.store.view.s; App.store.view.y0 = drag.y0 - (e.clientY-drag.sy)/App.store.view.s; applyView(); return;
     }
-    const f = App.store.getF(drag.id); if (!f) return;
+    const target = App.store.getF(drag.id); if (!target) return;
     if (!drag.moved && !far) return;             // 轻点家具不应让它抖动一下
-    drag.moved = true;
+    const f=drag.original?{...target}:target;
     if (drag.kind === 'move'){
       [f.cx, f.cy] = snapMove(f, p.x-drag.ox, p.y-drag.oy);
     } else if (drag.kind === 'rot'){
       let a = Math.atan2(p.y-f.cy, p.x-f.cx)*180/Math.PI + 90;
       f.rot = App.geom.norm(e.shiftKey ? a : Math.round(a/15)*15);
     } else if (drag.kind === 'size'){
-      const a = f.rot*Math.PI/180, c = Math.cos(a), s = Math.sin(a);
-      const dx = p.x-f.cx, dy = p.y-f.cy, lx = dx*c + dy*s, ly = -dx*s + dy*c;
-      const ax = -f.w/2, ay = -f.d/2;
-      const nw = Math.max(100, Math.round((lx-ax)/10)*10), nd = Math.max(100, Math.round((ly-ay)/10)*10);
-      const mx = ax + nw/2, my = ay + nd/2;
-      f.cx += mx*c - my*s; f.cy += mx*s + my*c; f.w = nw; f.d = nd;
+      const a=f.rot*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
+      if(drag.original){
+        const from=drag.original, dx=p.x-drag.start.x, dy=p.y-drag.start.y;
+        const quantize=(initial,delta)=>Math.max(1,Math.min(30000,initial+Math.round(delta/10)*10));
+        f.w=quantize(from.w,dx*c+dy*s);f.d=quantize(from.d,-dx*s+dy*c);
+        const mx=(f.w-from.w)/2,my=(f.d-from.d)/2;
+        f.cx=from.cx+mx*c-my*s;f.cy=from.cy+mx*s+my*c;
+      }else{
+        const dx=p.x-f.cx,dy=p.y-f.cy,lx=dx*c+dy*s,ly=-dx*s+dy*c;
+        const ax=-f.w/2,ay=-f.d/2;
+        const nw=Math.max(100,Math.round((lx-ax)/10)*10),nd=Math.max(100,Math.round((ly-ay)/10)*10);
+        const mx=ax+nw/2,my=ay+nd/2;
+        f.cx+=mx*c-my*s;f.cy+=mx*s+my*c;f.w=nw;f.d=nd;
+      }
     }
+    if(drag.original){
+      const placed=App.ceilingFurniture.place(f);
+      if(!placed)return;
+      Object.assign(target,placed);
+    }
+    drag.moved = true;
     App.draw2d.renderFurn(); App.draw2d.renderSel();
   });
 
@@ -313,7 +374,8 @@
     }
     else if (k.startsWith('arrow') && App.store.ui.sel?.kind === 'furn'){
       e.preventDefault(); const st = e.shiftKey ? 100 : 10;
-      App.store.mutate(() => { const f = App.store.getF(App.store.ui.sel.id); if (k==='arrowleft') f.cx -= st; if (k==='arrowright') f.cx += st; if (k==='arrowup') f.cy -= st; if (k==='arrowdown') f.cy += st; });
+      const f=App.store.getF(App.store.ui.sel.id), offsets={arrowleft:[-st,0],arrowright:[st,0],arrowup:[0,-st],arrowdown:[0,st]};
+      if(f && offsets[k])updateFurniture(f,{cx:f.cx+offsets[k][0],cy:f.cy+offsets[k][1]});
     }
     else if (k === '+' || k === '=') zoomCenter(1.25);
     else if (k === '-') zoomCenter(.8);
@@ -376,7 +438,7 @@
       libraryCards.innerHTML = `<div class="lib-grid">${libraryEntries.map(({detail, name}, i) => {
         const {w,d} = detail, pad = Math.max(w,d)*.08;
         return `<button class="item" type="button" data-key="${i}" title="${hint}">
-          <svg viewBox="${-w/2-pad} ${-d/2-pad} ${w+2*pad} ${d+2*pad}" aria-hidden="true">${libraryShape(detail)}</svg>
+          ${mounted(detail)?App.ceilingEditor.toolThumbnail(detail.type):`<svg viewBox="${-w/2-pad} ${-d/2-pad} ${w+2*pad} ${d+2*pad}" aria-hidden="true">${libraryShape(detail)}</svg>`}
           <b>${esc(name)}</b><small>${w}×${d} mm</small></button>`;
       }).join('')}</div>`;
     } else {
@@ -390,6 +452,12 @@
     if (active?.libGroup !== undefined) groups.querySelector(`[data-lib-group="${CSS.escape(active.libGroup)}"]`)?.focus({preventScroll:true});
   }
 
+  function openCeilingLibrary(){
+    libraryCategory='ceiling';libraryGroup='';librarySearch.value='';
+    buildLib();App.panel.drawer('lib',true);
+    library.scrollIntoView({block:'start'});
+    categories.querySelector('[data-lib-category="ceiling"]')?.focus({preventScroll:true});
+  }
   librarySearch.addEventListener('input', buildLib);
   library.addEventListener('click', e => {
     const button = e.target.closest('button');
@@ -418,12 +486,15 @@
     const item = libraryEntries[Number(el.dataset.key)];
     if (item) libDrag = {el, entry:item.entry, detail:item.detail, id:e.pointerId, sx:e.clientX, sy:e.clientY, ghost:null};
   });
-  // 屏幕坐标 → 户型坐标（mm）。2D 取平面图坐标，3D 取射线与地面的交点；s = 该处每 mm 的屏幕像素数
-  function dropPoint(x, y){
+  // 屏幕坐标 → 户型坐标（mm）。室内视角读实际安装面，鸟瞰取地面投影。
+  function dropPoint(x, y, item){
     const r = App.core.$('#stage').getBoundingClientRect();
     if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
     if (document.elementFromPoint(x, y)?.closest('aside.open,#fab,#walkOverlay,#joy,#walkExit')) return null;
-    if (App.io.is3D()) return App.view3d?.groundAt(x, y) || null;
+    if (App.io.is3D()){
+      const surface=mounted(item) && App.view3d?.ceilingAt?.(x,y);
+      return surface || App.view3d?.groundAt(x,y) || null;
+    }
     const p = toMM({clientX:x, clientY:y}); return {x:p.x, y:p.y, s:App.store.view.s};
   }
   addEventListener('pointermove', e => {
@@ -436,7 +507,7 @@
       document.body.appendChild(g); libDrag.el.classList.add('dragging');
     }
     // 幽灵图按落点处的比例显示真实大小（3D 中近大远小）
-    const g = libDrag.ghost, s = Math.max(dropPoint(e.clientX, e.clientY)?.s || (App.io.is3D() ? .05 : App.store.view.s), .02);
+    const g = libDrag.ghost, s = Math.max(dropPoint(e.clientX, e.clientY, detail)?.s || (App.io.is3D() ? .05 : App.store.view.s), .02);
     Object.assign(g.style, {width:Math.max(28, w*s)+'px', height:Math.max(20, d*s)+'px', left:e.clientX+'px', top:e.clientY+'px'});
     const lib = App.core.$('aside.lib');
     if (App.core.narrow() && lib.classList.contains('open') && e.clientX > lib.getBoundingClientRect().right) App.panel.drawer(null);   // 拖出抽屉后自动收起
@@ -448,8 +519,9 @@
     if (d.ghost){
       d.ghost.remove();
       if (!ok) return;
-      const p = dropPoint(e.clientX, e.clientY);
-      if (p) addItem(d.entry, p.x, p.y);
+      const p = dropPoint(e.clientX, e.clientY, d.detail);
+      if (p) addItem(d.entry, p.x, p.y,p);
+      else if(mounted(d.detail))placementHint();
       else if (App.io.is3D() && e.clientX > App.core.$('#stage').getBoundingClientRect().left) App.core.toast(App.core.tr('请拖到地面上', 'Drop it on the floor'));
       return;
     }
@@ -458,11 +530,32 @@
   function placeLibraryAsset(entry){
     if (!entry) return null;
     // 轻点：放到选中房间中心，否则放到画面中心（3D 取屏幕中心对应的地面位置）
-    let p = null;
-    if (App.store.ui.sel?.kind === 'room'){ const def = App.plan.roomDef(App.store.ui.sel.id); if (def){ const b = App.geom.bbox(def.poly); p = {x:(b[0]+b[2])/2, y:(b[1]+b[3])/2}; } }
-    else if (App.io.is3D()){ const r = App.core.$('#stage').getBoundingClientRect(); p = App.view3d.groundAt(r.left + r.width/2, r.top + r.height/2); }
-    if (!p) p = {x:App.store.view.x0 + App.core.svg.clientWidth/2/App.store.view.s, y:App.store.view.y0 + App.core.svg.clientHeight/2/App.store.view.s};
-    const added = addItem(entry, p.x, p.y);
+    const detail=App.geom.catalogItemDetails(entry),isMounted=mounted(detail),sel=App.store.ui.sel;
+    const selectedRoom=sel?.kind==='room'?sel.id:null;
+    const roomId=isMounted?(App.ceilingEditor?.context()?.roomId || (App.io.is3D()&&App.view3d?.roomId?.()) || selectedRoom):selectedRoom;
+    const def=roomId && App.plan.roomDef(roomId);
+    let p=null;
+    if(def){
+      if(isMounted){
+        const spans=App.dimensionGeometry.roomSpans(def);
+        if(spans)p={x:spans.y[0].across,y:spans.x[0].across,roomId};
+      }else{
+        const bounds=App.geom.bbox(def.poly);
+        p={x:(bounds[0]+bounds[2])/2,y:(bounds[1]+bounds[3])/2};
+      }
+    }else if(App.io.is3D()){
+      const r=App.core.$('#stage').getBoundingClientRect();
+      p=dropPoint(r.left+r.width/2,r.top+r.height/2,detail);
+    }
+    if(!p)p={x:App.store.view.x0+App.core.svg.clientWidth/2/App.store.view.s,y:App.store.view.y0+App.core.svg.clientHeight/2/App.store.view.s};
+    // A whole-home view can be centred over a stairwell or between rooms.
+    if(isMounted&&!def&&!p.roomId&&!App.store.ROOMS.some(r=>!r.bay&&!r.outdoor&&App.ceilingModel.pointIn(r.poly,[p.x,p.y]))){
+      const indoor=App.store.ROOMS.filter(r=>!r.outdoor&&!r.bay).map(r=>({id:r.id,span:App.dimensionGeometry.roomSpans(r)})).filter(t=>t.span)
+        .map(({id,span})=>({x:span.y[0].across,y:span.x[0].across,roomId:id}));
+      const nearest=indoor.sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+      if(nearest)p=nearest;
+    }
+    const added=addItem(entry,p.x,p.y,p);
     if (added) App.panel.closeDrawers();
     return added;
   }
@@ -470,7 +563,7 @@
   addEventListener('pointercancel', e => endLibDrag(e, false));
 
   Object.assign(App.interact, {
-    select, rotateSel, deleteSel, duplicateSel, pushOut, toggleWall, setTool, syncModeHint, applyView,
-    fitView, zoomCenter, setRatio, snapMove, snapPoint, buildLib, placeLibraryAsset,
+    select, updateFurniture, rotateSel, deleteSel, duplicateSel, pushOut, toggleWall, setTool, syncModeHint, applyView,
+    fitView, zoomCenter, setRatio, snapMove, snapPoint, buildLib, openCeilingLibrary, placeLibraryAsset,
   });
 })();

@@ -359,7 +359,7 @@
 
   function editableChatState(){
     const {renders, walk, ...editable} = App.io.studio.getState();
-    return editable;
+    return {...editable,ceiling:App.ceilingFurniture.project(editable.ceiling,editable.furniture)};
   }
 
   // 当前选中和视角指明关注点，整份方案提供跨房间编辑所需的索引。
@@ -429,6 +429,11 @@
     if (!focus || typeof focus !== 'object') return;
     const prev = App.io.studio.getSelection();
     let roomId = typeof focus.room === 'string' && App.plan.roomDef(focus.room) ? focus.room : null;
+    if (focus.ceiling?.kind==='fixture' && App.ceilingFurniture.is(App.store.getF(focus.ceiling.id))){
+      App.io.studio.select({kind:'furn',id:focus.ceiling.id});
+      if (App.io.studio.is3D() && roomId) App.io.studio.flyToRoom(roomId);
+      return;
+    }
     if (focus.ceiling && roomId && App.ceilingEditor && !App.io.studio.is3D()){
       App.ceilingEditor.focus(roomId, focus.ceiling.kind, focus.ceiling.id);
       return;
@@ -1126,8 +1131,8 @@
     const room = cam.roomId && App.plan.roomDef(cam.roomId);
     return {
       plan,
-      furniture:state.furniture,
-      ceiling:App.store.ui.ceilingPreview || state.ceiling,
+      furniture:state.furniture.filter(item=>!App.ceilingFurniture.is(item)),
+      ceiling:App.ceilingFurniture.view(),
       materials:plan.materials,
       roomMaterials:Object.fromEntries(Object.entries(state.rooms).map(([id, v]) => [id, v.mat])),
       camera:{

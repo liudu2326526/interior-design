@@ -5,7 +5,7 @@
   const { $, tr, esc } = App.core;
   const model = App.ceilingModel;
   const state = () => App.store.state.ceiling;
-  const displayed = () => App.store.ui.ceilingPreview || state();
+  const displayed = () => App.ceilingFurniture.view();
   const isPreview = () => Boolean(App.store.ui.ceilingPreview);
   const path = points => points?.length ? 'M'+points.map(p=>p.join(' ')).join('L') : '';
   const closed = points => path(points)+'Z';
@@ -14,11 +14,10 @@
     rectangle:['矩形吊顶','Rectangular zone'], polygon:['自由轮廓','Custom outline'], hole:['绘制镂空','Draw opening'],
     downlight:['筒灯','Downlight'], spot:['射灯','Spotlight'], pendant:['吊灯','Pendant'],
     linear:['线性灯','Linear light'], track:['磁吸轨道','Lighting track'],
-    vent:['条形风口','Air grille'], access:['检修口','Access hatch'], curtain:['窗帘盒','Curtain pocket'], cove:['灯槽','Light cove'], trim:['收边','Trim'],
+    ceilingac:['四面出风天花机','Ceiling cassette AC'], ductac:['风管机','Ducted AC'], vent:['条形风口','Air grille'], access:['检修口','Access hatch'], curtain:['窗帘盒','Curtain pocket'], cove:['灯槽','Light cove'], trim:['收边','Trim'],
   };
   const title = k => names[k] ? tr(...names[k]) : k;
-  const lights = ['downlight','spot','pendant','linear','track'], equipment = ['vent','access','curtain'];
-  const dimDefaults = {downlight:[90,90,0],spot:[100,100,40],pendant:[400,400,600],linear:[1200,45,0],track:[1500,55,0],vent:[1000,120,0],access:[450,450,0],curtain:[1600,180,0]};
+  const lights = ['downlight','spot','pendant','linear','track'];
   const groups = {zone:'zones',edge:'edges',fixture:'fixtures'};
   const defaultCeilingColor = () => model.defaultColor || '#ffffff';
   let presetWidth=400, arrayType='downlight', projectId='', lastPreset=null;
@@ -27,7 +26,7 @@
   const rooms = () => App.store.ROOMS.filter(r => !r.bay);
   const firstRoom = () => rooms().find(r=>!r.outdoor) || rooms()[0];
   const roomDef = () => rooms().find(r=>r.id===roomId);
-  const roomData = (ceiling=state()) => model.room(ceiling,roomId);
+  const roomData = (ceiling=displayed()) => model.room(ceiling,roomId);
   const collection = (data,kind) => data[groups[kind]] || [];
   const selectedObject = (data=roomData()) => selected && collection(data, selected.kind).find(item=>item.id===selected.id);
   const uid = () => App.geom.uid();
@@ -41,6 +40,8 @@
       selected=null; clearTool();
     }
     if (selected && !selectedObject()) selected=null;
+    const furniture=selectedFurniture();
+    if (furniture && !tool && !selected) setRoom(furniture.ceiling.roomId);
     if(lastPreset && (lastPreset.room!==roomId || selected?.kind!=='zone' || lastPreset.id!==selected.id))lastPreset=null;
     if(holeIndex>=0 && !selectedObject()?.holes?.[holeIndex])holeIndex=-1;
   }
@@ -50,11 +51,30 @@
     if(!rooms().some(r=>r.id===id))return;
     if(roomId!==id){roomId=id; selected=null; clearTool(); edgeIndex=0;holeIndex=-1;}
   }
+  function selectedFurniture(){
+    const sel=App.store.ui.sel;
+    const item=sel?.kind==='furn' && App.store.getF(sel.id);
+    return item && App.ceilingFurniture.is(item) ? item : null;
+  }
+  function selectFurniture(item){
+    if (!active() || !App.ceilingFurniture.is(item))return;
+    setRoom(item.ceiling.roomId);
+    selected=null;clearTool();edgeIndex=0;holeIndex=-1;
+    render();
+  }
+  function selectRoomSurface(kind,id){
+    selected=(kind==='zone'||kind==='edge')&&id?{kind,id}:null;
+    App.store.ui.sel=roomId?{kind:'room',id:roomId}:null;
+    App.store.ui.dimensionRoomPoint=null;
+    edgeIndex=0;holeIndex=-1;
+  }
   function enter(id,kind,itemId){
     const was=active(); enabled=true;
-    const selectedRoom=App.store.ui.sel?.kind==='room'?App.store.ui.sel.id:'';
+    const furniture=selectedFurniture();
+    const selectedRoom=App.store.ui.sel?.kind==='room'?App.store.ui.sel.id:furniture?.ceiling.roomId;
     setRoom(id||selectedRoom||roomId||firstRoom()?.id);
-    if(kind && groups[kind]){selected={kind,id:itemId};edgeIndex=0;holeIndex=-1;}
+    if(kind==='fixture')select(kind,itemId);
+    else if(id || kind || !furniture)selectRoomSurface(kind,itemId);
     if(!was)App.interact.setTool('select');
     syncView();
   }
@@ -68,16 +88,30 @@
     if(!active())clearTool();
     App.draw2d.renderAll();
   }
-  function context(){return active()?{roomId,kind:selected?.kind||'room',id:selected?.id||roomId,tool:tool||'select'}:null;}
-  function select(kind,id){selected=kind&&id?{kind,id}:null;edgeIndex=0;holeIndex=-1;render();App.panel.renderPanel();}
+  function context(){
+    if(!active())return null;
+    const f=selectedFurniture();
+    return {roomId:f?.ceiling.roomId||roomId,kind:f?'fixture':selected?.kind||'room',id:f?.id||selected?.id||roomId,tool:tool||'select'};
+  }
+  function select(kind,id){
+    if(kind==='fixture' && App.store.getF(id)){
+      App.interact.select({kind:'furn',id});
+      return;
+    }
+    selectRoomSurface(kind,id);
+    App.draw2d.renderSel();render();App.panel.renderPanel();
+  }
   function change(patch,nextSelection=selected){
     if(isPreview()||!roomDef())return false;
+    const previous=selected,previousUi=App.store.ui.sel;
     try{
-      const next=model.apply(state(),roomDef(),patch);
-      selected=nextSelection;
-      App.store.mutate(()=>{App.store.state.ceiling=next;});
+      selected=nextSelection?.kind==='fixture'?null:nextSelection;
+      App.store.ui.sel={kind:'room',id:roomId};
+      App.ceilingFurniture.applyRoom(roomId,patch);
+      if(nextSelection?.kind==='fixture')select('fixture',nextSelection.id);
       return true;
     }catch(error){
+      selected=previous;App.store.ui.sel=previousUi;
       App.core.toast(tr('天花编辑未应用','Ceiling change was not applied')+' · '+error.message);
       render();App.panel.renderPanel();return false;
     }
@@ -128,6 +162,15 @@
           face('M2 23L8 12L10 24L4 42Z','#dfc18a',ink,.55)+'</g>').join('');
         return box(-49,-15,98,30,2,'#4b4b46')+line('M-46 -5H46','#a5a297',.55)+heads;
       }
+      case 'ceilingac': {
+        const louvers=[0,90,180,270].map(a=>`<g transform="rotate(${a})">${face('M-40 -40H40L32 -32H-32Z','#737e7d','#626f6d',.5)}</g>`).join('');
+        return box(-49,-49,98,98,5,finish||'#e2e6e2')+louvers+box(-27,-27,54,54,3,'#bbc5c1')+
+          [-18,-12,-6,0,6,12,18].map(y=>line(`M-22 ${y}H22`,'#899590',.55)).join('')+oval(39,42,2,2,'#91bc97');
+      }
+      case 'ductac':
+        return box(-49,-45,98,90,3,finish||'#cbd2ce')+box(-46,14,92,24,1,'#63736e')+
+          [-27,-13,0,13,27].map(x=>line(`M${x} 16v19`,'#bfc8c2',.65)).join('')+
+          box(-41,-28,63,26,1,'#dfe4df','#9aa59c',.55)+line('M27 -31v34','#8e9c94',.6);
       case 'vent':
         return box(-49,-48,98,96,2,finish||'#bcc7bd')+box(-46,-34,92,68,1,'#627770','#51655e',.6)
           +[-20,0,20].map(y=>line(`M-44 ${y}H44`,'#d7e0d5',.7)).join('')
@@ -150,7 +193,7 @@
     rectangle:'<rect x="-15" y="-10" width="30" height="20" fill="#f8f6ed"/><path d="M-17 -12h4v4h-4zM13 8h4v4h-4z" fill="#c48859" stroke="#845c3d" stroke-width=".65"/>',
     polygon:'<path d="M-16 7l4-15 15-4 14 11-8 12Z" fill="#f6efdd"/><circle cx="3" cy="-12" r="1.8" fill="#ad7952"/>'
   };
-  const glyphSize={downlight:[22,22],spot:[23,23],pendant:[27,27],linear:[43,7],track:[45,16],vent:[40,13],access:[24,24],curtain:[42,12]};
+  const glyphSize={downlight:[22,22],spot:[23,23],pendant:[27,27],linear:[43,7],track:[45,16],vent:[40,13],ceilingac:[26,26],ductac:[36,18],access:[24,24],curtain:[42,12]};
   function toolThumbnail(type){
     const size=glyphSize[type];
     const art=size?`<g transform="scale(${size[0]/100} ${size[1]/100})">${fixtureSymbol(type)}</g>`:
@@ -180,6 +223,7 @@
   }
   function drawRoom(r,ceiling){
     const data=model.room(ceiling,r.id);
+    const base=!r.outdoor && (active() || data.color) ? App.draw2d.roomShape(r,`fill="${data.color||defaultCeilingColor()}" fill-opacity="${active() ? .76 : .44}" pointer-events="none"`) : '';
     const zones=[...data.zones].sort((a,b)=>a.drop-b.drop).map(z=>{
       const d=closed(model.outline(z))+(z.holes||[]).map(closed).join('');
       return `<path ${attrs('zone',z,r.id)} d="${d}" fill-rule="evenodd" fill="${z.color}" fill-opacity=".68" stroke="#a97145" stroke-width="1.4" vector-effect="non-scaling-stroke"><title>${esc(z.name)} · ${Math.round(model.baseHeight(ceiling,r.id)-z.drop)} mm</title></path>`;
@@ -190,12 +234,12 @@
       const boundary=edge.hole!==undefined&&region.holes?.[edge.hole]?{poly:region.holes[edge.hole]}:region;
       return `<g ${attrs('edge',edge,r.id)}><path d="${path(model.edgePoints(boundary,edge.edge))}" stroke="${edge.type==='cove'?'#d39728':'#846a56'}" fill="none" stroke-width="3" vector-effect="non-scaling-stroke"/><path d="${path(model.edgePoints(boundary,edge.edge))}" stroke="transparent" fill="none" stroke-width="9" vector-effect="non-scaling-stroke"/></g>`;
     });
-    const fixtures=data.fixtures.map(f=>{
-      const [defaultLength,defaultWidth]=dimDefaults[f.type],l=f.length||defaultLength,w=f.width||defaultWidth;
+    const fixtures=(isPreview()?data.fixtures:[]).map(f=>{
+      const def=App.ceilingFurniture.defaults(f.type),l=f.length||def.w,w=f.width||def.d;
       const symbol=`<g data-ceil-symbol="${f.type}" data-length="${l}" data-width="${w}" transform="${symbolScale(f.type,l,w,App.store.view.s)}">${fixtureSymbol(f.type,f.color)}</g>`;
       return `<g ${attrs('fixture',f,r.id)} transform="translate(${f.x} ${f.y}) rotate(${f.rotation||0})"><title>${esc(title(f.type))} · ${l}×${w} mm</title>${symbol}<circle r="${Math.max(60,5/App.store.view.s)}" fill="transparent" stroke="none"/></g>`;
     });
-    return [...zones,...edges,...fixtures].join('');
+    return base+[...zones,...edges,...fixtures].join('');
   }
   function button(label,cmd,value='',on=false){return `<button type="button" class="btn ${on?'on':''}" data-cmd="${cmd}" data-value="${esc(value)}"${(cmd==='tool'||cmd==='preset')?' aria-pressed="'+on+'"':''}>${label}</button>`;}
   const actionButtons=(vs,cmd)=>vs.map(v=>button(toolThumbnail(v)+'<span>'+title(v)+'</span>',cmd,v,cmd==='preset'?presetActive(v):tool===v)).join('');
@@ -205,10 +249,8 @@
     lib.innerHTML=`<h3>${tr('天花板设计','Ceiling design')}</h3><label class="ceil-field">${tr('设计房间','Room')}<select id="ceilingRoom">${options(available.map(r=>[r.id,roomName(r)]),roomId)}</select></label>
     <div class="ceil-buttons">${button(tr('室内 3D 预览','Preview in 3D'),'preview')}${button(tr('3D 样式展示','3D style gallery'),'showcase')}</div>
     <h4>${tr('吊顶造型','Ceiling shapes')}</h4><label class="ceil-field">${tr('边宽 / 悬浮顶退距（mm）','Band width / island inset (mm)')}<input id="ceilingPresetWidth" type="number" min="10" max="10000" step="10" value="${presetWidth}"></label><div class="ceiling-tools fixture-catalog">${actionButtons(['flat','perimeter','island'],'preset')}${actionButtons(['side','rectangle','polygon'],'tool')}</div>
-    <h4>${tr('灯具','Lights')}</h4><div class="ceiling-tools fixture-catalog">${actionButtons(lights,'tool')}</div>
-    <h4>${tr('顶部设备','Ceiling equipment')}</h4><div class="ceiling-tools fixture-catalog">${actionButtons(equipment,'tool')}</div>
     <h4>${tr('等距布灯','Light array')}</h4><div class="ceiling-tools">${button(tr('两点等距布置','Place between two points'),'tool','array',tool==='array')}</div>
-    <div class="ceil-buttons">${button(tr('AI 识别天花','Recognize ceiling'),'scan')}</div>`;
+    <div class="ceil-buttons">${button(tr('AI 识别天花','Recognize ceiling'),'scan')}${button(tr('顶装家具与设备','Ceiling furniture & equipment'),'furniture')}</div>`;
     if(!def||isPreview())lib.querySelectorAll('[data-cmd]').forEach(b=>{if (b.dataset.cmd!=='preview' && !(!def&&b.dataset.cmd==='scan'))b.disabled=true;});
   }
   function render(){
@@ -217,13 +259,14 @@
     if(project)projectId=project;
     const edit=active(); if(edit)reconcile();
     document.body.classList.toggle('ceiling-edit',edit);
-    const libName=edit?tr('天花工具','Ceiling tools'):tr('家具库','Library');
+    const libName=tr('家具库','Library');
     $('#tgLib').textContent='◧ '+libName;
-    if(App.io.TIPS)$('#tip').textContent=edit?tr('选择房间 · 点击天花对象编辑 · 滚轮缩放 · 拖动空白处平移','Select a room · click ceiling objects to edit · scroll to zoom · drag to pan'):App.io.TIPS()[App.io.is3D()?'3d':'2d'];
+    if(App.io.TIPS)$('#tip').textContent=edit?tr('从家具库拖入灯具与顶装设备 · 点击吊顶造型编辑轮廓','Drag ceiling fixtures from the furniture library · select a ceiling shape to edit its outline'):App.io.TIPS()[App.io.is3D()?'3d':'2d'];
     $('#ceilingMode').classList.toggle('on',edit);$('#ceilingMode').setAttribute('aria-pressed',String(edit));
     const overlayBtn=$('#ceilingOverlay'); overlayBtn.hidden=edit;overlayBtn.classList.toggle('on',overlay);overlayBtn.setAttribute('aria-pressed',String(overlay));
     const shown=edit||overlay||isPreview();
-    $('#gCeiling').innerHTML=shown?rooms().filter(r=>displayed()?.rooms?.[r.id]).map(r=>drawRoom(r,displayed())).join(''):'';
+    const ceiling=shown && displayed();
+    $('#gCeiling').innerHTML=shown?rooms().filter(r=>ceiling.rooms[r.id] || (edit && !r.outdoor)).map(r=>drawRoom(r,ceiling)).join(''):'';
     $('#gCeiling').classList.toggle('edit',edit);
     if(edit)library();
     renderSketch();
@@ -239,7 +282,7 @@
     task.hidden=!edit||!tool||isPreview();document.body.classList.toggle('ceiling-draw',edit&&!!tool);
     if(!edit||!roomDef()){g.innerHTML='';return;}
     const r=roomDef(), k=1/App.store.view.s, pieces=[];
-    if(!tool && !selected)pieces.push(App.draw2d.roomShape(r,'fill="none" stroke="#c18250" stroke-width="1.2" stroke-dasharray="4 5" vector-effect="non-scaling-stroke"'));
+    if(!tool && !selected && !selectedFurniture())pieces.push(App.draw2d.roomShape(r,'fill="none" stroke="#c18250" stroke-width="1.2" stroke-dasharray="4 5" vector-effect="non-scaling-stroke"'));
     if(!isPreview()&&selected?.kind==='zone'&&!tool){
       const z=selectedObject();if(z){
         const onHole=holeIndex>=0 && z.holes?.[holeIndex];
@@ -250,7 +293,6 @@
         vertices.forEach(([x,y],i)=>pieces.push(`<circle data-ceil-vertex="${i}" cx="${x}" cy="${y}" r="${4*k}" fill="#fff" stroke="#b5653a" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`));
       }
     }
-    if(dragPreview && dragPreview.vertex===undefined)pieces.push(`<circle cx="${dragPreview.point[0]}" cy="${dragPreview.point[1]}" r="${7*k}" class="ceiling-outline"/>`);
     if(tool){
       const partial=[...points,...(hoverPoint?[hoverPoint]:[])];
       if(partial.length){
@@ -299,22 +341,14 @@
     if(isPreview()){panel.innerHTML=html+'<p class="ceiling-note">'+tr('正在预览待确认的天花方案。','Previewing the proposed ceiling design.')+'</p></section>';return;}
     if(tool==='array')html+=pick(tr('灯列类型','Array fixture'),'arrayType',lights.map(t=>[t,title(t)]),arrayType)+field(tr('灯具数量','Fixture count'),'count',count,'number','min="2" max="32" step="1"');
     if(!z){
-      html+=field(tr('全屋原顶净高（mm）','Project base height (mm)'),'globalHeight',state()?.baseHeight||2800,'number','min="1" max="30000" step="1"')+field(tr('房间原顶净高（mm）','Room base height (mm)'),'roomHeight',model.baseHeight(state(),roomId),'number','min="100" step="10"')+elevation(d);
-      if(d.baseHeight!==undefined)html+=button(tr('沿用全屋原顶高度','Use project base height'),'inherit');
+      html+=field(tr('全屋默认原顶净高（mm）','Project default ceiling height (mm)'),'globalHeight',state()?.baseHeight||2800,'number','min="1" max="30000" step="1"');
     }else if(selected.kind==='zone'){
       html+=`<div class="ceil-fields">${field(tr('名称','Name'),'name',z.name,'text','maxlength="100"')}${field(tr('下吊量（mm）','Drop (mm)'),'drop',z.drop,'number','min="0" step="10"')}${(['perimeter','island'].includes(z.preset?.type)?field(tr('边宽 / 退距（mm）','Band width / inset (mm)'),'presetWidth',z.preset.width,'number','min="1" max="30000"'):'')}${field(tr('饰面','Finish'),'finish',z.finish||'','text','maxlength="100"')}${field(tr('颜色','Color'),'color',z.color,'color')}</div>`+elevation(d,z);
-    }else if(selected.kind==='fixture'){
-      const defs=dimDefaults[z.type]||dimDefaults.downlight;
-      html+=`<div class="ceil-fields">${field('X (mm)','x',Math.round(z.x))}${field('Y (mm)','y',Math.round(z.y))}
-      ${field(tr('长度（mm）','Length (mm)'),'length',z.length??defs[0],'number','min="1"')}${field(tr('宽度（mm）','Width (mm)'),'width',z.width??defs[1],'number','min="1"')}
-      ${field(tr('旋转（°）','Rotation (°)'),'rotation',z.rotation||0)}${field(tr('吊长（mm）','Hang (mm)'),'hang',z.hang||0,'number','min="0"')}
-      ${pick(tr('安装面','Mounting surface'),'zoneId',[['',tr('随所在顶面','Auto by position')],...d.zones.map(zone=>[zone.id,zone.name])],z.zoneId||'',true)}
-      ${lights.includes(z.type)?field(tr('色温（K）','Color temperature (K)'),'kelvin',z.kelvin??3000,'number','min="1800" max="10000"')+field(tr('亮度（%）','Intensity (%)'),'intensity',z.intensity??100,'number','min="0" max="100"')+(z.type==='spot'?field(tr('倾角（°）','Tilt (°)'),'tilt',z.tilt??0,'number','min="-85" max="85"'):''):''}</div>
-      <p class="ceiling-note">${tr('安装面标高','Mount elevation')} ${Math.round(model.fixtureHeight(state(),def,z))} mm</p>`;
     }else{
       html+=`<div class="ceil-fields">${field(tr('宽度（mm）','Width (mm)'),'width',z.width,'number','min="1"')}${field(tr('深度（mm）','Depth (mm)'),'depth',z.depth,'number','min="1"')}${field(tr('颜色','Color'),'color',z.color||'#f7d59b','color')}</div>`;
     }
     html+='</section>';
+    if(!z)html+=App.panel.ceilingRoomSection(def);
     if(z&&selected.kind==='zone')html+=edgeFields(z);
     if(z)html+=`<section class="ceil-buttons">${button(tr('返回房间','Room properties'),'back')}${button(tr('删除选中对象','Delete selected'),'delete')}</section>`;
     html+='<section><h3>'+tr('房间对象','Room objects')+'</h3><div class="ceil-list">';
@@ -322,11 +356,12 @@
     for(const [kind,key] of Object.entries(groups)){
       for(const item of d[key]){
         total++;
-        html+=`<button type="button" class="btn chip ${selected?.kind===kind&&selected.id===item.id?'on':''}" data-ceil-select="${kind}" data-id="${esc(item.id)}">${esc(item.name||title(item.type))}</button>`;
+        html+=`<button type="button" class="btn chip ${selected?.kind===kind&&selected.id===item.id?'on':''}" data-ceil-select="${kind}" data-id="${esc(item.id)}">${esc(kind==='fixture' ? App.core.nm(App.store.getF(item.id)?.name||title(item.type)) : item.name||title(item.type))}</button>`;
       }
     }
-    if(!total)html+=`<p class="ceiling-note">${tr('从左侧选择造型，或选择灯具后在图上放置。','Pick a shape from the library, or choose a fixture and place it on the plan.')}</p>`;
+    if(!total)html+=`<p class="ceiling-note">${tr('从左侧添加吊顶造型，或从家具库拖入灯具与顶装设备。','Add a ceiling shape or drag a ceiling fixture from the furniture library.')}</p>`;
     panel.innerHTML=html+'</div></section>';
+    if(!z)App.panel.bindCeilingRoom(def);
   }
   function startTool(next,trigger){
     if(!roomDef()||isPreview())return;
@@ -334,9 +369,13 @@
     const toggledOff=tool===next;
     const keyboard=trigger?.matches(':focus-visible'), container=trigger?.closest('#ceilingLibrary,#panel');
     clearTool();
-    if(!toggledOff){lastPreset=null;tool=next;App.panel.closeDrawers();}
+    if(!toggledOff){if(selectedFurniture())selectRoomSurface(null,null);lastPreset=null;tool=next;App.panel.closeDrawers();}
     render();App.panel.renderPanel();
     if(keyboard && (toggledOff||!App.core.narrow()))container?.querySelector(`[data-cmd="tool"][data-value="${CSS.escape(next)}"]`)?.focus({preventScroll:true});
+  }
+  function newZoneFinish(){
+    const {color,finish}=model.room(state(),roomId);
+    return {color:color||defaultCeilingColor(),...(finish?{finish}:{})};
   }
   function preset(type,trigger){
     const def=roomDef();if(!def||isPreview())return;
@@ -345,8 +384,7 @@
       clearTool();select(null,null);
     }else{
       try{
-        const zone=model.preset(type,def,{id:uid(),width:presetWidth,drop:180,color:defaultCeilingColor()});
-        zone.name=title(type);
+        const zone={...model.preset(type,def,{id:uid(),width:presetWidth,drop:180,name:title(type)}),...newZoneFinish()};
         clearTool();holeIndex=-1;edgeIndex=0;lastPreset={room:roomId,type,id:zone.id};
         if(change({zones:[...roomData().zones,zone]},{kind:'zone',id:zone.id}))App.panel.closeDrawers();
       }catch(e){App.core.toast(e.message);}
@@ -368,7 +406,7 @@
       const edited={...z,holes:[...(z.holes||[]),poly]};delete edited.preset;
       return replaceItem('zone',edited);
     }
-    const zone={id:uid(),name:title(tool==='rectangle'?'rectangle':'polygon'),poly,drop:180,color:defaultCeilingColor()};
+    const zone={id:uid(),name:title(tool==='rectangle'?'rectangle':'polygon'),poly,drop:180,...newZoneFinish()};
     return change({zones:[...data.zones,zone]},{kind:'zone',id:zone.id});
   }
   function finishPolygon(){
@@ -376,7 +414,7 @@
     if(addPolygon(points)){clearTool();holeIndex=-1;edgeIndex=0;render();App.panel.renderPanel();}
   }
   function fixturesAt(type,locations){
-    const [length,width,hang]=dimDefaults[type],data=roomData();
+    const {w:length,d:width,hang=0}=App.ceilingFurniture.defaults(type),data=roomData();
     const fixtures=locations.map(([x,y])=>({id:uid(),type,x,y,length,width,hang,rotation:0}));
     return change({fixtures:[...data.fixtures,...fixtures]},{kind:'fixture',id:fixtures[0].id});
   }
@@ -390,10 +428,6 @@
     }
     const p=d.point, def=roomDef();
     if(!def)return;
-    if(!isInside(p,def.poly)&&!App.ceilingModel.outline(def).some(v=>Math.hypot(v[0]-p[0],v[1]-p[1])<1)){
-      // Boundary points are validated against the complete polygon by the model on commit.
-      if(!freeTool()&&tool!=='rectangle'&&tool!=='array'&&tool!=='side')return App.core.toast(tr('请在当前房间内放置','Place inside the selected room'));
-    }
     if(tool==='side'){
       const poly=def.vertices||def.poly, outline=model.outline(def);
       const direction=Math.sign(outline.reduce((sum,a,i)=>{const b=outline[(i+1)%outline.length];return sum+a[0]*b[1]-b[0]*a[1];},0));
@@ -412,7 +446,7 @@
         const prev=nearest[Math.max(0,i-1)],next=nearest[Math.min(nearest.length-1,i+1)],dx=next[0]-prev[0],dy=next[1]-prev[1],len=Math.hypot(dx,dy);
         return [v[0]-direction*dy/len*presetWidth,v[1]+direction*dx/len*presetWidth];
       });
-      const zone={id:uid(),name:title('side'),poly:[...nearest,...inner.reverse()],drop:180,color:defaultCeilingColor()};
+      const zone={id:uid(),name:title('side'),poly:[...nearest,...inner.reverse()],drop:180,...newZoneFinish()};
       if(change({zones:[...roomData().zones,zone]},{kind:'zone',id:zone.id})){clearTool();holeIndex=-1;edgeIndex=0;render();App.panel.renderPanel();}
       return;
     }
@@ -431,24 +465,20 @@
         if(Math.hypot(x-a,y-b)<50)return;
         if(!fixturesAt(arrayType,Array.from({length:count},(_,i)=>[Math.round(a+(x-a)*i/(count-1)),Math.round(b+(y-b)*i/(count-1))])))return;
       }
-      clearTool();render();App.panel.renderPanel();return;
+      clearTool();render();App.panel.renderPanel();
     }
-    fixturesAt(tool,[p]);
   }
   function startPointer(e,p){
     const target=e.target.closest('[data-ceil-id]'),vertex=e.target.closest('[data-ceil-vertex]');
     return {kind:'ceiling',sx:e.clientX,sy:e.clientY,point:snap(p),x0:App.store.view.x0,y0:App.store.view.y0,
       room:target?.dataset.ceilRoom||e.target.closest('[data-room]')?.dataset.room,id:target?.dataset.ceilId,itemKind:target?.dataset.ceilKind,
-      vertex:vertex?Number(vertex.dataset.ceilVertex):undefined,moved:false,origin:[p.x,p.y],panning:false};
+      vertex:vertex?Number(vertex.dataset.ceilVertex):undefined,moved:false,panning:false};
   }
   function movePointer(d,e,p,far){
     if(!d.moved&&!far)return;
     d.moved=true;
-    if(!tool&&!isPreview()&&(d.vertex!==undefined||d.itemKind==='fixture')){
-      if(d.vertex===undefined && (selected?.id!==d.id||roomId!==d.room)){setRoom(d.room);select('fixture',d.id);}
-      const f=d.vertex===undefined?selectedObject():null;
-      const dest=f?{x:f.x+p.x-d.origin[0],y:f.y+p.y-d.origin[1]}:p;
-      dragPreview={vertex:d.vertex,point:snap(dest)};renderSketch();return;
+    if(!tool&&!isPreview()&&d.vertex!==undefined){
+      dragPreview={vertex:d.vertex,point:snap(p)};renderSketch();return;
     }
     d.panning=true;App.core.svg.classList.add('panning');
     App.store.view.x0=d.x0-(e.clientX-d.sx)/App.store.view.s;App.store.view.y0=d.y0-(e.clientY-d.sy)/App.store.view.s;App.interact.applyView();
@@ -458,8 +488,7 @@
     if(!cancel&&!d.moved&&d.vertex===undefined)tap(d);
     if(!cancel&&ghost&&!isPreview()){
       const obj=selectedObject();
-      if(obj && selected.kind==='fixture' && d.id===obj.id)replaceItem('fixture',{...obj,x:ghost.point[0],y:ghost.point[1]});
-      else if(obj && selected.kind==='zone' && ghost.vertex!==undefined){
+      if(obj && selected.kind==='zone' && ghost.vertex!==undefined){
         const edited=boundary(obj).poly.map((v,i)=>i===ghost.vertex?ghost.point:v);
         const next=obj.holes?.[holeIndex]?{...obj,holes:obj.holes.map((h,i)=>i===holeIndex?edited:h)}:{...obj,poly:edited};
         delete next.preset;replaceItem('zone',next);
@@ -471,13 +500,8 @@
   function key(e){
     const k=e.key.toLowerCase(), mod=e.metaKey||e.ctrlKey;
     if(k==='enter' && e.target.closest?.('button'))return false;
+    if(!tool && selectedFurniture() && !isPreview())return false;
     if(mod){if(k==='d'){e.preventDefault();return true;}return false;}
-    if(!tool&&!isPreview()&&selected?.kind==='fixture'&&(k.startsWith('arrow')||k==='r')){
-      const f=selectedObject(),step=e.shiftKey?100:10,dirs={arrowleft:[-step,0],arrowright:[step,0],arrowup:[0,-step],arrowdown:[0,step]};
-      if(f && dirs[k])replaceItem('fixture',{...f,x:f.x+dirs[k][0],y:f.y+dirs[k][1]});
-      if(f && k==='r')replaceItem('fixture',{...f,rotation:((f.rotation||0)+(e.shiftKey?-90:90)+360)%360});
-      e.preventDefault();return true;
-    }
     if(k==='escape'){if(tool){clearTool();render();App.panel.renderPanel();}else select(null,null);}
     else if(k==='enter'&&freeTool())finishPolygon();
     else if(k==='backspace'&&freeTool()){points.pop();renderSketch();}
@@ -499,13 +523,13 @@
       return;
     }
     if(isPreview())return;
+    if(cmd==='furniture'){clearTool();render();App.panel.renderPanel();App.interact.openCeilingLibrary();return;}
     if(cmd==='showcase'){if(roomDef())App.ceilingShowcase.open(roomId);return;}
     if(cmd==='preset')preset(value,target);
     else if(cmd==='tool')startTool(value,target);
     else if(cmd==='edge')addEdge(value);
     else if(cmd==='back'){clearTool();select(null,null);}
     else if(cmd==='delete')removeSelection();
-    else if(cmd==='inherit')change({baseHeight:null});
   }
   function handleField(e){
     if(!active()||isPreview())return;
@@ -514,13 +538,12 @@
     if(el.type==='number' && (!el.checkValidity()||!Number.isFinite(value))){el.reportValidity();renderPanel();return;}
     if(key==='globalHeight'){
       try{
-        const next=model.validate({...state(),baseHeight:value},App.store.ROOMS);
-        App.store.mutate(()=>{App.store.state.ceiling=next;});
+        model.validate({...displayed(),baseHeight:value},App.store.ROOMS);
+        App.store.mutate(()=>{App.store.state.ceiling.baseHeight=value;});
       }catch(error){App.core.toast(error.message);renderPanel();}
       return;
     }
     if(key==='arrayType'){arrayType=value;return;}
-    if(key==='roomHeight'){change({baseHeight:value});return;}
     if(key==='count'){count=Math.max(2,Math.min(32,Math.round(value)));return;}
     if(key==='boundary'){holeIndex=Number(value);edgeIndex=0;renderSketch();renderPanel();return;}
     if(key==='edgeIndex'){edgeIndex=Number(value);renderSketch();renderPanel();return;}
@@ -539,7 +562,7 @@
       const arcs=(obj.arcs||[]).filter(a=>a.edge!==edgeIndex);
       if(value)arcs.push({edge:edgeIndex,sweep:value});
       updated.arcs=arcs;
-    }else if((key==='zoneId'||key==='finish')&&!value)delete updated[key];
+    }else if(key==='finish'&&!value)delete updated[key];
     else updated[key]=value;
     replaceItem(selected.kind,updated);
   }
@@ -547,7 +570,7 @@
   $('#panel').addEventListener('change',handleField);
   $('#ceilingLibrary').addEventListener('change',e=>{if(e.target.id==='ceilingPresetWidth'){
       const v=e.target.valueAsNumber;if(Number.isFinite(v)&&v>=10&&v<=10000)presetWidth=v;else e.target.value=presetWidth;
-    }else if(e.target.id==='ceilingRoom'){setRoom(e.target.value);render();App.panel.renderPanel();}});
+    }else if(e.target.id==='ceilingRoom'){setRoom(e.target.value);select(null,null);}});
   $('#ceilingMode').onclick=()=>{
     if(active()){close();return;}
     open();App.assistant.chatPane?.('props');
@@ -558,5 +581,5 @@
   $('#ceilingFinish').onclick=finishPolygon;
   $('#ceilingCancel').onclick=()=>{clearTool();render();App.panel.renderPanel();};
   document.querySelector('[data-view="2d"]').addEventListener('click',()=>{if(active())close();});
-  App.ceilingEditor={active,context,open,focus:open,close,syncView,render,renderPanel,renderSketch,startPointer,movePointer,endPointer,hover,key,overlayVisible:()=>overlay,setOverlay,toolThumbnail};
+  App.ceilingEditor={active,context,open,focus:open,close,syncView,render,renderPanel,renderSketch,startPointer,movePointer,endPointer,hover,key,overlayVisible:()=>overlay,setOverlay,toolThumbnail,fixtureSymbol,symbolScale,selectFurniture};
 })();
